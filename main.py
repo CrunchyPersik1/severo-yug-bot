@@ -60,13 +60,18 @@ async def lifespan(app: FastAPI):
 
     url = settings.webhook_url()
     if url:
-        await bot.set_webhook(
-            url=url,
-            secret_token=settings.webhook_token,
-            allowed_updates=dp.resolve_used_update_types(),
-            drop_pending_updates=True,
-        )
-        log.info("Webhook установлен: %s", url)
+        # Ставим вебхук только если он изменился: иначе каждый холодный старт
+        # после сна Render стирал бы очередь апдейтов и терял сообщения.
+        info = await bot.get_webhook_info()
+        if info.url != url:
+            await bot.set_webhook(
+                url=url,
+                secret_token=settings.webhook_token,
+                allowed_updates=dp.resolve_used_update_types(),
+            )
+            log.info("Webhook установлен: %s", url)
+        else:
+            log.info("Webhook уже настроен: %s", url)
     else:
         log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
 
@@ -87,8 +92,19 @@ app = FastAPI(title="severo-yug-bot", lifespan=lifespan)
 
 @app.get("/")
 async def health() -> dict[str, Any]:
-    db_ready = runtime.get("db") is not None
-    return {"ok": True, "service": "severo-yug-bot", "db": db_ready}
+    """Health-check и точка для внешнего пингера.
+
+    Всегда отвечает 200 (чтобы Render не перезапускал сервис), но реально
+    дёргает БД — так Supabase не считает проект неактивным и не усыпляет его.
+    """
+    database = runtime.get("db")
+    alive = False
+    if database is not None:
+        try:
+            alive = await database.ping()
+        except Exception:  # noqa: BLE001
+            log.warning("Health-check: БД недоступна", exc_info=True)
+    return {"ok": True, "service": "severo-yug-bot", "db": alive}
 
 
 @app.get("/healthz")

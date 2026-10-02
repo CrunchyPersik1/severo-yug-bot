@@ -88,6 +88,11 @@ class Database:
             raise RuntimeError("Пул БД не создан")
         return self.pool
 
+    async def ping(self) -> bool:
+        """Дешёвая проверка живости БД. Заодно не даёт Supabase уснуть."""
+        async with self._p().acquire() as con:
+            return bool(await con.fetchval("select 1"))
+
     async def init_schema(self) -> None:
         """Применяет schema.sql (idempotent)."""
         import pathlib
