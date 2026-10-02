@@ -53,14 +53,25 @@ def _humanize(delta_seconds: float) -> str:
 # --------------------------------------------------------------------------- #
 
 
+async def _bot_username(bot: Bot) -> str:
+    """Имя бота для справки. get_me кешируется внутри aiogram."""
+    me = getattr(bot, "_me", None)
+    if me is None:
+        try:
+            me = await bot.get_me()
+        except Exception:  # noqa: BLE001 - справка должна работать всегда
+            return "бот"
+    return getattr(me, "username", None) or "бот"
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, bot: Bot) -> None:
-    await message.answer(render.render_help(bot.username or "bot"))
+    await message.answer(render.render_help(await _bot_username(bot)))
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message, bot: Bot) -> None:
-    await message.answer(render.render_help(bot.username or "bot"))
+    await message.answer(render.render_help(await _bot_username(bot)))
 
 
 @router.message(NormalizedText("северо-юг", "север юг", "северо юг"))

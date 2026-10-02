@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     service = BattleService(bot, db)
     runtime.update(db=db, bot=bot, dp=dp, service=service)
 
+    me = await bot.get_me()
+    log.info("Бот: @%s (%s)", me.username, me.id)
+
     url = settings.webhook_url()
     if url:
         await bot.set_webhook(
