@@ -22,7 +22,7 @@ from .battle import (
     side_for_user,
     surrender as engine_surrender,
 )
-from .cards import Card, cards_sorted_for_user, get_card
+from .cards import cards_sorted_for_user, get_card
 from .config import settings
 from .db import Database
 

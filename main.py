@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
