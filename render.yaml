@@ -1,0 +1,26 @@
+# Render Blueprint для бота «Северо-Юг».
+# Render -> New + -> Blueprint -> выбрать этот репозиторий.
+# DATABASE_URL и BOT_TOKEN задаются вручную (sync: false) в дашборде Render.
+services:
+  - type: web
+    name: severo-yug-bot
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    healthCheckPath: /
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: WEBHOOK_TOKEN
+        generateValue: true
+      - key: ADMIN_IDS
+        value: ""
