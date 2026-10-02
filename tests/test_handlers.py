@@ -73,6 +73,9 @@ class FakeDB:
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
 
+    async def get_card_kills(self, user_id: int) -> dict[str, int]:
+        return {card_id: 0 for card_id in self.collection.get(user_id, {})}
+
     async def add_card(self, user_id: int, card_id: str) -> int:
         bucket = self.collection.setdefault(user_id, {})
         bucket[card_id] = bucket.get(card_id, 0) + 1
@@ -82,7 +85,15 @@ class FakeDB:
         return None
 
     async def collection_stats(self, user_id: int) -> dict[str, int]:
-        return {"points": 0, "unique_cards": len(self.collection.get(user_id, {})), "total_cards": 0}
+        cards = self.collection.get(user_id, {})
+        return {
+            "points": 0,
+            "bonus": 0,
+            "total": 0,
+            "unique_cards": len(cards),
+            "total_cards": sum(cards.values()),
+            "card_kills": 0,
+        }
 
     async def top_players(self, limit: int = 10) -> list[dict[str, Any]]:
         return []

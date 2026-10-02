@@ -204,36 +204,99 @@ class Database:
             )
         return int(row["points"])
 
+    async def get_card_kills(self, user_id: int) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select card_id, kills from collection where user_id = $1", user_id
+            )
+        return {row["card_id"]: int(row["kills"]) for row in rows}
+
     async def collection_stats(self, user_id: int) -> dict[str, int]:
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
                 select coalesce(sum(c.points), 0) as points,
-                       count(*) as unique_cards,
-                       coalesce(sum(col.count), 0) as total_cards
+                       count(col.card_id) as unique_cards,
+                       coalesce(sum(col.count), 0) as total_cards,
+                       coalesce(sum(col.kills), 0) as card_kills
                   from collection col
                   join cards c on c.card_id = col.card_id
                  where col.user_id = $1
                 """,
                 user_id,
             )
+            bonus = await con.fetchval(
+                "select coalesce(bonus_points, 0) from players where user_id = $1", user_id
+            )
+        bonus = int(bonus or 0)
+        points = int(row["points"])
         return {
-            "points": int(row["points"]),
+            "points": points,
+            "bonus": bonus,
+            "total": max(0, points + bonus),
             "unique_cards": int(row["unique_cards"]),
             "total_cards": int(row["total_cards"]),
+            "card_kills": int(row["card_kills"]),
         }
+
+    async def player_profile(self, user_id: int) -> dict[str, Any] | None:
+        """Полный профиль игрока + место в PvP-рейтинге."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                select p.user_id, p.username, p.first_name,
+                       p.wins, p.losses, p.draws, p.kills, p.bonus_points,
+                       coalesce(sum(c.points), 0) as card_points,
+                       count(col.card_id) as unique_cards,
+                       coalesce(sum(col.count), 0) as total_cards,
+                       coalesce(sum(col.kills), 0) as card_kills
+                  from players p
+                  left join collection col on col.user_id = p.user_id
+                  left join cards c on c.card_id = col.card_id
+                 where p.user_id = $1
+                 group by p.user_id
+                """,
+                user_id,
+            )
+            if row is None:
+                return None
+            rank = await con.fetchval(
+                "select count(*) + 1 from players where wins > $1", int(row["wins"])
+            )
+        profile = dict(row)
+        profile["rank"] = int(rank or 1)
+        profile["total"] = max(0, int(profile["card_points"]) + int(profile["bonus_points"]))
+        return profile
+
+    async def rating(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Рейтинг PvP по числу выигранных боёв."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                """
+                select user_id, username, first_name, wins, losses, draws, kills
+                  from players
+                 where wins + losses + draws > 0
+                 order by wins desc, kills desc, losses asc
+                 limit $1
+                """,
+                limit,
+            )
+        return [dict(row) for row in rows]
 
     async def top_players(self, limit: int = 10) -> list[dict[str, Any]]:
         async with self._p().acquire() as con:
             rows = await con.fetch(
                 """
-                select p.user_id, p.username, p.first_name,
-                       coalesce(sum(c.points), 0) as points,
+                select p.user_id, p.username, p.first_name, p.wins, p.kills,
+                       greatest(coalesce(sum(c.points), 0) + p.bonus_points, 0) as points,
+                       coalesce(sum(c.points), 0) as card_points,
+                       p.bonus_points,
                        count(col.card_id) as unique_cards
                   from players p
                   left join collection col on col.user_id = p.user_id
                   left join cards c on c.card_id = col.card_id
-                 group by p.user_id, p.username, p.first_name
+                 group by p.user_id, p.username, p.first_name, p.bonus_points,
+                          p.wins, p.kills
                 having count(col.card_id) > 0
                  order by points desc, unique_cards desc
                  limit $1
@@ -242,21 +305,50 @@ class Database:
             )
         return [dict(row) for row in rows]
 
-    async def record_result(self, winner_id: int | None, loser_id: int | None, draw: bool = False) -> None:
+    async def apply_battle_result(
+        self,
+        winner_id: int,
+        loser_id: int,
+        draw: bool = False,
+        winner_card_id: str | None = None,
+        loser_card_id: str | None = None,
+        stake: int = 0,
+    ) -> None:
+        """Итог боя одной транзакцией: победы/поражения, убийства и передача очков."""
         async with self._p().acquire() as con:
-            if draw:
-                await con.execute(
-                    "update players set draws = draws + 1 where user_id = any($1::bigint[])",
-                    [winner_id, loser_id],
-                )
-            else:
-                if winner_id is not None:
+            async with con.transaction():
+                if draw:
                     await con.execute(
-                        "update players set wins = wins + 1 where user_id = $1", winner_id
+                        "update players set draws = draws + 1 where user_id = any($1::bigint[])",
+                        [winner_id, loser_id],
                     )
-                if loser_id is not None:
+                    return
+                await con.execute(
+                    """
+                    update players
+                       set wins = wins + 1,
+                           kills = kills + 1,
+                           bonus_points = bonus_points + $2
+                     where user_id = $1
+                    """,
+                    winner_id,
+                    int(stake),
+                )
+                await con.execute(
+                    """
+                    update players
+                       set losses = losses + 1,
+                           bonus_points = bonus_points - $2
+                     where user_id = $1
+                    """,
+                    loser_id,
+                    int(stake),
+                )
+                if winner_card_id:
                     await con.execute(
-                        "update players set losses = losses + 1 where user_id = $1", loser_id
+                        "update collection set kills = kills + 1 where user_id = $1 and card_id = $2",
+                        winner_id,
+                        winner_card_id,
                     )
 
     # ------------------------------------------------------------------ #

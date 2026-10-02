@@ -163,3 +163,74 @@ def test_stale_battles_detection():
             await db.close()
 
     run(scenario())
+
+def test_battle_result_transfers_points_and_kills():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            winner, loser = 900003, 900004
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "delete from collection where user_id = any($1::bigint[])", [winner, loser]
+                )
+                await con.execute("delete from players where user_id = any($1::bigint[])", [winner, loser])
+            await db.ensure_player(winner, None, "Победитель")
+            await db.ensure_player(loser, None, "Проигравший")
+            await db.add_card(winner, "oleg")
+            await db.add_card(loser, "daniel")
+
+            stake = 500  # 5% от 10000
+            await db.apply_battle_result(
+                winner_id=winner,
+                loser_id=loser,
+                draw=False,
+                winner_card_id="oleg",
+                loser_card_id="daniel",
+                stake=stake,
+            )
+
+            winner_profile = await db.player_profile(winner)
+            loser_profile = await db.player_profile(loser)
+            assert winner_profile["wins"] == 1
+            assert winner_profile["kills"] == 1
+            assert winner_profile["bonus_points"] == stake
+            assert winner_profile["card_points"] == 250
+            assert winner_profile["total"] == 750  # 250 карта + 500 из PvP
+            assert winner_profile["rank"] == 1
+
+            assert loser_profile["losses"] == 1
+            assert loser_profile["bonus_points"] == -stake
+            assert loser_profile["total"] == 9500  # 10000 - 500
+            assert loser_profile["wins"] == 0
+
+            kills = await db.get_card_kills(winner)
+            assert kills["oleg"] == 1
+
+            rating = await db.rating(10)
+            assert rating[0]["user_id"] == winner
+            assert rating[0]["kills"] == 1
+        finally:
+            await db.close()
+
+    run(scenario())
+
+
+def test_draw_gives_nothing():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            first, second = 900005, 900006
+            async with db.pool.acquire() as con:
+                await con.execute("delete from players where user_id = any($1::bigint[])", [first, second])
+            await db.ensure_player(first, None, "A")
+            await db.ensure_player(second, None, "B")
+            await db.apply_battle_result(winner_id=first, loser_id=second, draw=True)
+            profile = await db.player_profile(first)
+            assert profile["draws"] == 1
+            assert profile["wins"] == 0
+            assert profile["bonus_points"] == 0
+            assert profile["kills"] == 0
+        finally:
+            await db.close()
+
+    run(scenario())

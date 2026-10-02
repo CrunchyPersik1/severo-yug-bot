@@ -25,6 +25,7 @@ from .battle import (
 from .cards import cards_sorted_for_user, get_card
 from .config import settings
 from .db import Database
+from .rewards import battle_reward
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class BattleService:
             return None, None
         record = result.get("record") if isinstance(result, dict) else None
         if record:
-            await self.db.record_result(record.get("winner"), record.get("loser"), record.get("draw", False))
+            await self.db.apply_battle_result(**record)
         return battle, result
 
     async def choose_card(self, callback: CallbackQuery, battle_id: str, card_id: str) -> None:
@@ -246,11 +247,34 @@ class BattleService:
             return {}
         state["recorded"] = True
         winner = state["winner"]
-        ids = {k: state["sides"][k]["user_id"] for k in (KEY_A, KEY_B)}
+        sides = state["sides"]
+        ids = {k: sides[k]["user_id"] for k in (KEY_A, KEY_B)}
+        cards = {k: sides[k]["card_id"] for k in (KEY_A, KEY_B)}
         if winner == "draw":
-            return {"record": {"winner": ids[KEY_A], "loser": ids[KEY_B], "draw": True}}
+            return {
+                "record": {
+                    "winner_id": ids[KEY_A],
+                    "loser_id": ids[KEY_B],
+                    "draw": True,
+                }
+            }
         loser_key = other(winner)
-        return {"record": {"winner": ids[winner], "loser": ids[loser_key], "draw": False}}
+        reward = battle_reward(get_card(cards[loser_key]).points)
+        state["reward"] = {
+            "amount": reward,
+            "winner": winner,
+            "loser_card": cards[loser_key],
+        }
+        return {
+            "record": {
+                "winner_id": ids[winner],
+                "loser_id": ids[loser_key],
+                "draw": False,
+                "winner_card_id": cards[winner],
+                "loser_card_id": cards[loser_key],
+                "stake": reward,
+            }
+        }
 
     # ------------------------------------------------------------------ #
     # Публикация

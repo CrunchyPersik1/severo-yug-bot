@@ -22,6 +22,8 @@ create table if not exists players (
     wins          integer not null default 0,
     losses        integer not null default 0,
     draws         integer not null default 0,
+    kills         integer not null default 0,   -- сколько чужих карт убито
+    bonus_points  integer not null default 0,   -- очки, отжатые/отданные в PvP
     created_at    timestamptz not null default now(),
     updated_at    timestamptz not null default now()
 );
@@ -30,6 +32,7 @@ create table if not exists collection (
     user_id   bigint not null references players(user_id) on delete cascade,
     card_id   text   not null references cards(card_id),
     count     integer not null default 1,
+    kills     integer not null default 0,       -- убийства этой конкретной карты
     first_at  timestamptz not null default now(),
     primary key (user_id, card_id)
 );
@@ -67,3 +70,7 @@ create index if not exists battles_chat_status_idx on battles (chat_id, status);
 create index if not exists battles_status_updated_idx on battles (status, updated_at);
 create index if not exists battles_challenger_idx on battles (challenger_id, status);
 create index if not exists battles_opponent_idx on battles (opponent_id, status);
+-- миграции для баз, созданных до появления PvP-наград
+alter table players    add column if not exists kills        integer not null default 0;
+alter table players    add column if not exists bonus_points integer not null default 0;
+alter table collection add column if not exists kills        integer not null default 0;

@@ -106,9 +106,29 @@ async def cmd_collection(message: Message, db: Database) -> None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
     counts = await db.get_collection(user.id)
+    kills = await db.get_card_kills(user.id)
     cards = cards_sorted_for_user(list(counts))
     stats = await db.collection_stats(user.id)
-    await message.answer(render.render_collection(cards, counts, stats, len(CARDS)))
+    await message.answer(render.render_collection(cards, counts, kills, stats, len(CARDS)))
+
+
+@router.message(Command("profile", "me", "профиль"))
+async def cmd_profile(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    profile = await db.player_profile(user.id)
+    if profile is None:
+        await message.answer("Профиль пока пуст. Напиши «Северо-Юг».")
+        return
+    await message.answer(render.render_profile(profile, len(CARDS)))
+
+
+@router.message(Command("rating", "рейтинг", "pvp_top"))
+async def cmd_rating(message: Message, db: Database) -> None:
+    rows = await db.rating(10)
+    await message.answer(render.render_rating(rows))
 
 
 @router.message(Command("top", "leaderboard"))

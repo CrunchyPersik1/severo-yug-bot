@@ -100,10 +100,17 @@ def render_drop(card: Card, count: int, is_new: bool) -> str:
     )
 
 
-def render_collection(cards: list[Card], counts: dict[str, int], stats: dict[str, int], total: int) -> str:
+def render_collection(
+    cards: list[Card],
+    counts: dict[str, int],
+    kills: dict[str, int],
+    stats: dict[str, int],
+    total: int,
+) -> str:
     lines = [
         f"🎒 <b>Коллекция</b> — {stats['unique_cards']}/{total} карт",
-        f"💰 Очки: <b>{stats['points']}</b> · всего карт: {stats['total_cards']}",
+        f"💰 Очки: <b>{stats['total']}</b> · всего карт: {stats['total_cards']} · "
+        f"🔪 убийств: {stats['card_kills']}",
         "",
     ]
     if not cards:
@@ -111,7 +118,57 @@ def render_collection(cards: list[Card], counts: dict[str, int], stats: dict[str
     for card in cards:
         count = counts.get(card.card_id, 1)
         suffix = f" ×{count}" if count > 1 else ""
-        lines.append(f"{card.rarity_emoji} {esc(card.name)} · ⚔{card.atk}/❤{card.hp}{suffix}")
+        killed = kills.get(card.card_id, 0)
+        kill_suffix = f" · 🔪{killed}" if killed else ""
+        lines.append(
+            f"{card.rarity_emoji} {esc(card.name)} · ⚔{card.atk}/❤{card.hp}{suffix}{kill_suffix}"
+        )
+    return "\n".join(lines)
+
+
+def render_profile(profile: dict[str, Any], total_cards: int) -> str:
+    name = profile.get("first_name") or profile.get("username") or f"id{profile['user_id']}"
+    games = profile["wins"] + profile["losses"] + profile["draws"]
+    winrate = f"{profile['wins'] * 100 // games}%" if games else "—"
+    bonus = int(profile["bonus_points"])
+    if bonus > 0:
+        bonus_text = f" (+{bonus} из PvP)"
+    elif bonus < 0:
+        bonus_text = f" (−{abs(bonus)} из PvP)"
+    else:
+        bonus_text = ""
+    return "\n".join(
+        [
+            f"👤 <b>{esc(name)}</b>",
+            f"🏅 Место в PvP-рейтинге: <b>#{profile['rank']}</b>",
+            "",
+            f"⚔️ Побед: <b>{profile['wins']}</b> · поражений: {profile['losses']} · "
+            f"ничьих: {profile['draws']} ({winrate})",
+            f"🔪 Убито чужих карт: <b>{profile['kills']}</b>",
+            f"🗡 Мои карты убили: <b>{profile['card_kills']}</b> раз",
+            "",
+            f"💰 Очки: <b>{profile['total']}</b>{bonus_text}",
+            f"🃏 Коллекция: {profile['unique_cards']}/{total_cards} карт "
+            f"(всего {profile['total_cards']})",
+            "",
+            "«пвп» ответом на сообщение — вызвать на бой.",
+        ]
+    )
+
+
+def render_rating(rows: list[dict[str, Any]]) -> str:
+    lines = ["🏆 <b>Рейтинг PvP</b> — по выигранным боям", ""]
+    if not rows:
+        lines.append("Боёв ещё не было. Вызови кого-нибудь: «пвп» ответом.")
+        return "\n".join(lines)
+    medals = ["🥇", "🥈", "🥉"]
+    for index, row in enumerate(rows):
+        name = row["first_name"] or row["username"] or f"id{row['user_id']}"
+        place = medals[index] if index < 3 else f"{index + 1}."
+        lines.append(
+            f"{place} {esc(name)} — <b>{row['wins']}</b> побед "
+            f"({row['losses']} пор., {row['draws']} ничьих) · 🔪 {row['kills']}"
+        )
     return "\n".join(lines)
 
 
@@ -133,11 +190,22 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
     lines = [f"⚔️ <b>Бой</b> <code>{esc(battle_id)}</code>", "", block(KEY_A, a), "", block(KEY_B, b), ""]
 
     if state["over"]:
-        if state["winner"] == "draw":
-            lines.append("🤝 <b>Ничья</b>")
+        winner_key = state.get("winner")
+        if not winner_key:
+            lines.append("❌ Бой отменён")
+        elif winner_key == "draw":
+            lines.append("🤝 <b>Ничья</b> — очки остаются у владельцев")
         else:
-            winner = sides[state["winner"]]
+            winner = sides[winner_key]
             lines.append(f"🏆 Победил <b>{esc(winner.get('name') or winner['user_id'])}</b>")
+            reward = state.get("reward") or {}
+            if reward.get("amount"):
+                loser_card = get_card(reward["loser_card"])
+                lines.append(
+                    f"💰 <b>{reward['amount']}</b> очков перешли победителю "
+                    f"(5% от карты «{esc(loser_card.name)}»)"
+                )
+            lines.append("🔪 +1 убийство карты победителя")
     else:
         turn_side = sides[state["turn"]]
         lines.append(
@@ -230,6 +298,9 @@ def render_help(bot_name: str) -> str:
         "сброс в 12:00 по ЕКБ.\n"
         "• «<b>пвп</b>» <i>ответом</i> на сообщение соперника — вызвать его на бой. "
         "Каждый выбирает карту из своей коллекции, бой идёт в одном сообщении.\n"
-        "• /my — коллекция, /top — лидерборд.\n\n"
+        "• /my — коллекция, /top — счёт по очкам, /rating — рейтинг PvP, "
+        "/profile — профиль.\n\n"
+        "За победу в PvP победитель забирает 5% очков карты проигравшего, "
+        "а карта победителя получает +1 убийство.\n\n"
         f"Меня зовут @{esc(bot_name)}. В группах нужен выключенный Privacy Mode."
     )
