@@ -326,6 +326,7 @@ class Database:
                 )
                 battle.update(extra)
                 battle["state"] = state
+                battle["version"] = int(battle.get("version") or 0) + 1
                 return battle, result
 
     async def stale_battles(self, choosing_seconds: int, active_seconds: int) -> list[dict[str, Any]]:
