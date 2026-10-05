@@ -12,8 +12,9 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, Message
 
-from . import render
+from . import admin_actions, render
 from .battle_service import BattleError, BattleService
+from .config import settings
 from .cards import CARDS, cards_sorted_for_user, get_card
 from .cases import roll_case_card
 from .db import Database
@@ -88,6 +89,33 @@ async def cmd_start(message: Message, bot: Bot) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message, bot: Bot) -> None:
     await message.answer(render.render_help(await _bot_username(bot)))
+
+
+@router.message(Command("admin", "админ"))
+async def cmd_admin(message: Message, db: Database) -> None:
+    """Админка прямо в Telegram — доступна только id из ADMIN_IDS."""
+    user = message.from_user
+    if user is None:
+        return
+    if not settings.is_admin(user.id):
+        await message.answer("🔒 Эта команда только для админа.")
+        return
+
+    parts = (message.text or "").split()[1:]
+    if not parts:
+        await message.answer(f"<pre>{render.esc(admin_actions.HELP)}</pre>")
+        return
+
+    try:
+        result = await admin_actions.run(db, parts[0], parts[1:])
+    except ValueError as error:
+        await message.answer(f"⚠️ {render.esc(str(error))}")
+        return
+    except Exception:  # noqa: BLE001
+        log.exception("Админ-команда %s упала", parts[0])
+        await message.answer("⚠️ Не получилось, я записал ошибку в логи.")
+        return
+    await message.answer(f"<pre>{render.esc(result)}</pre>")
 
 
 @router.message(Command("drop", "daily", "карта"))

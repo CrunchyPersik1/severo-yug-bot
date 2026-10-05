@@ -9,3 +9,4 @@ import os
 os.environ.setdefault("BOT_TOKEN", "123456:TEST_TOKEN")
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/severo_test")
 os.environ.setdefault("PUBLIC_URL", "https://severo-yug-bot.onrender.com")
+os.environ.setdefault("ADMIN_IDS", "111")

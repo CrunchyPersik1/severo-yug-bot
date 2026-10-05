@@ -424,3 +424,19 @@ def test_own_card_detail_offers_actions():
         assert "/sell" in body and "/upgrade" in body
 
     asyncio.run(scenario())
+
+def test_admin_command_is_closed_for_regular_players():
+    async def scenario():
+        session = await feed("/admin status", FakeDB(), FakeService(), user_id=222)
+        assert "только для админа" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_admin_help_is_shown_to_admin():
+    async def scenario():
+        session = await feed("/admin", FakeDB(), FakeService(), user_id=111)
+        body = sent_texts(session)[0]
+        assert "Админ-команды" in body and "give" in body
+
+    asyncio.run(scenario())
