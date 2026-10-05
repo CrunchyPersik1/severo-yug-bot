@@ -143,6 +143,8 @@ class BattleService:
         record = result.get("record") if isinstance(result, dict) else None
         if record:
             await self.db.apply_battle_result(**record)
+        elif battle["status"] == "finished" and not battle["state"].get("recorded"):
+            log.warning("Бой %s завершён без записи результата", battle_id)
         return battle, result
 
     async def choose_card(self, callback: CallbackQuery, battle_id: str, card_id: str) -> None:
@@ -202,12 +204,14 @@ class BattleService:
             )
             if not result["ok"]:
                 raise BattleError(result["error"] or "Ход невозможен.")
-            extra: dict[str, Any] = {}
+            extra: dict[str, Any] | None = None
+            record: dict[str, Any] | None = None
             if state["over"]:
-                extra["status"] = "finished"
-                extra.update(self._finalize(state))
+                extra = {"status": "finished"}
+                record = self._finalize(state)
             outcome.update(result)
-            return {"ok": True}, extra or None
+            # record обязан ехать в result: _commit читает его именно оттуда.
+            return {"ok": True, "record": record}, extra
 
         battle, _ = await self._commit(battle_id, mutator)
         if battle is None:
@@ -228,11 +232,9 @@ class BattleService:
                 state["winner"] = other(key)
                 state["reason"] = "cancel"
                 state["log"].append("❌ Бой отменён")
-                return {"cancelled": True}, {"status": "finished"}
+                return {"cancelled": True, "record": None}, {"status": "finished"}
             engine_surrender(state, key)
-            extra = {"status": "finished"}
-            extra.update(self._finalize(state))
-            return {"cancelled": False}, extra
+            return {"cancelled": False, "record": self._finalize(state)}, {"status": "finished"}
 
         battle, _ = await self._commit(battle_id, mutator)
         if battle is None:
@@ -241,10 +243,13 @@ class BattleService:
             return
         await self._publish(battle)
 
-    def _finalize(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Идемпотентно фиксирует результат боя (один раз)."""
+    def _finalize(self, state: dict[str, Any]) -> dict[str, Any] | None:
+        """Идемпотентно фиксирует результат боя (один раз).
+
+        Возвращает запись для apply_battle_result или None, если уже записано.
+        """
         if state.get("recorded"):
-            return {}
+            return None
         state["recorded"] = True
         winner = state["winner"]
         sides = state["sides"]
@@ -252,11 +257,9 @@ class BattleService:
         cards = {k: sides[k]["card_id"] for k in (KEY_A, KEY_B)}
         if winner == "draw":
             return {
-                "record": {
-                    "winner_id": ids[KEY_A],
-                    "loser_id": ids[KEY_B],
-                    "draw": True,
-                }
+                "winner_id": ids[KEY_A],
+                "loser_id": ids[KEY_B],
+                "draw": True,
             }
         loser_key = other(winner)
         reward = battle_reward(get_card(cards[loser_key]).points)
@@ -266,14 +269,12 @@ class BattleService:
             "loser_card": cards[loser_key],
         }
         return {
-            "record": {
-                "winner_id": ids[winner],
-                "loser_id": ids[loser_key],
-                "draw": False,
-                "winner_card_id": cards[winner],
-                "loser_card_id": cards[loser_key],
-                "stake": reward,
-            }
+            "winner_id": ids[winner],
+            "loser_id": ids[loser_key],
+            "draw": False,
+            "winner_card_id": cards[winner],
+            "loser_card_id": cards[loser_key],
+            "stake": reward,
         }
 
     # ------------------------------------------------------------------ #
@@ -345,7 +346,7 @@ class BattleService:
     async def _auto_turn(self, battle_id: str) -> None:
         def mutator(battle: dict[str, Any], state: dict[str, Any]):
             if battle["status"] != "active" or state["over"]:
-                return {"skipped": True}, None
+                return {"skipped": True, "record": None}, None
             key = state["turn"]
             result = apply_action(
                 state,
@@ -355,11 +356,12 @@ class BattleService:
                 max_timeouts=settings.battle_max_timeouts,
                 register_timeout=True,
             )
-            extra: dict[str, Any] = {}
+            extra: dict[str, Any] | None = None
+            record: dict[str, Any] | None = None
             if state["over"]:
-                extra["status"] = "finished"
-                extra.update(self._finalize(state))
-            return result, extra or None
+                extra = {"status": "finished"}
+                record = self._finalize(state)
+            return {**result, "record": record}, extra
 
         battle, _ = await self._commit(battle_id, mutator)
         if battle:
