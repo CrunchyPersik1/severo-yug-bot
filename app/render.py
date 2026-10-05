@@ -9,6 +9,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B, can_use_ability, other
 from .cards import RARITIES, Card, get_card
+from .items import SLOT_ICONS
+from .market import UPGRADE_PRICE
 
 FLEE = "🏳️ Сдаться"
 
@@ -95,6 +97,7 @@ def render_drop(card: Card, count: int, is_new: bool) -> str:
         f"{card_title(card)}\n"
         f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}\n"
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}\n\n"
+        f"💰 <b>+{card.points}</b> очков на баланс\n"
         f"{tail}\n"
         f"Следующее выпадание — после 12:00 ЕКБ."
     )
@@ -113,7 +116,7 @@ def render_collection(
     cases = cases or []
     lines = [
         f"🎒 <b>Коллекция</b> — {stats['unique_cards']}/{total} карт",
-        f"💰 Очки: <b>{stats['total']}</b> · всего карт: {stats['total_cards']} · "
+        f"💰 Баланс: <b>{stats['total']}</b> очк. · всего карт: {stats['total_cards']} · "
         f"🔪 убийств: {stats['card_kills']}",
         "",
     ]
@@ -320,12 +323,9 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
     games = profile["wins"] + profile["losses"] + profile["draws"]
     winrate = f"{profile['wins'] * 100 // games}%" if games else "—"
     bonus = int(profile["bonus_points"])
-    if bonus > 0:
-        bonus_text = f" (+{bonus} из PvP)"
-    elif bonus < 0:
-        bonus_text = f" (−{abs(bonus)} из PvP)"
-    else:
-        bonus_text = ""
+    # Баланс — это и есть очки игрока: карты начисляют их при выпадении,
+    # PvP и рынок перекладывают между игроками.
+    bonus_text = " (в минусе)" if bonus < 0 else ""
     return "\n".join(
         [
             f"👤 <b>{esc(name)}</b>",
@@ -336,9 +336,9 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
             f"🔪 Убито чужих карт: <b>{profile['kills']}</b>",
             f"🗡 Мои карты убили: <b>{profile['card_kills']}</b> раз",
             "",
-            f"💰 Очки: <b>{profile['total']}</b>{bonus_text}",
+            f"💰 Баланс: <b>{profile['total']}</b> очк.{bonus_text}",
             f"🃏 Коллекция: {profile['unique_cards']}/{total_cards} карт "
-            f"(всего {profile['total_cards']})",
+            f"(всего {profile['total_cards']}, стоимость {profile['card_points']})",
             "",
             "«пвп» ответом на сообщение — вызвать на бой.",
         ]
@@ -502,7 +502,7 @@ def render_help(bot_name: str) -> str:
         "🏪 <b>Рынок</b>\n"
         "• /market — лоты, /sell #id цена — выставить, /mylots — свои лоты, "
         "/changeprice id цена — переставить цену\n"
-        "• /upgrade #id — улучшить карту (аура, фон или эффект — навсегда)\n"
+        f"• /upgrade #id — улучшить карту за {UPGRADE_PRICE} очков: сразу аура, фон и эффект\n"
         "• /gift #id @игрок — подарить, /rating [@игрок] — репутация\n\n"
         "За победу в PvP победитель забирает 5% очков карты проигравшего, "
         "а карта победителя получает +1 убийство.\n\n"
@@ -512,6 +512,23 @@ def render_help(bot_name: str) -> str:
 # --------------------------------------------------------------------------- #
 # Рулетка и кейсы
 # --------------------------------------------------------------------------- #
+
+
+def render_upgrade(
+    card: Card, items: dict[str, Any], balance: int, inventory_id: int
+) -> str:
+    lines = [
+        f"⚡ <b>{esc(card.name)}</b> улучшена — копия <code>#{inventory_id}</code>",
+        f"💸 Списано <b>{UPGRADE_PRICE}</b> очк. · осталось <b>{balance}</b>",
+        "",
+    ]
+    for slot in ("aura", "background", "effect"):
+        item = items.get(slot)
+        if item is not None:
+            lines.append(f"{SLOT_ICONS[slot]} <b>{esc(item.name)}</b> — {esc(item.summary)}")
+    lines.append("")
+    lines.append("Все три части выдаются сразу и навсегда — перебить нельзя.")
+    return "\n".join(lines)
 
 
 def render_roulette(kind: str, value: Any, balance: int) -> str:
@@ -565,6 +582,7 @@ def render_case_open(card: Card, is_new: bool, count: int, cases_left: int) -> s
         card_title(card),
         f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}",
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}",
+        f"💰 <b>+{card.points}</b> очков на баланс",
         "",
         tail,
     ]

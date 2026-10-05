@@ -183,3 +183,20 @@ alter table history alter column card_id drop not null;
 alter table history add column if not exists kind text not null default 'card';
 alter table gifts add column if not exists kind text not null default 'card';
 alter table gifts alter column card_id drop not null;
+-- Очки становятся единой валютой: баланс = то, что видно в /my и /profile.
+-- Разовая досдача очков за карты, полученные до этого изменения.
+alter table players add column if not exists points_backfilled boolean not null default false;
+
+update players p
+   set bonus_points = bonus_points + coalesce(sub.total, 0),
+       points_backfilled = true
+  from (
+        select col.user_id, sum(c.points)::int as total
+          from collection col
+          join cards c on c.card_id = col.card_id
+         group by col.user_id
+       ) sub
+ where sub.user_id = p.user_id
+   and p.points_backfilled is false;
+
+update players set points_backfilled = true where points_backfilled is false;

@@ -60,6 +60,11 @@ class FakeDB:
     def __init__(self) -> None:
         self.collection: dict[int, dict[str, int]] = {}
         self.claimed: dict[int, bool] = {}
+        self.balance: dict[int, int] = {}
+
+    async def add_points(self, user_id: int, amount: int) -> int:
+        self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
+        return self.balance[user_id]
 
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
@@ -165,6 +170,7 @@ def test_daily_drop_variants(text: str):
         assert len(body) == 1, (text, session.calls)
         assert "Урон:" in body[0] and "HP:" in body[0]
         assert db.collection[111], "карта должна попасть в коллекцию"
+        assert db.balance[111] > 0, "карта должна начислить очки на баланс"
 
     asyncio.run(scenario())
 

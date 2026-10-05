@@ -12,6 +12,7 @@ from app.market import (
     RARITY_COEF,
     RATING_START,
     SUSPECT_RATIO,
+    UPGRADE_PRICE,
     can_sell,
     card_handle,
     clamp_rating,
@@ -110,6 +111,10 @@ def test_upgrade_price_is_worth_several_times_base():
         expected_min = RARITY_COEF[card.rarity] * 2.0
         assert ratio >= expected_min, (card.card_id, ratio, expected_min)
         assert ratio <= 12, (card.card_id, ratio)
+
+
+def test_upgrade_costs_750():
+    assert UPGRADE_PRICE == 750
 
 
 def test_fee_is_five_percent():

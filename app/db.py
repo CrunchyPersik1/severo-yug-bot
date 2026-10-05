@@ -291,10 +291,12 @@ class Database:
             )
         bonus = int(bonus or 0)
         points = int(row["points"])
+        # Очки — единая валюта: баланс и есть счёт игрока, а points — справочная
+        # стоимость коллекции (за неё очки уже начислены при выпадении).
         return {
             "points": points,
             "bonus": bonus,
-            "total": max(0, points + bonus),
+            "total": max(0, bonus),
             "unique_cards": int(row["unique_cards"]),
             "total_cards": int(row["total_cards"]),
             "card_kills": int(row["card_kills"]),
@@ -326,7 +328,7 @@ class Database:
             )
         profile = dict(row)
         profile["rank"] = int(rank or 1)
-        profile["total"] = max(0, int(profile["card_points"]) + int(profile["bonus_points"]))
+        profile["total"] = max(0, int(profile["bonus_points"]))
         return profile
 
     async def rating(self, limit: int = 10) -> list[dict[str, Any]]:
@@ -349,7 +351,7 @@ class Database:
             rows = await con.fetch(
                 """
                 select p.user_id, p.username, p.first_name, p.wins, p.kills,
-                       greatest(coalesce(sum(c.points), 0) + p.bonus_points, 0) as points,
+                       greatest(p.bonus_points, 0) as points,
                        coalesce(sum(c.points), 0) as card_points,
                        p.bonus_points,
                        count(col.card_id) as unique_cards
@@ -358,7 +360,7 @@ class Database:
                   left join cards c on c.card_id = col.card_id
                  group by p.user_id, p.username, p.first_name, p.bonus_points,
                           p.wins, p.kills
-                having count(col.card_id) > 0
+                having greatest(p.bonus_points, 0) > 0 or count(col.card_id) > 0
                  order by points desc, unique_cards desc
                  limit $1
                 """,

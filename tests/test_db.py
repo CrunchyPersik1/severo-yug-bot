@@ -195,12 +195,12 @@ def test_battle_result_transfers_points_and_kills():
             assert winner_profile["kills"] == 1
             assert winner_profile["bonus_points"] == stake
             assert winner_profile["card_points"] == 250
-            assert winner_profile["total"] == 750  # 250 карта + 500 из PvP
+            assert winner_profile["total"] == stake  # очки — единая валюта
             assert winner_profile["rank"] == 1
 
             assert loser_profile["losses"] == 1
             assert loser_profile["bonus_points"] == -stake
-            assert loser_profile["total"] == 9500  # 10000 - 500
+            assert loser_profile["total"] == 0  # минус на балансе показываем нулём
             assert loser_profile["wins"] == 0
 
             kills = await db.get_card_kills(winner)

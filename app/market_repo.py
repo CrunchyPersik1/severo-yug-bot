@@ -18,6 +18,7 @@ from .items import BY_SLOT, Item, SLOTS, SLOT_ICONS, SLOT_TITLES, TABLE_BY_SLOT,
 from .market import (
     HONEST_GAIN_PER_DAY,
     MARKET_FEE,
+    UPGRADE_PRICE,
     can_sell,
     clamp_rating,
     effective_stats,
@@ -629,11 +630,31 @@ class MarketRepo:
     # Улучшения
     # ------------------------------------------------------------------ #
 
+    async def _charge(self, con: asyncpg.Connection, user_id: int, amount: int) -> int:
+        """Списывает очки; если не хватает — транзакция откатится."""
+        row = await con.fetchrow(
+            """
+            update players set bonus_points = bonus_points - $2
+             where user_id = $1 and bonus_points >= $2
+            returning bonus_points
+            """,
+            user_id,
+            int(amount),
+        )
+        if row is None:
+            balance = await con.fetchval(
+                "select coalesce(bonus_points, 0) from players where user_id = $1", user_id
+            )
+            raise MarketError(
+                f"Не хватает очков: улучшение стоит {int(amount)}, у тебя {int(balance or 0)}."
+            )
+        return int(row["bonus_points"])
+
     async def upgrade_stack(self, user_id: int, card_id: str) -> dict[str, Any]:
-        """Одна копия уходит из стака в inventory и получает случайный слот."""
-        card = get_card(card_id)
+        """Копия уходит из стака в inventory и сразу получает все три улучшения."""
         async with self.pool.acquire() as con:
             async with con.transaction():
+                await self._charge(con, user_id, UPGRADE_PRICE)
                 row = await con.fetchrow(
                     """
                     update collection set count = count - 1
@@ -655,25 +676,29 @@ class MarketRepo:
                     user_id,
                     card_id,
                 )
+                items = {slot: self._roll_item(slot) for slot in SLOTS}
                 await con.execute(
-                    "insert into upgrades (inventory_id) values ($1)", inventory_id
-                )
-                slot = roll_slot({})
-                item = self._roll_item(slot)
-                await con.execute(
-                    f"update upgrades set {slot}_id = $2 where inventory_id = $1",
+                    """
+                    insert into upgrades (inventory_id, aura_id, background_id, effect_id)
+                    values ($1, $2, $3, $4)
+                    """,
                     int(inventory_id),
-                    item.id,
+                    items["aura"].id,
+                    items["background"].id,
+                    items["effect"].id,
+                )
+                balance = await con.fetchval(
+                    "select bonus_points from players where user_id = $1", user_id
                 )
         return {
             "inventory_id": int(inventory_id),
             "card_id": card_id,
-            "slot": slot,
-            "item": item,
-            "filled": 1,
+            "items": items,
+            "balance": int(balance),
         }
 
     async def upgrade_instance(self, user_id: int, inventory_id: int) -> dict[str, Any]:
+        """Досдает недостающие слоты (нужно для копий, улучшенных до этого правила)."""
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow(
@@ -688,43 +713,36 @@ class MarketRepo:
                 current = await con.fetchrow(
                     "select * from upgrades where inventory_id = $1", int(inventory_id)
                 )
-                # Ключи в строке БД — aura_id/background_id/effect_id,
-                # а roll_slot ждёт имена слотов: aura/background/effect.
-                filled_slots = {
-                    slot_name: (current[slot_name + "_id"] if current is not None else None)
-                    for slot_name in SLOTS
+                filled = {
+                    slot: (current[slot + "_id"] if current is not None else None)
+                    for slot in SLOTS
                 }
-                slot = roll_slot(filled_slots)
-                if slot is None:
-                    raise MarketError("У карты уже есть аура, фон и эффект — улучшать больше нечем.")
-                item = self._roll_item(slot)
+                free = [slot for slot in SLOTS if filled[slot] is None]
+                if not free:
+                    raise MarketError(
+                        "У карты уже есть аура, фон и эффект — улучшать больше нечего."
+                    )
+                await self._charge(con, user_id, UPGRADE_PRICE)
+                items = {slot: self._roll_item(slot) for slot in free}
                 if current is None:
                     await con.execute(
                         "insert into upgrades (inventory_id) values ($1)", int(inventory_id)
                     )
-                await con.execute(
-                    f"update upgrades set {slot}_id = $2 where inventory_id = $1",
-                    int(inventory_id),
-                    item.id,
-                )
-                final = await con.fetchrow(
-                    "select * from upgrades where inventory_id = $1", int(inventory_id)
-                )
-                filled_now = sum(
-                    1 for s in SLOTS if final and final.get(f"{s}_id") is not None
+                for slot, item in items.items():
+                    await con.execute(
+                        f"update upgrades set {slot}_id = $2 where inventory_id = $1",
+                        int(inventory_id),
+                        item.id,
+                    )
+                balance = await con.fetchval(
+                    "select bonus_points from players where user_id = $1", user_id
                 )
         return {
             "inventory_id": int(inventory_id),
             "card_id": row["card_id"],
-            "slot": slot,
-            "item": item,
-            "filled": filled_now,
+            "items": items,
+            "balance": int(balance),
         }
-
-    def _roll_item(self, slot: str) -> Item:
-        from .items import roll_item
-
-        return roll_item(slot)
 
     async def user_inventory(self, user_id: int, include_listed: bool = False) -> list[dict[str, Any]]:
         query = """

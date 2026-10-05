@@ -13,7 +13,7 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="roulette", description="Рулетка — раз в сутки в 20:00 по ЕКБ"),
     BotCommand(command="case", description="Открыть кейс: карта от эпической и выше"),
     BotCommand(command="my", description="Коллекция, кейсы, копии и их id"),
-    BotCommand(command="upgrade", description="Улучшить карту: /upgrade #id"),
+    BotCommand(command="upgrade", description="Улучшить карту за 750: /upgrade #id"),
     BotCommand(command="market", description="Рынок: лоты с кнопкой «Купить»"),
     BotCommand(command="sell", description="Выставить лот: /sell #id цена"),
     BotCommand(command="mylots", description="Свои лоты на рынке"),

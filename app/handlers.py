@@ -28,6 +28,7 @@ from .roulette import (
 from .items import SLOT_ICONS
 from .market import (
     RATING_MIN_TO_SELL,
+    UPGRADE_PRICE,
     can_sell,
     describe_bonus,
     effective_stats,
@@ -119,6 +120,7 @@ async def cmd_drop(message: Message, db: Database) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
+    await db.add_points(user.id, card.points)
     await db.add_drop(user.id, message.chat.id, card.card_id, today)
 
     await message.reply(render.render_drop(card, count, is_new))
@@ -199,7 +201,7 @@ async def cmd_pvp_rating(message: Message, db: Database) -> None:
 @router.message(Command("top", "leaderboard"))
 async def cmd_top(message: Message, db: Database) -> None:
     rows = await db.top_players(10)
-    lines = ["🏆 <b>Лидерборд коллекций</b>", ""]
+    lines = ["🏆 <b>Топ по очкам</b>", ""]
     if not rows:
         lines.append("Пока никто не собрал ни одной карты.")
     medals = ["🥇", "🥈", "🥉"]
@@ -558,6 +560,7 @@ async def cmd_case(message: Message, db: Database) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
+    await db.add_points(user.id, card.points)
     left = len(await db.user_cases(user.id))
     await message.answer(render.render_case_open(card, is_new, count, left))
 
@@ -572,7 +575,8 @@ async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> Non
         await message.answer(
             "Формат: <code>/upgrade #id</code>\n"
             "Например: <code>/upgrade #oleg</code> — улучшит одну копию из стака.\n"
-            "Копию можно улучшать, пока не займутся все три слота."
+            f"Стоит <b>{UPGRADE_PRICE}</b> очков. За раз выдаёт сразу ауру, фон и эффект, "
+            "все три случайные. Перебить нельзя."
         )
         return
     parsed = parse_handle(parts[0])
@@ -592,19 +596,11 @@ async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> Non
         return
 
     card = get_card(outcome["card_id"])
-    item = outcome["item"]
-    left = 3 - int(outcome.get("filled", 1))
-    lines = [
-        f"⚡ <b>{render.esc(card.name)}</b> улучшена — копия <code>#{outcome['inventory_id']}</code>",
-        f"{SLOT_ICONS[outcome['slot']]} <b>{render.esc(item.name)}</b> — {render.esc(item.summary)}",
-    ]
-    if left > 0:
-        lines.append(
-            f"Свободных слотов: {left}. Дальше: <code>/upgrade #{outcome['inventory_id']}</code>"
+    await message.answer(
+        render.render_upgrade(
+            card, outcome["items"], outcome["balance"], outcome["inventory_id"]
         )
-    else:
-        lines.append("Все три слота заняты — перебить или заменить нельзя.")
-    await message.answer("\n".join(lines))
+    )
 
 
 @router.message(Command("rating", "репутация", "rep"))

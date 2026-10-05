@@ -138,32 +138,53 @@ def test_low_rating_blocks_listing():
     asyncio.run(scenario())
 
 
-def test_upgrade_moves_copy_to_inventory_and_can_be_improved_thrice():
+def test_upgrade_costs_points_and_gives_all_three_slots_at_once():
     async def scenario():
         db, repo = await fresh()
         try:
             user = 910005
             await reset_users(db, user)
-            await prepare(db, user, "Upgrader", ["oleg", "oleg"])
+            await prepare(db, user, "Upgrader", ["oleg", "oleg"], balance=2000)
 
-            first = await repo.upgrade_stack(user, "oleg")
-            assert first["filled"] == 1
+            outcome = await repo.upgrade_stack(user, "oleg")
+            assert set(outcome["items"]) == {"aura", "background", "effect"}
+            assert outcome["balance"] == 2000 - 750
             assert (await db.get_collection(user))["oleg"] == 1
-
-            second = await repo.upgrade_instance(user, first["inventory_id"])
-            assert second["filled"] == 2
-            third = await repo.upgrade_instance(user, first["inventory_id"])
-            assert third["filled"] == 3
-            with pytest.raises(MarketError):
-                await repo.upgrade_instance(user, first["inventory_id"])
 
             inventory = await repo.user_inventory(user, include_listed=True)
             assert len(inventory) == 1
             entry = inventory[0]
+            assert entry["aura_id"] and entry["background_id"] and entry["effect_id"]
+
             card = get_card("oleg")
             stats = effective_stats(card, entry["bonus"])
             assert stats["atk"] >= 1 and stats["hp"] >= 1
             assert 0 <= stats["def"] <= 60
+
+            # повторно улучшить ту же копию нельзя, и очки не списываются
+            with pytest.raises(MarketError):
+                await repo.upgrade_instance(user, outcome["inventory_id"])
+            assert await repo.balance(user) == 1250
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_upgrade_needs_money_and_keeps_the_card():
+    async def scenario():
+        db, repo = await fresh()
+        try:
+            user = 910014
+            await reset_users(db, user)
+            await prepare(db, user, "Poor", ["oleg"], balance=100)
+
+            with pytest.raises(MarketError):
+                await repo.upgrade_stack(user, "oleg")
+
+            assert await repo.balance(user) == 100, "неудачная попытка не списывает очки"
+            assert (await db.get_collection(user))["oleg"] == 1, "карта остаётся в коллекции"
+            assert await repo.user_inventory(user, include_listed=True) == []
         finally:
             await db.close()
 
