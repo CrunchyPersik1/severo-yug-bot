@@ -90,6 +90,12 @@ class Card:
     hp: int
     atk: int
     ability: Ability
+    # Фамилия нужна только там, где имена совпадают (два Тамерлана и т.д.)
+    surname: str | None = None
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.name} {self.surname}" if self.surname else self.name
 
     @property
     def budget(self) -> int:
@@ -114,6 +120,7 @@ def _c(
     atk: int,
     ability: str,
     cooldown: int,
+    surname: str | None = None,
     **effects: Any,
 ) -> Card:
     return Card(
@@ -124,6 +131,7 @@ def _c(
         hp=hp,
         atk=atk,
         ability=Ability(name=ability, cooldown=cooldown, effects=effects),
+        surname=surname,
     )
 
 
@@ -134,8 +142,8 @@ CARDS: tuple[Card, ...] = (
     _c("konstantin", "Константин", "legendary", 9000, 110, 10, "Императорский суд", 2, damage=12, heal=12),
     # --- Мифический (8) ---
     _c("rafael", "Рафаэль", "mythic", 5000, 105, 9, "Исцеляющий свет", 3, heal=20, cleanse=True),
-    _c("tamerlan_mif", "Тамерлан", "mythic", 7500, 110, 9, "Железные стены", 2, shield=25),
-    _c("daniyar_mif", "Данияр", "mythic", 6500, 100, 10, "Контрудар", 2, shield=10, damage=10),
+    _c("tamerlan_mif", "Тамерлан", "mythic", 7500, 110, 9, "Железные стены", 2, surname="Гиндуллин", shield=25),
+    _c("daniyar_mif", "Данияр", "mythic", 6500, 100, 10, "Контрудар", 2, surname="Жайлибаев", shield=10, damage=10),
     _c("amaliya", "Амалия", "mythic", 5000, 95, 9, "Чародейский щит", 3, shield=20, cleanse=True),
     _c("arina", "Арина", "mythic", 5000, 95, 10, "Прозрение", 3, damage=12, dodge=1),
     _c("glafira", "Глафира", "mythic", 7500, 100, 9, "Благословение", 3, heal=25),
@@ -150,13 +158,13 @@ CARDS: tuple[Card, ...] = (
     _c("azat", "Азат", "epic", 3000, 100, 11, "Ярость", 2, damage=15),
     _c("ravil", "Равиль", "epic", 4000, 100, 10, "Кровопийца", 2, damage=10, heal=10),
     _c("masha", "Маша", "epic", 3000, 105, 12, "Медвежья сила", 3, damage=18),
-    _c("amir_1", "Амир", "epic", 5000, 95, 10, "Песчаная буря", 2, damage=8, poison=6, poison_turns=2),
-    _c("amir_2", "Амир", "epic", 5000, 95, 11, "Клинок ветра", 2, damage=8, hits=2),
+    _c("amir_1", "Амир", "epic", 5000, 95, 10, "Песчаная буря", 2, surname="Насибуллин", damage=8, poison=6, poison_turns=2),
+    _c("amir_2", "Амир", "epic", 5000, 95, 11, "Клинок ветра", 2, surname="Нугуманов", damage=8, hits=2),
     _c("yana", "Яна", "epic", 5000, 90, 10, "Очарование", 3, damage=6, stun=1),
-    _c("daniyar_epic", "Данияр", "epic", 3500, 105, 9, "Стойкость", 3, shield=15, heal=10),
+    _c("daniyar_epic", "Данияр", "epic", 3500, 105, 9, "Стойкость", 3, surname="Садыков", shield=15, heal=10),
     _c("milana", "Милана", "epic", 2500, 88, 9, "Грация", 3, dodge=1, counter=10, counter_turns=2),
     _c("evelina", "Эвелина", "epic", 3500, 92, 10, "Вихрь", 2, damage=6, poison=4, poison_turns=2),
-    _c("tamerlan_epic", "Тамерлан", "epic", 4000, 105, 11, "Натиск", 2, damage=14, shield=6),
+    _c("tamerlan_epic", "Тамерлан", "epic", 4000, 105, 11, "Натиск", 2, surname="Хазиатметов", damage=14, shield=6),
     # --- Сверхредкий (4) ---
     _c("elizaveta", "Елизавета", "superrare", 2000, 95, 11, "Имперский указ", 3, stun=1),
     _c("evita", "Эвита", "superrare", 1000, 88, 9, "Танец", 3, damage=8, dodge=1),
@@ -187,7 +195,7 @@ def cards_sorted_for_user(card_ids: list[str] | set[str]) -> list[Card]:
     """Карты пользователя: от самой редкой к обычной, внутри — по очкам."""
     return sorted(
         (CARDS_BY_ID[cid] for cid in card_ids if cid in CARDS_BY_ID),
-        key=lambda c: (-SORTED_RARITY_INDEX[c.rarity], -c.points, c.name),
+        key=lambda c: (-SORTED_RARITY_INDEX[c.rarity], -c.points, c.display_name),
     )
 
 def card_rows() -> list[tuple[object, ...]]:
@@ -205,6 +213,7 @@ def card_rows() -> list[tuple[object, ...]]:
             card.ability.name,
             card.ability.cooldown,
             json.dumps(card.ability.effects, ensure_ascii=False),
+            card.surname,
         )
         for card in CARDS
     ]

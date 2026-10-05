@@ -200,3 +200,5 @@ update players p
    and p.points_backfilled is false;
 
 update players set points_backfilled = true where points_backfilled is false;
+-- Фамилии для карт с повторяющимися именами (два Тамерлана, два Амира, два Данияра)
+alter table cards add column if not exists surname text;

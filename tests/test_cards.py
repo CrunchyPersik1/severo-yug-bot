@@ -1,6 +1,13 @@
 from collections import Counter
 
-from app.cards import CARDS, CARDS_BY_ID, CARDS_BY_RARITY, RARITIES, cards_sorted_for_user
+from app.cards import (
+    CARDS,
+    CARDS_BY_ID,
+    CARDS_BY_RARITY,
+    RARITIES,
+    cards_sorted_for_user,
+    get_card,
+)
 
 EXPECTED = {
     "rare": 4,
@@ -53,3 +60,28 @@ def test_sorting_prefers_rarity():
     order = [c.card_id for c in cards_sorted_for_user(["oleg", "valeriya", "amir_1", "daniel"])]
     assert order[0] == "valeriya"
     assert order[-1] == "oleg"
+
+def test_duplicate_names_are_split_by_surname():
+    from collections import Counter
+
+    display = Counter(card.display_name for card in CARDS)
+    assert all(count == 1 for count in display.values()), "отображаемые имена не должны повторяться"
+    assert len(display) == 32
+
+
+def test_only_duplicate_names_have_surnames():
+    names = Counter(card.name for card in CARDS)
+    for card in CARDS:
+        if names[card.name] > 1:
+            assert card.surname, f"{card.card_id} должен иметь фамилию"
+        else:
+            assert card.surname is None, f"{card.card_id} не должен иметь фамилию"
+
+
+def test_expected_surnames():
+    assert get_card("tamerlan_mif").display_name == "Тамерлан Гиндуллин"
+    assert get_card("tamerlan_epic").display_name == "Тамерлан Хазиатметов"
+    assert get_card("amir_1").display_name == "Амир Насибуллин"
+    assert get_card("amir_2").display_name == "Амир Нугуманов"
+    assert get_card("daniyar_mif").display_name == "Данияр Жайлибаев"
+    assert get_card("daniyar_epic").display_name == "Данияр Садыков"

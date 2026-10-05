@@ -80,7 +80,7 @@ def status_badges(side: dict[str, Any]) -> str:
 
 
 def card_title(card: Card) -> str:
-    return f"{card.rarity_emoji} <b>{esc(card.name)}</b> <i>({card.rarity_title})</i>"
+    return f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> <i>({card.rarity_title})</i>"
 
 
 def render_drop(card: Card, count: int, is_new: bool) -> str:
@@ -128,7 +128,7 @@ def render_collection(
         killed = kills.get(card.card_id, 0)
         kill_suffix = f" · 🔪{killed}" if killed else ""
         lines.append(
-            f"{card.rarity_emoji} <code>#{card.card_id}</code> {esc(card.name)} · "
+            f"{card.rarity_emoji} <code>#{card.card_id}</code> {esc(card.display_name)} · "
             f"⚔{card.atk}/❤{card.hp}{suffix}{kill_suffix}"
         )
     if cases:
@@ -145,7 +145,7 @@ def render_collection(
             st = unit["stats"]
             tail = f"/🛡{st['def']}" if st["def"] else ""
             lines.append(
-                f"{card.rarity_emoji} <code>#{unit['inventory_id']}</code> {esc(card.name)} · "
+                f"{card.rarity_emoji} <code>#{unit['inventory_id']}</code> {esc(card.display_name)} · "
                 f"⚔{st['atk']}/❤{st['hp']}{tail}"
             )
             if unit.get("items"):
@@ -166,7 +166,7 @@ def render_unit_line(unit: dict[str, Any]) -> str:
     mark = "⚡" if unit.get("bonus") else ""
     count = f" ×{unit['count']}" if unit.get("count", 1) > 1 else ""
     return (
-        f"{card.rarity_emoji} <code>{esc(unit['handle'])}</code> {mark}{esc(card.name)} · "
+        f"{card.rarity_emoji} <code>{esc(unit['handle'])}</code> {mark}{esc(card.display_name)} · "
         f"⚔{st['atk']}/❤{st['hp']}{tail}{count}"
     )
 
@@ -191,7 +191,7 @@ def render_market(
             stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
             tail = f"/🛡{stats['def']}" if stats.get("def") else ""
             lines.append(
-                f"<code>#{lot['id']}</code> {card.rarity_emoji} {esc(card.name)} · "
+                f"<code>#{lot['id']}</code> {card.rarity_emoji} {esc(card.display_name)} · "
                 f"⚔{stats['atk']}/❤{stats['hp']}{tail}{flags}"
             )
         lines.append(
@@ -260,7 +260,7 @@ def render_lot(lot: dict[str, Any], viewer_id: int, balance: int) -> tuple[str, 
     reference = int(lot.get("market_price") or 0)
 
     lines = [
-        f"🃏 <b>{esc(card.name)}</b> {card.rarity_emoji} <i>({card.rarity_title})</i>",
+        f"🃏 <b>{esc(card.display_name)}</b> {card.rarity_emoji} <i>({card.rarity_title})</i>",
         f"Лот <code>#{lot['id']}</code>",
         "",
         f"⚔️ Атака: <b>{stats['atk']}</b> (база {card.atk})",
@@ -371,7 +371,7 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
         marker = "👉 " if (not state["over"] and state["turn"] == key) else "   "
         badges = status_badges(side)
         return (
-            f"{marker}<b>{esc(side.get('name') or side['user_id'])}</b> — {esc(card.name)} "
+            f"{marker}<b>{esc(side.get('name') or side['user_id'])}</b> — {esc(card.display_name)} "
             f"⚔{side.get('atk', card.atk)}"
             + (f" 🛡{side['def']}%" if side.get("def") else "")
             + "\n"
@@ -395,7 +395,7 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
                 loser_card = get_card(reward["loser_card"])
                 lines.append(
                     f"💰 <b>{reward['amount']}</b> очков перешли победителю "
-                    f"(5% от карты «{esc(loser_card.name)}»)"
+                    f"(5% от карты «{esc(loser_card.display_name)}»)"
                 )
             lines.append("🔪 +1 убийство карты победителя")
     else:
@@ -464,7 +464,7 @@ def render_pick(
         card = unit["card"]
         stats = unit["stats"]
         mark = "⚡" if unit.get("bonus") else ""
-        label = f"{mark}{card.name} ⚔{stats['atk']}/❤{stats['hp']}"
+        label = f"{mark}{card.display_name} ⚔{stats['atk']}/❤{stats['hp']}"
         if stats.get("def"):
             label += f"/🛡{stats['def']}"
         if unit.get("count", 1) > 1:
@@ -518,7 +518,7 @@ def render_upgrade(
     card: Card, items: dict[str, Any], balance: int, inventory_id: int
 ) -> str:
     lines = [
-        f"⚡ <b>{esc(card.name)}</b> улучшена — копия <code>#{inventory_id}</code>",
+        f"⚡ <b>{esc(card.display_name)}</b> улучшена — копия <code>#{inventory_id}</code>",
         f"💸 Списано <b>{UPGRADE_PRICE}</b> очк. · осталось <b>{balance}</b>",
         "",
     ]

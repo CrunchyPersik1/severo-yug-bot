@@ -108,8 +108,8 @@ class Database:
             await con.executemany(
                 """
                 insert into cards (card_id, name, rarity, points, hp, atk,
-                                   ability_name, ability_cd, ability)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+                                   ability_name, ability_cd, ability, surname)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
                 on conflict (card_id) do update set
                     name = excluded.name,
                     rarity = excluded.rarity,
@@ -118,7 +118,8 @@ class Database:
                     atk = excluded.atk,
                     ability_name = excluded.ability_name,
                     ability_cd = excluded.ability_cd,
-                    ability = excluded.ability
+                    ability = excluded.ability,
+                    surname = excluded.surname
                 """,
                 cards,
             )

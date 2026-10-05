@@ -357,7 +357,7 @@ async def cb_buy(callback: CallbackQuery, market: MarketRepo) -> None:
         await callback.answer(str(error), show_alert=True)
         return
     card = get_card(result["card_id"])
-    await callback.answer(f"Куплено: {card.name}", show_alert=True)
+    await callback.answer(f"Куплено: {card.display_name}", show_alert=True)
     text, keyboard = await _market_view(market, callback.from_user.id, 0)
     await _safe_edit(callback, text, keyboard)
 
@@ -415,7 +415,7 @@ async def cmd_sell(message: Message, db: Database, market: MarketRepo) -> None:
     card = get_card(lot["card_id"])
     lines = [
         f"✅ Лот <code>#{lot['id']}</code> выставлен",
-        f"{card.rarity_emoji} <b>{render.esc(card.name)}</b> за <b>{price}</b> очк.",
+        f"{card.rarity_emoji} <b>{render.esc(card.display_name)}</b> за <b>{price}</b> очк.",
         f"Рыночная цена ~{lot['reference']} — это {lot['ratio'] * 100:.0f}%",
     ]
     if lot["penalty"]:
@@ -442,7 +442,7 @@ async def cmd_mylots(message: Message, market: MarketRepo) -> None:
     for lot in lots:
         card = get_card(lot["card_id"])
         lines.append(
-            f"<code>#{lot['id']}</code> {card.rarity_emoji} {render.esc(card.name)} — "
+            f"<code>#{lot['id']}</code> {card.rarity_emoji} {render.esc(card.display_name)} — "
             f"<b>{lot['price']}</b> очк. (рынок {lot['market_price']})"
             + (" 🚩" if lot["suspect"] else "")
         )
