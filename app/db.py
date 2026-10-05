@@ -135,8 +135,10 @@ class Database:
                 insert into players (user_id, username, first_name)
                 values ($1, $2, $3)
                 on conflict (user_id) do update set
-                    username = excluded.username,
-                    first_name = excluded.first_name,
+                    -- не затираем сохранённое пустыми значениями: профиль можно
+                    -- открыть по @username, где имени под рукой нет
+                    username = coalesce(excluded.username, players.username),
+                    first_name = coalesce(excluded.first_name, players.first_name),
                     updated_at = now()
                 """,
                 user_id,

@@ -345,6 +345,93 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
     )
 
 
+def profile_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🃏 Мои карты", callback_data=f"pf:{user_id}:cards"
+                )
+            ]
+        ]
+    )
+
+
+def collection_keyboard(user_id: int, units: list[dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Кнопка на каждую карту из профиля."""
+    rows: list[list[InlineKeyboardButton]] = []
+    pair: list[InlineKeyboardButton] = []
+    for unit in units:
+        card = unit["card"]
+        mark = "⚡" if unit.get("bonus") else ""
+        label = f"{mark}{card.name} ⚔{unit['stats']['atk']}/❤{unit['stats']['hp']}"
+        if unit.get("count", 1) > 1:
+            label += f" ×{unit['count']}"
+        pair.append(
+            InlineKeyboardButton(
+                text=label, callback_data=f"pf:{user_id}:card:{unit['handle']}"
+            )
+        )
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    rows.append(
+        [InlineKeyboardButton(text="⬅️ Назад в профиль", callback_data=f"pf:{user_id}:back")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_card_detail(
+    unit: dict[str, Any], user_id: int, is_owner: bool = True
+) -> tuple[str, InlineKeyboardMarkup]:
+    card = unit["card"]
+    stats = unit.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
+    bonus = unit.get("bonus") or {}
+    title = "⚡ улучшенная копия" if bonus else "обычная копия"
+    lines = [
+        card_title(card),
+        f"<code>{esc(unit['handle'])}</code> — {title}",
+        "",
+        f"⚔️ Атака: <b>{stats['atk']}</b> (база {card.atk})",
+        f"❤️ HP: <b>{stats['hp']}</b> (база {card.hp})",
+        f"🛡 Защита: <b>{stats['def']}%</b>",
+        f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}",
+        f"💰 Стоимость карты: {card.points}",
+        f"🔪 Убийств этой картой: {unit.get('kills', 0)}",
+    ]
+    if unit.get("count", 1) > 1:
+        lines.append(f"📚 В стаке: {unit['count']} шт.")
+    if unit.get("items"):
+        lines.append("")
+        lines.append("🔧 <b>Улучшения</b>")
+        lines.extend(f"   {item}" for item in unit["items"])
+    elif bonus:
+        lines.append("")
+        lines.append(f"🔧 Итого: {esc(describe_bonus(bonus))}")
+    if is_owner:
+        lines.append("")
+        lines.append(f"Продать: <code>/sell {unit['handle']} цена</code>")
+        if not bonus:
+            lines.append(f"Улучшить: <code>/upgrade {unit['handle']}</code>")
+    else:
+        lines.append("")
+        lines.append("<i>Это чужая карта — только просмотр.</i>")
+    return (
+        "\n".join(lines),
+        InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="⬅️ К моим картам", callback_data=f"pf:{user_id}:cards"
+                    )
+                ]
+            ]
+        ),
+    )
+
+
 def render_rating(rows: list[dict[str, Any]]) -> str:
     lines = ["🏆 <b>Рейтинг PvP</b> — по выигранным боям", ""]
     if not rows:
@@ -498,7 +585,7 @@ def render_help(bot_name: str) -> str:
         "• «<b>пвп</b>» или /pvp <i>ответом</i> на сообщение соперника — вызвать на бой. "
         "Каждый выбирает карту из своей коллекции, бой идёт в одном сообщении.\n"
         "• /my — коллекция, /top — счёт по очкам, /pvprating — топ боёв, "
-        "/profile — профиль.\n\n"
+        "/profile [@игрок] — профиль и карты: свой или чужой.\n\n"
         "🏪 <b>Рынок</b>\n"
         "• /market — лоты, /sell #id цена — выставить, /mylots — свои лоты, "
         "/changeprice id цена — переставить цену\n"

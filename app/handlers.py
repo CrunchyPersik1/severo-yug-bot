@@ -154,18 +154,17 @@ def decorate_lot(lot: dict[str, Any]) -> dict[str, Any]:
     return lot
 
 
-@router.message(Command("my", "collection", "cards"))
-async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> None:
-    user = message.from_user
-    if user is None:
-        return
-    await db.ensure_player(user.id, user.username, user.first_name)
-    counts = await db.get_collection(user.id)
-    kills = await db.get_card_kills(user.id)
+async def collection_data(
+    db: Database, market: MarketRepo, user_id: int
+) -> tuple[str, list[dict[str, Any]]]:
+    """Текст коллекции и список карт для кнопок."""
+    counts = await db.get_collection(user_id)
+    kills = await db.get_card_kills(user_id)
+    stats = await db.collection_stats(user_id)
     cards = cards_sorted_for_user(list(counts))
-    stats = await db.collection_stats(user.id)
+
     instances = []
-    for row in await market.user_inventory(user.id):
+    for row in await market.user_inventory(user_id):
         card = get_card(row["card_id"])
         instances.append(
             {
@@ -173,25 +172,138 @@ async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> 
                 "card": card,
                 "stats": effective_stats(card, row["bonus"]),
                 "items": upgrade_items(row),
+                "bonus": row["bonus"],
             }
         )
-    cases = await db.user_cases(user.id)
-    await message.answer(
-        render.render_collection(cards, counts, kills, stats, len(CARDS), instances, cases)
+    cases = await db.user_cases(user_id)
+    text = render.render_collection(
+        cards, counts, kills, stats, len(CARDS), instances, cases
     )
 
+    units: list[dict[str, Any]] = [
+        {
+            "handle": f"#{card.card_id}",
+            "card": card,
+            "count": counts[card.card_id],
+            "bonus": {},
+            "stats": effective_stats(card, {}),
+            "inventory_id": None,
+            "kills": kills.get(card.card_id, 0),
+        }
+        for card in cards
+    ]
+    units.extend(
+        {
+            "handle": f"#{inst['inventory_id']}",
+            "card": inst["card"],
+            "count": 1,
+            "bonus": inst["bonus"],
+            "stats": inst["stats"],
+            "inventory_id": inst["inventory_id"],
+            "items": inst["items"],
+            "kills": kills.get(inst["card"].card_id, 0),
+        }
+        for inst in instances
+    )
+    return text, units
 
-@router.message(Command("profile", "me", "профиль"))
-async def cmd_profile(message: Message, db: Database) -> None:
+
+@router.message(Command("my", "collection", "cards"))
+async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> None:
     user = message.from_user
     if user is None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
-    profile = await db.player_profile(user.id)
+    text, units = await collection_data(db, market, user.id)
+    await message.answer(text, reply_markup=render.collection_keyboard(user.id, units))
+
+
+async def resolve_profile_target(
+    message: Message, market: MarketRepo
+) -> tuple[int | None, str | None, str | None]:
+    """Кого смотреть: (id, имя, ошибка). id=None — свой профиль."""
+    reply = message.reply_to_message
+    if reply is not None and reply.from_user is not None and not reply.from_user.is_bot:
+        return reply.from_user.id, reply.from_user.first_name, None
+    for part in (message.text or "").split()[1:]:
+        if part.startswith("@"):
+            found = await market.find_by_username(part)
+            if found is None:
+                return None, None, (
+                    f"Игрок {render.esc(part)} не найден. Он должен хотя бы раз "
+                    "написать боту — тогда я его узнаю."
+                )
+            return int(found["user_id"]), found["first_name"], None
+    for entity in message.entities or []:
+        if entity.type == "text_mention" and entity.user is not None:
+            return entity.user.id, entity.user.first_name, None
+    return None, None, None
+
+
+@router.message(Command("profile", "me", "профиль"))
+async def cmd_profile(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    target_id, target_name, error = await resolve_profile_target(message, market)
+    if error:
+        await message.answer(f"⚠️ {error}")
+        return
+    if target_id is None:
+        target_id, target_name = user.id, user.first_name
+    await db.ensure_player(target_id, None, target_name)
+    profile = await db.player_profile(target_id)
     if profile is None:
         await message.answer("Профиль пока пуст. Напиши «Северо-Юг».")
         return
-    await message.answer(render.render_profile(profile, len(CARDS)))
+    await message.answer(
+        render.render_profile(profile, len(CARDS)),
+        reply_markup=render.profile_keyboard(target_id),
+    )
+
+
+@router.callback_query(F.data.startswith("pf:"))
+async def cb_profile(
+    callback: CallbackQuery, db: Database, market: MarketRepo
+) -> None:
+    assert callback.data is not None
+    parts = callback.data.split(":", 3)
+    target_id = int(parts[1])
+    action = parts[2] if len(parts) > 2 else "back"
+    handle = parts[3] if len(parts) > 3 else None
+    is_owner = callback.from_user.id == target_id
+
+    if action == "back":
+        profile = await db.player_profile(target_id)
+        if profile is None:
+            await callback.answer("Профиль не найден", show_alert=True)
+            return
+        await _safe_edit(
+            callback,
+            render.render_profile(profile, len(CARDS)),
+            render.profile_keyboard(target_id),
+        )
+        await callback.answer()
+        return
+
+    if action == "cards":
+        text, units = await collection_data(db, market, target_id)
+        await _safe_edit(callback, text, render.collection_keyboard(target_id, units))
+        await callback.answer()
+        return
+
+    if action == "card" and handle:
+        _, units = await collection_data(db, market, target_id)
+        unit = next((item for item in units if item["handle"] == handle), None)
+        if unit is None:
+            await callback.answer("Карта не найдена", show_alert=True)
+            return
+        text, keyboard = render.render_card_detail(unit, target_id, is_owner)
+        await _safe_edit(callback, text, keyboard)
+        await callback.answer()
+        return
+
+    await callback.answer()
 
 
 @router.message(Command("pvprating", "пвптоп", "pvp_top"))

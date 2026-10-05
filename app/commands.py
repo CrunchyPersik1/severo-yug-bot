@@ -23,6 +23,6 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="pvprating", description="Топ PvP: победы и убийства карт"),
     BotCommand(command="rating", description="Репутация торговца: /rating @игрок"),
     BotCommand(command="top", description="Топ по очкам коллекции"),
-    BotCommand(command="profile", description="Профиль: бои, очки, баланс"),
+    BotCommand(command="profile", description="Профиль и карты: свой или /profile @игрок"),
     BotCommand(command="help", description="Справка"),
 ]

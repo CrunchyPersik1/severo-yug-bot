@@ -61,6 +61,7 @@ class FakeDB:
         self.collection: dict[int, dict[str, int]] = {}
         self.claimed: dict[int, bool] = {}
         self.balance: dict[int, int] = {}
+        self.names: dict[int, str] = {}
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -92,6 +93,24 @@ class FakeDB:
     async def add_drop(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    async def player_profile(self, user_id: int):
+        return {
+            "user_id": user_id,
+            "first_name": self.names.get(user_id, f"Игрок{user_id}"),
+            "username": None,
+            "wins": 1,
+            "losses": 0,
+            "draws": 0,
+            "kills": 2,
+            "card_kills": 2,
+            "bonus_points": 100,
+            "card_points": 250,
+            "total": 100,
+            "unique_cards": 1,
+            "total_cards": 1,
+            "rank": 1,
+        }
+
     async def collection_stats(self, user_id: int) -> dict[str, int]:
         cards = self.collection.get(user_id, {})
         return {
@@ -115,6 +134,8 @@ class FakeMarket:
         return []
 
     async def find_by_username(self, username: str):
+        if username.lstrip("@").lower() == "friend":
+            return {"user_id": 333, "first_name": "Друг", "username": "friend"}
         return None
 
     async def owned_unit(self, user_id: int, handle):
@@ -312,5 +333,88 @@ def test_gift_actually_sends_the_card():
         body = [p for n, p in session.calls if n == "SendMessage"][0]["text"]
         assert "Подарок отправлен" in body
 
+
+    asyncio.run(scenario())
+
+def build_callback(data: str, user_id: int = 111) -> dict:
+    return {
+        "update_id": 9,
+        "callback_query": {
+            "id": "cb9",
+            "from": {"id": user_id, "is_bot": False, "first_name": "Тест"},
+            "chat_instance": "ci",
+            "data": data,
+            "message": {
+                "message_id": 77,
+                "date": 1700000000,
+                "chat": {"id": user_id, "type": "private"},
+                "from": {"id": 555, "is_bot": True, "first_name": "bot"},
+                "text": "профиль",
+            },
+        },
+    }
+
+
+async def feed_callback(data: str, db: FakeDB, market: FakeMarket, user_id: int = 111):
+    session = FakeSession()
+    bot = Bot(token="123456:TEST", session=session)
+    update = Update.model_validate(build_callback(data, user_id), context={"bot": bot})
+    await dispatcher().feed_update(bot, update, db=db, service=FakeService(), market=market)
+    await bot.session.close()
+    return session
+
+
+def test_profile_of_another_player_is_shown():
+    async def scenario():
+        db = FakeDB()
+        db.names[333] = "Друг"
+        session = await feed("/profile @friend", db, FakeService())
+        body = sent_texts(session)[0]
+        assert "Друг" in body, "должен показаться чужой профиль"
+        markup = str([p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup"))
+        assert "pf:333" in markup, "кнопки профиля должны вести на чужой аккаунт"
+
+    asyncio.run(scenario())
+
+
+def test_unknown_username_gives_a_hint():
+    async def scenario():
+        session = await feed("/profile @никого", FakeDB(), FakeService())
+        assert "не найден" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_other_players_cards_and_stats_are_viewable():
+    async def scenario():
+        db = FakeDB()
+        db.collection[333] = {"oleg": 1}
+        market = FakeMarket()
+
+        # список карт чужого профиля
+        session = await feed_callback("pf:333:cards", db, market)
+        edits = [p for n, p in session.calls if n == "EditMessageText"]
+        assert edits, "сообщение должно перерисоваться"
+        assert "pf:333:card:#oleg" in str(edits[0]), "кнопки должны вести на карты игрока 333"
+
+        # статы конкретной чужой карты
+        session = await feed_callback("pf:333:card:#oleg", db, market)
+        edits = [p for n, p in session.calls if n == "EditMessageText"]
+        body = edits[0]["text"]
+        assert "Олег" in body and "Атака" in body
+        assert "только просмотр" in body, "чужие карты нельзя продавать или улучшать"
+        assert "/sell" not in body
+
+    asyncio.run(scenario())
+
+
+def test_own_card_detail_offers_actions():
+    async def scenario():
+        db = FakeDB()
+        db.collection[111] = {"oleg": 1}
+        session = await feed_callback("pf:111:card:#oleg", db, FakeMarket())
+        edits = [p for n, p in session.calls if n == "EditMessageText"]
+        body = edits[0]["text"]
+        assert "/sell" in body and "/upgrade" in body
 
     asyncio.run(scenario())
