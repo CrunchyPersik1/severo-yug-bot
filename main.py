@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request, Response
 
 from app.battle_service import BattleService
 from app.cards import CARDS, card_rows
+from app.commands import COMMANDS
 from app.config import settings
 from app.db import Database
 from app.handlers import router
@@ -28,6 +29,23 @@ logging.basicConfig(
 log = logging.getLogger("severo-yug")
 
 runtime: dict[str, Any] = {}
+
+
+async def setup_commands(bot: Bot) -> None:
+    """Меню команд при вводе «/» — и в личке, и в группах."""
+    from aiogram.types import (
+        BotCommandScopeAllGroupChats,
+        BotCommandScopeAllPrivateChats,
+        BotCommandScopeDefault,
+    )
+
+    for scope in (
+        BotCommandScopeDefault(),
+        BotCommandScopeAllPrivateChats(),
+        BotCommandScopeAllGroupChats(),
+    ):
+        await bot.set_my_commands(COMMANDS, scope=scope)
+    log.info("Меню команд обновлено: %d шт.", len(COMMANDS))
 
 
 async def _ticker(service: BattleService) -> None:
@@ -61,6 +79,8 @@ async def lifespan(app: FastAPI):
 
     me = await bot.get_me()
     log.info("Бот: @%s (%s)", me.username, me.id)
+
+    await setup_commands(bot)
 
     url = settings.webhook_url()
     if url:

@@ -89,6 +89,7 @@ async def cmd_help(message: Message, bot: Bot) -> None:
     await message.answer(render.render_help(await _bot_username(bot)))
 
 
+@router.message(Command("drop", "daily", "карта"))
 @router.message(NormalizedText("северо-юг", "север юг", "северо юг"))
 async def cmd_drop(message: Message, db: Database) -> None:
     user = message.from_user
@@ -201,6 +202,7 @@ async def cmd_top(message: Message, db: Database) -> None:
     await message.answer("\n".join(lines))
 
 
+@router.message(Command("pvp", "бой"))
 @router.message(NormalizedText("пвп", "pvp"))
 async def cmd_pvp(message: Message, db: Database, service: BattleService) -> None:
     user = message.from_user
