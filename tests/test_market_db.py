@@ -216,3 +216,76 @@ def test_buying_own_lot_and_insufficient_funds_are_blocked():
             await db.close()
 
     asyncio.run(scenario())
+
+def test_case_can_be_sold_and_bought_on_market():
+    async def scenario():
+        db, repo = await fresh()
+        try:
+            seller, buyer = 910010, 910011
+            await reset_users(db, seller, buyer)
+            await prepare(db, seller, "CaseSeller", [], balance=0)
+            await prepare(db, buyer, "CaseBuyer", [], balance=20000)
+
+            case_id = await db.add_case(seller, "roulette")
+            assert len(await db.user_cases(seller)) == 1
+
+            unit = await repo.owned_unit(seller, ("case", case_id))
+            lot = await repo.create_lot(seller, unit, 6000)
+            assert lot["reference"] == 5000, "рыночная цена кейса фиксирована"
+            assert await db.user_cases(seller) == [], "кейс уходит в эскроу"
+
+            result = await repo.buy_lot(lot["id"], buyer)
+            assert result["kind"] == "case"
+            assert result["fee"] == 300 and result["income"] == 5700
+            assert await repo.balance(buyer) == 14000
+            assert await repo.balance(seller) == 5700
+
+            cases = await db.user_cases(buyer)
+            assert len(cases) == 1 and cases[0]["id"] == case_id
+            assert await db.open_case(buyer, case_id) is True
+            assert (await db.user_cases(buyer, include_listed=True))[0]["opened"] is True
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_case_lot_returns_the_case():
+    async def scenario():
+        db, repo = await fresh()
+        try:
+            seller = 910012
+            await reset_users(db, seller)
+            await prepare(db, seller, "CaseCancel", [], balance=0)
+            case_id = await db.add_case(seller, "roulette")
+            unit = await repo.owned_unit(seller, ("case", case_id))
+            lot = await repo.create_lot(seller, unit, 5000)
+            assert await db.user_cases(seller) == []
+            await repo.cancel_lot(lot["id"], seller)
+            back = await db.user_cases(seller)
+            assert len(back) == 1 and back[0]["id"] == case_id
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_roulette_limit_is_once_a_day():
+    async def scenario():
+        db, repo = await fresh()
+        try:
+            user = 910013
+            await reset_users(db, user)
+            await prepare(db, user, "Spinner", [])
+            from datetime import timedelta
+
+            from app.roulette import roulette_day_key
+
+            today = roulette_day_key()
+            assert await db.claim_roulette(user, today) is True
+            assert await db.claim_roulette(user, today) is False
+            assert await db.claim_roulette(user, today + timedelta(days=1)) is True
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())

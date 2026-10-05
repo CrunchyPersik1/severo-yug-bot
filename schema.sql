@@ -157,3 +157,29 @@ create table if not exists gifts (
 alter table players add column if not exists rating       numeric(4,2) not null default 5.0;
 alter table players add column if not exists rating_day   date;
 alter table players add column if not exists rating_today numeric(4,2) not null default 0;
+-- ===================================================================== --
+-- Рулетка и кейсы
+-- ===================================================================== --
+
+-- Отдельный сброс рулетки: 20:00 по ЕКБ = 15:00 UTC (у «Северо-Юг» свой, в 07:00 UTC).
+alter table players add column if not exists roulette_day date;
+
+-- Кейс — самостоятельный предмет инвентаря, не карта.
+create table if not exists cases (
+    id         bigserial primary key,
+    user_id    bigint not null references players(user_id) on delete cascade,
+    opened     boolean not null default false,
+    listed     boolean not null default false,
+    source     text not null default 'roulette',
+    created_at timestamptz not null default now()
+);
+create index if not exists cases_user_idx on cases (user_id, opened, listed);
+
+-- Лот на рынке теперь может быть картой, улучшенной копией или кейсом.
+alter table market  alter column card_id drop not null;
+alter table market  add column if not exists kind    text   not null default 'card';
+alter table market  add column if not exists case_id bigint references cases(id) on delete cascade;
+alter table history alter column card_id drop not null;
+alter table history add column if not exists kind text not null default 'card';
+alter table gifts add column if not exists kind text not null default 'card';
+alter table gifts alter column card_id drop not null;

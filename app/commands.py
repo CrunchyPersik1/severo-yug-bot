@@ -10,7 +10,9 @@ from aiogram.types import BotCommand
 COMMANDS: list[BotCommand] = [
     BotCommand(command="start", description="Справка и правила игры"),
     BotCommand(command="drop", description="Выбить карту «Северо-Юг» (раз в сутки)"),
-    BotCommand(command="my", description="Коллекция, улучшенные копии и их id"),
+    BotCommand(command="roulette", description="Рулетка — раз в сутки в 20:00 по ЕКБ"),
+    BotCommand(command="case", description="Открыть кейс: карта от эпической и выше"),
+    BotCommand(command="my", description="Коллекция, кейсы, копии и их id"),
     BotCommand(command="upgrade", description="Улучшить карту: /upgrade #id"),
     BotCommand(command="market", description="Рынок: лоты с кнопкой «Купить»"),
     BotCommand(command="sell", description="Выставить лот: /sell #id цена"),

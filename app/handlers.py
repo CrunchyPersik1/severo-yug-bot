@@ -14,8 +14,17 @@ from aiogram.types import CallbackQuery, Message
 from . import render
 from .battle_service import BattleError, BattleService
 from .cards import CARDS, cards_sorted_for_user, get_card
+from .cases import CASE_PRICE, roll_case_card
 from .db import Database
 from .gacha import day_key, next_reset, roll_card
+from .roulette import (
+    PRIZE_CARD,
+    PRIZE_CASE,
+    PRIZE_POINTS,
+    next_roulette_reset,
+    roll_prize,
+    roulette_day_key,
+)
 from .items import SLOT_ICONS
 from .market import (
     RATING_MIN_TO_SELL,
@@ -162,8 +171,9 @@ async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> 
                 "items": upgrade_items(row),
             }
         )
+    cases = await db.user_cases(user.id)
     await message.answer(
-        render.render_collection(cards, counts, kills, stats, len(CARDS), instances)
+        render.render_collection(cards, counts, kills, stats, len(CARDS), instances, cases)
     )
 
 
@@ -393,6 +403,13 @@ async def cmd_sell(message: Message, db: Database, market: MarketRepo) -> None:
         await message.answer(f"⚠️ {error}")
         return
 
+    if unit.get("kind") == "case":
+        info = await market.rating_info(user.id)
+        await message.answer(
+            render.render_sell_case(lot, lot["ratio"], lot["penalty"], info["rating"])
+        )
+        return
+
     card = get_card(lot["card_id"])
     lines = [
         f"✅ Лот <code>#{lot['id']}</code> выставлен",
@@ -481,32 +498,68 @@ async def cmd_gift(message: Message, db: Database, market: MarketRepo) -> None:
                 found = await market.find_by_username(part)
                 if found:
                     target_id = int(found["user_id"])
-                    target_name = found["first_name"] or part
-                    break
-    if target_id is None:
-        for entity in message.entities or []:
-            if entity.type == "text_mention" and entity.user is not None:
-                target_id = entity.user.id
-                target_name = entity.user.first_name or "получатель"
-                break
-    if target_id is None:
-        await message.answer(
-            "Не понял получателя. Ответь командой <code>/gift #id</code> "
-            "на его сообщение или укажи <code>@username</code> того, кто уже играл."
+
+
+# --------------------------------------------------------------------------- #
+# Рулетка и кейсы
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("roulette", "рулетка"))
+@router.message(NormalizedText("рулетка", "руль"))
+async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+
+    if not await db.claim_roulette(user.id, roulette_day_key()):
+        left = (next_roulette_reset() - datetime.now(timezone.utc)).total_seconds()
+        await message.reply(
+            f"⏳ Сегодня рулетка уже крутилась. Следующая — через {_humanize(left)} "
+            "(в 20:00 по ЕКБ)."
         )
         return
 
-    try:
-        unit = await market.owned_unit(user.id, parsed)
-        await market.gift_card(user.id, unit, target_id)
-    except MarketError as error:
-        await message.answer(f"⚠️ {error}")
-        return
-    card = get_card(unit["card_id"])
-    await message.answer(
-        f"🎁 <b>{render.esc(card.name)}</b> подарена игроку {render.esc(target_name)}"
-    )
+    kind, value = roll_prize()
+    if kind == PRIZE_POINTS:
+        await db.add_points(user.id, int(value))
+    elif kind == PRIZE_CASE:
+        case_id = await db.add_case(user.id, "roulette")
+        log.info("Кейс #%s выпал игроку %s", case_id, user.id)
+    else:
+        await db.add_card(user.id, str(value))
 
+    balance = await market.balance(user.id)
+    await message.reply(render.render_roulette(kind, value, balance))
+
+
+@router.message(Command("case", "кейс", "открыть"))
+@router.message(NormalizedText("кейс", "открыть кейс"))
+async def cmd_case(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+
+    cases = await db.user_cases(user.id)
+    if not cases:
+        await message.answer(
+            "📦 Кейсов нет. Крути рулетку: /roulette — или купи кейс на рынке: /market"
+        )
+        return
+
+    case = cases[0]
+    if not await db.open_case(user.id, case["id"]):
+        await message.answer("Этот кейс уже открыт или выставлен на продажу.")
+        return
+
+    card = roll_case_card()
+    counts = await db.get_collection(user.id)
+    is_new = card.card_id not in counts
+    count = await db.add_card(user.id, card.card_id)
+    left = len(await db.user_cases(user.id))
+    await message.answer(render.render_case_open(card, is_new, count, left))
 
 @router.message(Command("upgrade", "улучшить"))
 async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> None:
@@ -519,7 +572,7 @@ async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> Non
         await message.answer(
             "Формат: <code>/upgrade #id</code>\n"
             "Например: <code>/upgrade #oleg</code> — улучшит одну копию из стака.\n"
-            "Улучшенную копию можно улучшать дальше, пока не займутся все три слота."
+            "Копию можно улучшать, пока не займутся все три слота."
         )
         return
     parsed = parse_handle(parts[0])
@@ -529,8 +582,11 @@ async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> Non
     try:
         if parsed[0] == "card":
             outcome = await market.upgrade_stack(user.id, str(parsed[1]))
-        else:
+        elif parsed[0] == "inventory":
             outcome = await market.upgrade_instance(user.id, int(parsed[1]))
+        else:
+            await message.answer("Кейсы не улучшаются — их открывают: /case")
+            return
     except MarketError as error:
         await message.answer(f"⚠️ {error}")
         return
@@ -543,7 +599,9 @@ async def cmd_upgrade(message: Message, db: Database, market: MarketRepo) -> Non
         f"{SLOT_ICONS[outcome['slot']]} <b>{render.esc(item.name)}</b> — {render.esc(item.summary)}",
     ]
     if left > 0:
-        lines.append(f"Свободных слотов: {left}. Дальше: <code>/upgrade #{outcome['inventory_id']}</code>")
+        lines.append(
+            f"Свободных слотов: {left}. Дальше: <code>/upgrade #{outcome['inventory_id']}</code>"
+        )
     else:
         lines.append("Все три слота заняты — перебить или заменить нельзя.")
     await message.answer("\n".join(lines))
@@ -566,8 +624,8 @@ async def cmd_rating(message: Message, db: Database, market: MarketRepo) -> None
                 found = await market.find_by_username(part)
                 if found is None:
                     await message.answer(
-                        f"Игрок {render.esc(part)} не найден. "
-                        "Пусть он сначала напишет боту, либо ответь на его сообщение."
+                        f"Игрок {render.esc(part)} не найден. Пусть он сначала напишет боту, "
+                        "либо ответь на его сообщение."
                     )
                     return
                 target_id = int(found["user_id"])
@@ -580,6 +638,4 @@ async def cmd_rating(message: Message, db: Database, market: MarketRepo) -> None
         await message.answer("Профиль не найден.")
         return
     stats = await market.deal_stats(target_id)
-    await message.answer(
-        render.render_rating_profile(profile, stats["deals"], stats["gifts"])
-    )
+    await message.answer(render.render_rating_profile(profile, stats["deals"], stats["gifts"]))

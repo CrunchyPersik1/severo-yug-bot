@@ -107,15 +107,17 @@ def render_collection(
     stats: dict[str, int],
     total: int,
     instances: list[dict[str, Any]] | None = None,
+    cases: list[dict[str, Any]] | None = None,
 ) -> str:
     instances = instances or []
+    cases = cases or []
     lines = [
         f"🎒 <b>Коллекция</b> — {stats['unique_cards']}/{total} карт",
         f"💰 Очки: <b>{stats['total']}</b> · всего карт: {stats['total_cards']} · "
         f"🔪 убийств: {stats['card_kills']}",
         "",
     ]
-    if not cards and not instances:
+    if not cards and not instances and not cases:
         lines.append("Пока пусто. Напиши «Северо-Юг», чтобы получить первую карту.")
     for card in cards:
         count = counts.get(card.card_id, 1)
@@ -126,6 +128,12 @@ def render_collection(
             f"{card.rarity_emoji} <code>#{card.card_id}</code> {esc(card.name)} · "
             f"⚔{card.atk}/❤{card.hp}{suffix}{kill_suffix}"
         )
+    if cases:
+        lines.append("")
+        lines.append("📦 <b>Кейсы</b> (открыть: /case)")
+        for case in cases:
+            lines.append(f"      <code>#c{case['id']}</code> закрытый кейс")
+
     if instances:
         lines.append("")
         lines.append("⚡ <b>Улучшенные копии</b> (нельзя улучшить повторно)")
@@ -171,26 +179,29 @@ def render_market(
     if not lots:
         lines.append("Лотов нет. Выставь свой: /sell #id цена")
     for lot in lots:
-        card = get_card(lot["card_id"])
-        stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
         seller = lot.get("first_name") or lot.get("username") or f"id{lot['seller_id']}"
-        tail = f"/🛡{stats['def']}" if stats.get("def") else ""
         flags = " ⚠️" if lot.get("suspect") else ""
-        lines.append(
-            f"<code>#{lot['id']}</code> {card.rarity_emoji} {esc(card.name)} · "
-            f"⚔{stats['atk']}/❤{stats['hp']}{tail}{flags}"
-        )
+        if lot.get("kind") == "case":
+            lines.append(f"<code>#{lot['id']}</code> 📦 <b>Кейс</b>{flags}")
+        else:
+            card = get_card(lot["card_id"])
+            stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
+            tail = f"/🛡{stats['def']}" if stats.get("def") else ""
+            lines.append(
+                f"<code>#{lot['id']}</code> {card.rarity_emoji} {esc(card.name)} · "
+                f"⚔{stats['atk']}/❤{stats['hp']}{tail}{flags}"
+            )
         lines.append(
             f"      💰 <b>{lot['price']}</b> очк. · продавец {esc(seller)} ⭐{float(lot['rating']):.2f}"
         )
 
     rows: list[list[InlineKeyboardButton]] = []
     for lot in lots:
-        card = get_card(lot["card_id"])
+        title = "📦 Кейс" if lot.get("kind") == "case" else get_card(lot["card_id"]).name
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"#{lot['id']} {card.name} — {lot['price']}",
+                    text=f"#{lot['id']} {title} — {lot['price']}",
                     callback_data=f"ml:{lot['id']}",
                 )
             ]
@@ -206,7 +217,39 @@ def render_market(
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def render_case_lot(lot: dict[str, Any], balance: int) -> str:
+    seller = lot.get("first_name") or lot.get("username") or f"id{lot['seller_id']}"
+    lines = [
+        "📦 <b>Кейс</b>",
+        f"Лот <code>#{lot['id']}</code>",
+        "",
+        "Внутри — карта <b>эпической редкости и выше</b>.",
+        "Может выпасть даже ультралегендарная Валерия, но шанс маленький.",
+        "",
+        f"💰 Цена: <b>{lot['price']}</b> очк. (рынок 5000)",
+        f"🏷 Продавец: {esc(seller)} ⭐{float(lot['rating']):.2f}",
+    ]
+    if lot.get("suspect"):
+        lines.append("⚠️ <b>Подозрительный лот</b>: цена ниже 20% рыночной")
+    lines.append(f"💳 Твой баланс: <b>{balance}</b> очк.")
+    return "\n".join(lines)
+
+
 def render_lot(lot: dict[str, Any], viewer_id: int, balance: int) -> tuple[str, InlineKeyboardMarkup]:
+    if lot.get("kind") == "case":
+        text = render_case_lot(lot, balance)
+        case_rows: list[list[InlineKeyboardButton]] = []
+        if lot["seller_id"] == viewer_id:
+            case_rows.append(
+                [InlineKeyboardButton(text="❌ Снять с продажи", callback_data=f"mx:{lot['id']}")]
+            )
+        else:
+            case_rows.append(
+                [InlineKeyboardButton(text="✅ Купить", callback_data=f"mb:{lot['id']}")]
+            )
+        case_rows.append([InlineKeyboardButton(text="◀️ К рынку", callback_data="mk:0")])
+        return text, InlineKeyboardMarkup(inline_keyboard=case_rows)
+
     card = get_card(lot["card_id"])
     stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
     bonus = lot.get("bonus") or {}
@@ -465,3 +508,80 @@ def render_help(bot_name: str) -> str:
         "а карта победителя получает +1 убийство.\n\n"
         f"Меня зовут @{esc(bot_name)}. В группах нужен выключенный Privacy Mode."
     )
+
+# --------------------------------------------------------------------------- #
+# Рулетка и кейсы
+# --------------------------------------------------------------------------- #
+
+
+def render_roulette(kind: str, value: Any, balance: int) -> str:
+    if kind == "points":
+        return "\n".join(
+            [
+                "🎰 <b>Рулетка</b>",
+                "",
+                f"💰 Выпало <b>{value}</b> очков!",
+                f"💳 Твой баланс: <b>{balance}</b>",
+                "",
+                "Следующий спин — после 20:00 по ЕКБ.",
+            ]
+        )
+    if kind == "case":
+        return "\n".join(
+            [
+                "🎰 <b>Рулетка</b>",
+                "",
+                "📦 Выпал <b>кейс</b>!",
+                "Внутри карта эпической редкости и выше — вплоть до ультралегендарной.",
+                "",
+                "Открыть: /case. Или продать на рынке за 5000.",
+                "",
+                "Следующий спин — после 20:00 по ЕКБ.",
+            ]
+        )
+    card = get_card(value)
+    return "\n".join(
+        [
+            "🎰🎰🎰 <b>ДЖЕКПОТ!</b> 🎰🎰🎰",
+            "",
+            f"🏆 Главный приз рулетки — {card_title(card)}",
+            f"⚔️ {card.atk} · ❤️ {card.hp} · 💰 {card.points}",
+            f"✨ {esc(card.ability.name)}: {describe_ability(card)}",
+            "",
+            "Следующий спин — после 20:00 по ЕКБ.",
+        ]
+    )
+
+
+def render_case_open(card: Card, is_new: bool, count: int, cases_left: int) -> str:
+    tail = (
+        "🆕 Новая карта в коллекции!"
+        if is_new
+        else f"🔁 Дубликат, теперь у тебя их <b>{count}</b>"
+    )
+    lines = [
+        "📦 <b>Кейс открыт</b>",
+        "",
+        card_title(card),
+        f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}",
+        f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}",
+        "",
+        tail,
+    ]
+    if cases_left:
+        lines.append(f"Осталось кейсов: <b>{cases_left}</b> — /case")
+    return "\n".join(lines)
+
+
+def render_sell_case(lot: dict[str, Any], ratio: float, penalty: float, rating: float) -> str:
+    lines = [
+        f"✅ Лот <code>#{lot['id']}</code> выставлен",
+        f"📦 <b>Кейс</b> за <b>{lot['price']}</b> очк.",
+        f"Рыночная цена 5000 — это {ratio * 100:.0f}%",
+    ]
+    if penalty:
+        lines.append(f"⚠️ Слишком дешёво: репутация {penalty:+.1f} → {rating:.2f}")
+    if lot.get("suspect"):
+        lines.append("🚩 Лот помечен как подозрительный.")
+    lines.append(f"Изменить цену: <code>/changeprice {lot['id']} новая_цена</code>")
+    return "\n".join(lines)

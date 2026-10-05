@@ -73,6 +73,9 @@ class FakeDB:
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
 
+    async def user_cases(self, user_id: int, include_listed: bool = False):
+        return []
+
     async def get_card_kills(self, user_id: int) -> dict[str, int]:
         return {card_id: 0 for card_id in self.collection.get(user_id, {})}
 

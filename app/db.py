@@ -159,6 +159,67 @@ class Database:
             )
             return row is not None
 
+    async def claim_roulette(self, user_id: int, day: Any) -> bool:
+        """Атомарно забирает суточный спин рулетки (сброс в 15:00 UTC)."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                update players
+                   set roulette_day = $2, updated_at = now()
+                 where user_id = $1
+                   and (roulette_day is null or roulette_day < $2)
+                returning user_id
+                """,
+                user_id,
+                day,
+            )
+        return row is not None
+
+    async def add_points(self, user_id: int, amount: int) -> int:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                update players set bonus_points = bonus_points + $2
+                 where user_id = $1
+                returning bonus_points
+                """,
+                user_id,
+                int(amount),
+            )
+        return int(row["bonus_points"]) if row else 0
+
+    async def add_case(self, user_id: int, source: str = "roulette") -> int:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "insert into cases (user_id, source) values ($1, $2) returning id",
+                user_id,
+                source,
+            )
+        return int(value)
+
+    async def user_cases(self, user_id: int, include_listed: bool = False) -> list[dict[str, Any]]:
+        query = "select id, opened, listed, source, created_at from cases where user_id = $1"
+        if not include_listed:
+            query += " and listed = false"
+        query += " order by id"
+        async with self._p().acquire() as con:
+            rows = await con.fetch(query, user_id)
+        return [dict(row) for row in rows]
+
+    async def open_case(self, user_id: int, case_id: int) -> bool:
+        """Помечает кейс открытым. False — кейса нет, он открыт или выставлен на продажу."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                update cases set opened = true
+                 where id = $1 and user_id = $2 and opened = false and listed = false
+                returning id
+                """,
+                int(case_id),
+                user_id,
+            )
+        return row is not None
+
     async def add_card(self, user_id: int, card_id: str) -> int:
         async with self._p().acquire() as con:
             row = await con.fetchrow(

@@ -43,6 +43,7 @@ UPGRADE_MULT_MIN = 0.5
 UPGRADE_PRICE_FACTOR = 2.0
 
 _HANDLE_NUMBER = re.compile(r"^(?:#|inventory:|inv:)?(\d+)$")
+_HANDLE_CASE = re.compile(r"^(?:#|case:)?c(\d+)$", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- #
@@ -130,10 +131,13 @@ def can_sell(rating: float) -> bool:
 
 
 def parse_handle(raw: str) -> tuple[str, Any] | None:
-    """'#12' -> ('inventory', 12); '#oleg' или 'oleg' -> ('card', 'oleg')."""
+    """'#c3' -> ('case', 3); '#12' -> ('inventory', 12); '#oleg' -> ('card', 'oleg')."""
     text = (raw or "").strip()
     if not text:
         return None
+    case = _HANDLE_CASE.match(text)
+    if case:
+        return "case", int(case.group(1))
     match = _HANDLE_NUMBER.match(text)
     if match:
         return "inventory", int(match.group(1))
@@ -147,6 +151,10 @@ def card_handle(card_id: str) -> str:
 
 def inventory_handle(inventory_id: int) -> str:
     return f"#{inventory_id}"
+
+
+def case_handle(case_id: int) -> str:
+    return f"#c{case_id}"
 
 
 def describe_bonus(bonus: dict[str, int] | None) -> str:

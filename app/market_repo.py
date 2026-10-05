@@ -12,6 +12,7 @@ from typing import Any
 import asyncpg
 
 from .cards import CARDS_BY_ID, get_card
+from .cases import CASE_PRICE
 from .db import Database
 from .items import BY_SLOT, Item, SLOTS, SLOT_ICONS, SLOT_TITLES, TABLE_BY_SLOT, roll_slot, seed_rows
 from .market import (
@@ -59,6 +60,13 @@ def bonuses_of(upgrades: dict[str, Any] | None) -> dict[str, int]:
     )
 
 
+def unit_reference_price(unit: dict[str, Any], bonus: dict[str, int] | None = None) -> int:
+    """Рыночная цена юнита: кейс стоит фиксированно, карта — по редкости и улучшениям."""
+    if unit.get("kind") == "case":
+        return CASE_PRICE
+    return market_price(get_card(unit["card_id"]), bonus)
+
+
 class MarketRepo:
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -97,6 +105,23 @@ class MarketRepo:
     async def owned_unit(self, user_id: int, handle: tuple[str, Any]) -> dict[str, Any]:
         kind, value = handle
         async with self.pool.acquire() as con:
+            if kind == "case":
+                row = await con.fetchrow(
+                    """
+                    select id from cases
+                     where id = $1 and user_id = $2 and listed = false and opened = false
+                    """,
+                    int(value),
+                    user_id,
+                )
+                if row is None:
+                    raise MarketError(f"Кейса #{value} у тебя нет.")
+                return {
+                    "kind": "case",
+                    "card_id": None,
+                    "inventory_id": None,
+                    "case_id": int(row["id"]),
+                }
             if kind == "inventory":
                 row = await con.fetchrow(
                     "select id, card_id, listed from inventory where id = $1 and user_id = $2",
@@ -107,7 +132,12 @@ class MarketRepo:
                     raise MarketError(f"Улучшенной карты #{value} у тебя нет.")
                 if row["listed"]:
                     raise MarketError(f"Карта #{value} уже выставлена на продажу.")
-                return {"card_id": row["card_id"], "inventory_id": int(row["id"])}
+                return {
+                    "kind": "inventory",
+                    "card_id": row["card_id"],
+                    "inventory_id": int(row["id"]),
+                    "case_id": None,
+                }
 
             row = await con.fetchrow(
                 "select count from collection where user_id = $1 and card_id = $2",
@@ -118,7 +148,12 @@ class MarketRepo:
                 raise MarketError(f"Карты #{value} у тебя нет.")
             if str(value) not in CARDS_BY_ID:
                 raise MarketError(f"Карты #{value} не существует.")
-            return {"card_id": str(value), "inventory_id": None}
+            return {
+                "kind": "card",
+                "card_id": str(value),
+                "inventory_id": None,
+                "case_id": None,
+            }
 
     async def unit_bonus(self, inventory_id: int | None) -> dict[str, int]:
         if inventory_id is None:
@@ -217,9 +252,8 @@ class MarketRepo:
     async def create_lot(
         self, seller_id: int, unit: dict[str, Any], price: int
     ) -> dict[str, Any]:
-        card = get_card(unit["card_id"])
-        bonus = await self.unit_bonus(unit["inventory_id"])
-        reference = market_price(card, bonus)
+        bonus = await self.unit_bonus(unit.get("inventory_id"))
+        reference = unit_reference_price(unit, bonus)
 
         info = await self.rating_info(seller_id)
         if not can_sell(info["rating"]):
@@ -231,46 +265,20 @@ class MarketRepo:
 
         async with self.pool.acquire() as con:
             async with con.transaction():
-                if unit["inventory_id"] is None:
-                    row = await con.fetchrow(
-                        """
-                        update collection set count = count - 1
-                         where user_id = $1 and card_id = $2 and count > 0
-                        returning count
-                        """,
-                        seller_id,
-                        unit["card_id"],
-                    )
-                    if row is None:
-                        raise MarketError("Карты уже нет в коллекции.")
-                    await con.execute(
-                        "delete from collection where user_id = $1 and card_id = $2 and count <= 0",
-                        seller_id,
-                        unit["card_id"],
-                    )
-                else:
-                    row = await con.fetchrow(
-                        """
-                        update inventory set listed = true
-                         where id = $1 and user_id = $2 and listed = false
-                        returning id
-                        """,
-                        unit["inventory_id"],
-                        seller_id,
-                    )
-                    if row is None:
-                        raise MarketError("Эту копию уже нельзя выставить.")
+                await self._take_unit(con, seller_id, unit)
 
                 lot = await con.fetchrow(
                     """
-                    insert into market (seller_id, card_id, inventory_id, price,
-                                        market_price, suspect)
-                    values ($1, $2, $3, $4, $5, $6)
+                    insert into market (seller_id, card_id, inventory_id, case_id,
+                                        kind, price, market_price, suspect)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8)
                     returning *
                     """,
                     seller_id,
                     unit["card_id"],
                     unit["inventory_id"],
+                    unit["case_id"],
+                    unit.get("kind", "card"),
                     int(price),
                     int(reference),
                     suspect,
@@ -391,7 +399,7 @@ class MarketRepo:
                     raise MarketError("Это не твой лот.")
                 if lot["status"] != "active":
                     raise MarketError("Лот уже не активен.")
-                await self._return_card(con, seller_id, lot["card_id"], lot["inventory_id"])
+                await self._give_unit(con, seller_id, dict(lot))
                 await con.execute(
                     "update market set status = 'cancelled', updated_at = now() where id = $1",
                     int(lot_id),
@@ -408,7 +416,7 @@ class MarketRepo:
             if lot["status"] != "active":
                 raise MarketError("Лот уже не активен.")
             bonus = await self.unit_bonus(lot["inventory_id"])
-            reference = market_price(get_card(lot["card_id"]), bonus)
+            reference = unit_reference_price(dict(lot), bonus)
             penalty, suspect = listing_penalty(price_ratio(price, reference))
             async with con.transaction():
                 await con.execute(
@@ -428,22 +436,81 @@ class MarketRepo:
         updated.update({"price": int(price), "market_price": reference, "suspect": suspect})
         return updated
 
-    async def _return_card(
-        self, con: asyncpg.Connection, user_id: int, card_id: str, inventory_id: int | None
+    async def _take_unit(
+        self, con: asyncpg.Connection, user_id: int, unit: dict[str, Any]
     ) -> None:
-        if inventory_id is None:
-            await con.execute(
+        """Забирает юнит у игрока в эскроу лота."""
+        if unit.get("case_id") is not None:
+            row = await con.fetchrow(
                 """
-                insert into collection (user_id, card_id, count) values ($1, $2, 1)
-                on conflict (user_id, card_id) do update set count = collection.count + 1
+                update cases set listed = true
+                 where id = $1 and user_id = $2 and listed = false and opened = false
+                returning id
+                """,
+                int(unit["case_id"]),
+                user_id,
+            )
+            if row is None:
+                raise MarketError("Этот кейс уже нельзя выставить.")
+            return
+
+        if unit.get("inventory_id") is None:
+            row = await con.fetchrow(
+                """
+                update collection set count = count - 1
+                 where user_id = $1 and card_id = $2 and count > 0
+                returning count
                 """,
                 user_id,
-                card_id,
+                unit["card_id"],
             )
-        else:
+            if row is None:
+                raise MarketError("Карты уже нет в коллекции.")
             await con.execute(
-                "update inventory set listed = false where id = $1", int(inventory_id)
+                "delete from collection where user_id = $1 and card_id = $2 and count <= 0",
+                user_id,
+                unit["card_id"],
             )
+            return
+
+        row = await con.fetchrow(
+            """
+            update inventory set listed = true
+             where id = $1 and user_id = $2 and listed = false
+            returning id
+            """,
+            int(unit["inventory_id"]),
+            user_id,
+        )
+        if row is None:
+            raise MarketError("Эту копию уже нельзя выставить.")
+
+    async def _give_unit(
+        self, con: asyncpg.Connection, user_id: int, unit: dict[str, Any]
+    ) -> None:
+        """Отдаёт юнит игроку (покупка, снятие лота, подарок)."""
+        if unit.get("case_id") is not None:
+            await con.execute(
+                "update cases set user_id = $2, listed = false where id = $1",
+                int(unit["case_id"]),
+                user_id,
+            )
+            return
+        if unit.get("inventory_id") is not None:
+            await con.execute(
+                "update inventory set user_id = $2, listed = false where id = $1",
+                int(unit["inventory_id"]),
+                user_id,
+            )
+            return
+        await con.execute(
+            """
+            insert into collection (user_id, card_id, count) values ($1, $2, 1)
+            on conflict (user_id, card_id) do update set count = collection.count + 1
+            """,
+            user_id,
+            unit["card_id"],
+        )
 
     # ------------------------------------------------------------------ #
     # Покупка
@@ -490,25 +557,26 @@ class MarketRepo:
                     income,
                 )
 
-                await self._return_card(con, buyer_id, lot["card_id"], lot["inventory_id"])
+                await self._give_unit(con, buyer_id, dict(lot))
                 await con.execute(
                     "update market set status = 'sold', updated_at = now() where id = $1",
                     int(lot_id),
                 )
                 await con.execute(
                     """
-                    insert into history (buyer_id, seller_id, card_id, price, fee)
-                    values ($1, $2, $3, $4, $5)
+                    insert into history (buyer_id, seller_id, card_id, kind, price, fee)
+                    values ($1, $2, $3, $4, $5, $6)
                     """,
                     buyer_id,
                     lot["seller_id"],
                     lot["card_id"],
+                    lot["kind"],
                     price,
                     fee,
                 )
 
-                reference = int(lot["market_price"]) or market_price(
-                    get_card(lot["card_id"]), await self.unit_bonus(lot["inventory_id"])
+                reference = int(lot["market_price"]) or unit_reference_price(
+                    dict(lot), await self.unit_bonus(lot["inventory_id"])
                 )
                 honest = is_honest_deal(price, reference)
                 new_rating = None
@@ -517,7 +585,9 @@ class MarketRepo:
 
         return {
             "lot_id": int(lot_id),
+            "kind": lot["kind"],
             "card_id": lot["card_id"],
+            "case_id": lot["case_id"],
             "price": price,
             "fee": fee,
             "income": income,
@@ -535,49 +605,19 @@ class MarketRepo:
             raise MarketError("Нельзя подарить самому себе.")
         async with self.pool.acquire() as con:
             async with con.transaction():
-                if unit["inventory_id"] is None:
-                    row = await con.fetchrow(
-                        """
-                        update collection set count = count - 1
-                         where user_id = $1 and card_id = $2 and count > 0
-                        returning count
-                        """,
-                        sender_id,
-                        unit["card_id"],
-                    )
-                    if row is None:
-                        raise MarketError("Карты уже нет в коллекции.")
-                    await con.execute(
-                        "delete from collection where user_id = $1 and card_id = $2 and count <= 0",
-                        sender_id,
-                        unit["card_id"],
-                    )
-                else:
-                    row = await con.fetchrow(
-                        "update inventory set listed = false where id = $1 and user_id = $2 returning id",
-                        int(unit["inventory_id"]),
-                        sender_id,
-                    )
-                    if row is None:
-                        raise MarketError("Этой копии у тебя нет.")
-
+                await self._take_unit(con, sender_id, unit)
                 await self._ensure_player(con, receiver_id)
-                await self._return_card(con, receiver_id, unit["card_id"], unit["inventory_id"])
-                if unit["inventory_id"] is not None:
-                    await con.execute(
-                        "update inventory set user_id = $2 where id = $1",
-                        int(unit["inventory_id"]),
-                        receiver_id,
-                    )
+                await self._give_unit(con, receiver_id, unit)
                 await con.execute(
                     """
-                    insert into gifts (sender_id, receiver_id, card_id, inventory_id)
-                    values ($1, $2, $3, $4)
+                    insert into gifts (sender_id, receiver_id, card_id, inventory_id, kind)
+                    values ($1, $2, $3, $4, $5)
                     """,
                     sender_id,
                     receiver_id,
                     unit["card_id"],
                     unit["inventory_id"],
+                    unit.get("kind", "card"),
                 )
 
     async def _ensure_player(self, con: asyncpg.Connection, user_id: int) -> None:
