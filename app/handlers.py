@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -14,11 +15,10 @@ from aiogram.types import CallbackQuery, Message
 from . import render
 from .battle_service import BattleError, BattleService
 from .cards import CARDS, cards_sorted_for_user, get_card
-from .cases import CASE_PRICE, roll_case_card
+from .cases import roll_case_card
 from .db import Database
 from .gacha import day_key, next_reset, roll_card
 from .roulette import (
-    PRIZE_CARD,
     PRIZE_CASE,
     PRIZE_POINTS,
     next_roulette_reset,
@@ -26,17 +26,7 @@ from .roulette import (
     roulette_day_key,
 )
 from .items import SLOT_ICONS
-from .market import (
-    RATING_MIN_TO_SELL,
-    UPGRADE_PRICE,
-    can_sell,
-    describe_bonus,
-    effective_stats,
-    market_price,
-    parse_handle,
-    price_ratio,
-    seller_income,
-)
+from .market import UPGRADE_PRICE, effective_stats, parse_handle
 from .market_repo import MarketError, MarketRepo, item_of
 
 MARKET_PAGE_SIZE = 6
@@ -137,18 +127,30 @@ def upgrade_items(row: dict[str, Any]) -> list[str]:
 
 
 def decorate_lot(lot: dict[str, Any]) -> dict[str, Any]:
-    """Досчитывает статы и разворачивает улучшения для отображения лота."""
-    card = get_card(lot["card_id"])
+    """Досчитывает статы и разворачивает улучшения для отображения лота.
+
+    У кейса нет карты: card_id в базе NULL, поэтому статы не считаем —
+    иначе get_card(None) роняет весь список рынка.
+    """
     bonus = lot.get("bonus") or {}
-    lot["stats"] = effective_stats(card, bonus)
     lot["bonus"] = bonus
+    lot["stats"] = None
+    for slot in ("aura", "background", "effect"):
+        lot[slot] = None
+
+    if lot.get("kind") == "case" or not lot.get("card_id"):
+        return lot
+
+    card = get_card(lot["card_id"])
+    lot["stats"] = effective_stats(card, bonus)
     for slot in ("aura", "background", "effect"):
         item = item_of(slot, lot.get(f"{slot}_id"))
-        lot[slot] = (
-            {"name": item.name, "icon": SLOT_ICONS[slot], "summary": item.summary}
-            if item
-            else None
-        )
+        if item is not None:
+            lot[slot] = {
+                "name": item.name,
+                "icon": SLOT_ICONS[slot],
+                "summary": item.summary,
+            }
     return lot
 
 
@@ -500,6 +502,34 @@ async def cmd_gift(message: Message, db: Database, market: MarketRepo) -> None:
                 found = await market.find_by_username(part)
                 if found:
                     target_id = int(found["user_id"])
+                    target_name = found["first_name"] or part
+                    break
+    if target_id is None:
+        for entity in message.entities or []:
+            if entity.type == "text_mention" and entity.user is not None:
+                target_id = entity.user.id
+                target_name = entity.user.first_name or "получатель"
+                break
+    if target_id is None:
+        await message.answer(
+            "Не понял получателя. Ответь командой <code>/gift #id</code> "
+            "на его сообщение или укажи <code>@username</code> того, кто уже играл."
+        )
+        return
+
+    try:
+        unit = await market.owned_unit(user.id, parsed)
+        await market.gift_card(user.id, unit, target_id)
+    except MarketError as error:
+        await message.answer(f"⚠️ {error}")
+        return
+
+    if unit.get("kind") == "case":
+        title = "📦 <b>Кейс</b>"
+    else:
+        card = get_card(unit["card_id"])
+        title = f"{card.rarity_emoji} <b>{render.esc(card.display_name)}</b>"
+    await message.answer(f"🎁 Подарок отправлен: {title} → {render.esc(target_name)}")
 
 
 # --------------------------------------------------------------------------- #

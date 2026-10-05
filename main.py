@@ -71,6 +71,12 @@ async def lifespan(app: FastAPI):
     @dp.errors()
     async def on_error(event: ErrorEvent) -> bool:
         log.exception("Необработанная ошибка апдейта", exc_info=event.exception)
+        # Если упал обработчик кнопки, Telegram будет крутить спиннер вечно.
+        # Отвечаем принудительно, чтобы игрок увидел хоть что-то.
+        query = event.update.callback_query
+        if query is not None:
+            with contextlib.suppress(Exception):
+                await query.answer("⚠️ Ошибка, попробуй ещё раз", show_alert=True)
         return True
 
     dp.include_router(router)

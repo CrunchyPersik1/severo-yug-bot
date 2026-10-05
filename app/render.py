@@ -7,10 +7,10 @@ from typing import Any
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B, can_use_ability, other
-from .cards import RARITIES, Card, get_card
+from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
+from .cards import Card, get_card
 from .items import SLOT_ICONS
-from .market import UPGRADE_PRICE
+from .market import UPGRADE_PRICE, describe_bonus
 
 FLEE = "🏳️ Сдаться"
 

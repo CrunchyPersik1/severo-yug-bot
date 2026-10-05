@@ -108,8 +108,20 @@ class FakeDB:
 
 
 class FakeMarket:
+    def __init__(self) -> None:
+        self.gifted: list[tuple[int, str, int]] = []
+
     async def user_inventory(self, user_id: int, include_listed: bool = False):
         return []
+
+    async def find_by_username(self, username: str):
+        return None
+
+    async def owned_unit(self, user_id: int, handle):
+        return {"kind": "card", "card_id": "oleg", "inventory_id": None, "case_id": None}
+
+    async def gift_card(self, sender_id: int, unit, receiver_id: int) -> None:
+        self.gifted.append((sender_id, unit["card_id"], receiver_id))
 
 
 class FakeService:
@@ -133,11 +145,20 @@ def build_update(text: str, user_id: int = 111, chat_id: int = -100123, reply: d
     return {"update_id": 1, "message": message}
 
 
-async def feed(text: str, db: FakeDB, service: FakeService, user_id: int = 111, reply: dict | None = None):
+async def feed(
+    text: str,
+    db: FakeDB,
+    service: FakeService,
+    user_id: int = 111,
+    reply: dict | None = None,
+    market: "FakeMarket | None" = None,
+):
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
     update = Update.model_validate(build_update(text, user_id=user_id, reply=reply), context={"bot": bot})
-    await dispatcher().feed_update(bot, update, db=db, service=service, market=FakeMarket())
+    await dispatcher().feed_update(
+        bot, update, db=db, service=service, market=market or FakeMarket()
+    )
     await bot.session.close()
     return session
 
@@ -254,5 +275,42 @@ def test_unknown_callback_is_answered():
         )
         assert any(name == "AnswerCallbackQuery" for name, _ in session.calls)
         await bot.session.close()
+
+    asyncio.run(scenario())
+
+def test_decorate_lot_handles_case_lots():
+    """У кейса card_id = NULL: раньше это роняло весь список рынка."""
+    from app.handlers import decorate_lot
+
+    case_lot = {"id": 1, "kind": "case", "card_id": None, "inventory_id": None, "price": 5000}
+    decorated = decorate_lot(case_lot)
+    assert decorated["stats"] is None
+    assert decorated["bonus"] == {}
+    assert decorated["aura"] is None
+
+
+def test_decorate_lot_still_computes_card_stats():
+    from app.handlers import decorate_lot
+
+    card_lot = {"id": 2, "kind": "card", "card_id": "oleg", "inventory_id": None, "price": 400}
+    decorated = decorate_lot(card_lot)
+    assert decorated["stats"] == {"atk": 10, "hp": 95, "def": 0}
+
+def test_gift_actually_sends_the_card():
+    """Регрессия: раньше cmd_gift обрывался и молча ничего не дарил."""
+    async def scenario():
+        market = FakeMarket()
+        reply = {
+            "message_id": 5,
+            "from": {"id": 222, "is_bot": False, "first_name": "Получатель"},
+            "chat": {"id": -100123, "type": "supergroup", "title": "Группа"},
+            "date": 1700000000,
+            "text": "я тут",
+        }
+        session = await feed("/gift #oleg", FakeDB(), FakeService(), user_id=111, reply=reply, market=market)
+        assert market.gifted == [(111, "oleg", 222)], "карта должна уйти получателю"
+        body = [p for n, p in session.calls if n == "SendMessage"][0]["text"]
+        assert "Подарок отправлен" in body
+
 
     asyncio.run(scenario())

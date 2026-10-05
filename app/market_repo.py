@@ -14,14 +14,12 @@ import asyncpg
 from .cards import CARDS_BY_ID, get_card
 from .cases import CASE_PRICE
 from .db import Database
-from .items import BY_SLOT, Item, SLOTS, SLOT_ICONS, SLOT_TITLES, TABLE_BY_SLOT, roll_slot, seed_rows
+from .items import BY_SLOT, Item, SLOTS, TABLE_BY_SLOT, seed_rows
 from .market import (
     HONEST_GAIN_PER_DAY,
-    MARKET_FEE,
     UPGRADE_PRICE,
     can_sell,
     clamp_rating,
-    effective_stats,
     is_honest_deal,
     listing_penalty,
     market_fee,
