@@ -10,3 +10,7 @@ venv/
 *.log
 .idea/
 .vscode/
+
+# временные выхлопы проверок
+*_out.txt
+market_out.txt
