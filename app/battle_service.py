@@ -25,6 +25,8 @@ from .battle import (
 from .cards import cards_sorted_for_user, get_card
 from .config import settings
 from .db import Database
+from .market import effective_stats, parse_handle
+from .market_repo import MarketError, MarketRepo
 from .rewards import battle_reward
 
 log = logging.getLogger(__name__)
@@ -45,9 +47,39 @@ def display_name(user: Any) -> str:
 
 
 class BattleService:
-    def __init__(self, bot: Bot, db: Database) -> None:
+    def __init__(self, bot: Bot, db: Database, market: MarketRepo | None = None) -> None:
         self.bot = bot
         self.db = db
+        self.market = market or MarketRepo(db)
+
+    async def units_for(self, user_id: int) -> list[dict[str, Any]]:
+        """Всё, чем игрок может воевать: стаки из collection и улучшенные копии."""
+        counts = await self.db.get_collection(user_id)
+        units: list[dict[str, Any]] = []
+        for card in cards_sorted_for_user(list(counts)):
+            units.append(
+                {
+                    "handle": f"#{card.card_id}",
+                    "card": card,
+                    "count": counts[card.card_id],
+                    "bonus": {},
+                    "stats": effective_stats(card, {}),
+                    "inventory_id": None,
+                }
+            )
+        for instance in await self.market.user_inventory(user_id):
+            card = get_card(instance["card_id"])
+            units.append(
+                {
+                    "handle": f"#{instance['id']}",
+                    "card": card,
+                    "count": 1,
+                    "bonus": instance["bonus"],
+                    "stats": effective_stats(card, instance["bonus"]),
+                    "inventory_id": instance["id"],
+                }
+            )
+        return units
 
     # ------------------------------------------------------------------ #
     # Создание боя
@@ -63,11 +95,9 @@ class BattleService:
         if await self.db.user_active_battles(opponent.id) >= 1:
             raise BattleError("У соперника уже есть незавершённый бой.")
 
-        first_cards = await self.db.get_collection(challenger.id)
-        second_cards = await self.db.get_collection(opponent.id)
-        if not first_cards:
+        if not await self.units_for(challenger.id):
             raise BattleError("У тебя нет карт. Напиши «Северо-Юг».")
-        if not second_cards:
+        if not await self.units_for(opponent.id):
             raise BattleError(f"У {display_name(opponent)} нет карт.")
 
         battle_id = secrets.token_urlsafe(6)
@@ -106,8 +136,7 @@ class BattleService:
             await self.bot.send_message(message.chat.id, text)
 
     async def _send_pick(self, battle_id: str, key: str, user: Any, fallback_chat_id: int) -> None:
-        counts = await self.db.get_collection(user.id)
-        cards = cards_sorted_for_user(list(counts))
+        units = await self.units_for(user.id)
         opponent_name = "соперник"
         battle = await self.db.get_battle(battle_id)
         if battle:
@@ -115,7 +144,7 @@ class BattleService:
             opponent_name = battle["state"]["sides"][other_key].get("name", "соперник")
 
         text, keyboard = render.render_pick(
-            battle_id, cards, counts, 0, settings.cards_per_page, key, opponent_name, None
+            battle_id, units, 0, settings.cards_per_page, key, opponent_name, None
         )
         chat_id = user.id
         try:
@@ -147,10 +176,16 @@ class BattleService:
             log.warning("Бой %s завершён без записи результата", battle_id)
         return battle, result
 
-    async def choose_card(self, callback: CallbackQuery, battle_id: str, card_id: str) -> None:
+    async def choose_card(self, callback: CallbackQuery, battle_id: str, handle: str) -> None:
         user_id = callback.from_user.id
-        if card_id not in await self.db.get_collection(user_id):
-            raise BattleError("Этой карты у тебя нет.")
+        parsed = parse_handle(handle)
+        if parsed is None:
+            raise BattleError("Непонятная карта.")
+        try:
+            unit = await self.market.owned_unit(user_id, parsed)
+        except MarketError as error:
+            raise BattleError(str(error)) from error
+        bonus = await self.market.unit_bonus(unit["inventory_id"])
 
         started: dict[str, Any] = {}
 
@@ -160,15 +195,27 @@ class BattleService:
             key = side_for_user(state, user_id)
             if key is None:
                 raise BattleError("Ты не участник этого боя.")
-            state["pick"][key] = card_id
+            state["pick"][key] = {
+                "handle": handle,
+                "card_id": unit["card_id"],
+                "inventory_id": unit["inventory_id"],
+                "bonus": bonus,
+            }
             if not all(state["pick"].values()):
                 return {"started": False}, None
 
-            card_a = get_card(state["pick"][KEY_A])
-            card_b = get_card(state["pick"][KEY_B])
+            picks = {k: state["pick"][k] for k in (KEY_A, KEY_B)}
+            card_a = get_card(picks[KEY_A]["card_id"])
+            card_b = get_card(picks[KEY_B]["card_id"])
             names = {k: state["sides"][k].get("name") for k in (KEY_A, KEY_B)}
             ids = {k: state["sides"][k]["user_id"] for k in (KEY_A, KEY_B)}
-            new = new_state(card_a, card_b, first=KEY_A)
+            new = new_state(
+                card_a,
+                card_b,
+                first=KEY_A,
+                stats_a=effective_stats(card_a, picks[KEY_A]["bonus"]),
+                stats_b=effective_stats(card_b, picks[KEY_B]["bonus"]),
+            )
             new["phase"] = "battle"
             for k in (KEY_A, KEY_B):
                 new["sides"][k]["user_id"] = ids[k]
@@ -379,19 +426,19 @@ class BattleService:
         key = side_for_user(state, callback.from_user.id)
         if key is None:
             raise BattleError("Ты не участник этого боя.")
-        counts = await self.db.get_collection(callback.from_user.id)
-        cards = cards_sorted_for_user(list(counts))
+        units = await self.units_for(callback.from_user.id)
         other_key = other(key)
         opponent_name = state["sides"][other_key].get("name", "соперник")
+        picked = state["pick"].get(key)
+        picked_label = picked["handle"] if isinstance(picked, dict) else None
         text, keyboard = render.render_pick(
             battle_id,
-            cards,
-            counts,
+            units,
             page,
             settings.cards_per_page,
             key,
             opponent_name,
-            state["pick"].get(key),
+            picked_label,
         )
         try:
             await callback.message.edit_text(text, reply_markup=keyboard)

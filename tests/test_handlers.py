@@ -99,6 +99,11 @@ class FakeDB:
         return []
 
 
+class FakeMarket:
+    async def user_inventory(self, user_id: int, include_listed: bool = False):
+        return []
+
+
 class FakeService:
     def __init__(self) -> None:
         self.created: list[tuple[int, int]] = []
@@ -124,7 +129,7 @@ async def feed(text: str, db: FakeDB, service: FakeService, user_id: int = 111, 
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
     update = Update.model_validate(build_update(text, user_id=user_id, reply=reply), context={"bot": bot})
-    await dispatcher().feed_update(bot, update, db=db, service=service)
+    await dispatcher().feed_update(bot, update, db=db, service=service, market=FakeMarket())
     await bot.session.close()
     return session
 
@@ -139,7 +144,9 @@ def test_dependency_injection_and_resolve_update_types():
         session = FakeSession()
         bot = Bot(token="123456:TEST", session=session)
         update = Update.model_validate(build_update("/start"), context={"bot": bot})
-        await dispatcher().feed_update(bot, update, db=FakeDB(), service=FakeService())
+        await dispatcher().feed_update(
+            bot, update, db=FakeDB(), service=FakeService(), market=FakeMarket()
+        )
         assert "SendMessage" in [name for name, _ in session.calls]
         await bot.session.close()
 
@@ -233,7 +240,9 @@ def test_unknown_callback_is_answered():
             },
         }
         update = Update.model_validate(payload, context={"bot": bot})
-        await dispatcher().feed_update(bot, update, db=FakeDB(), service=FakeService())
+        await dispatcher().feed_update(
+            bot, update, db=FakeDB(), service=FakeService(), market=FakeMarket()
+        )
         assert any(name == "AnswerCallbackQuery" for name, _ in session.calls)
         await bot.session.close()
 

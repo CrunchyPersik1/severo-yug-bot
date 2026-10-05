@@ -36,13 +36,19 @@ def other(key: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def new_side(user_id: int, card: Card) -> dict[str, Any]:
+def new_side(user_id: int, card: Card, stats: dict[str, int] | None = None) -> dict[str, Any]:
+    """stats — эффективные статы с учётом улучшений (атака, HP, защита)."""
+    stats = stats or {}
+    atk = int(stats.get("atk", card.atk))
+    hp = int(stats.get("hp", card.hp))
+    defense = max(0, min(60, int(stats.get("def", 0))))
     return {
         "user_id": user_id,
         "card_id": card.card_id,
-        "hp": card.hp,
-        "max_hp": card.hp,
-        "atk": card.atk,
+        "hp": hp,
+        "max_hp": hp,
+        "atk": atk,
+        "def": defense,
         "shield": 0,
         "poison": 0,
         "poison_turns": 0,
@@ -58,11 +64,17 @@ def new_side(user_id: int, card: Card) -> dict[str, Any]:
     }
 
 
-def new_state(card_a: Card, card_b: Card, first: str = KEY_A) -> dict[str, Any]:
+def new_state(
+    card_a: Card,
+    card_b: Card,
+    first: str = KEY_A,
+    stats_a: dict[str, int] | None = None,
+    stats_b: dict[str, int] | None = None,
+) -> dict[str, Any]:
     return {
         "sides": {
-            KEY_A: new_side(0, card_a),
-            KEY_B: new_side(0, card_b),
+            KEY_A: new_side(0, card_a, stats_a),
+            KEY_B: new_side(0, card_b, stats_b),
         },
         "turn": first,
         "turn_no": 1,
@@ -125,11 +137,18 @@ def _deal_damage(
     amount: int,
     label: str,
     ignore_shield: bool = False,
+    use_defense: bool = True,
 ) -> int:
     target = state["sides"][target_key]
     amount = int(amount)
     if amount <= 0:
         return 0
+
+    # Защита от улучшений: процент снижения урона, максимум 60%.
+    if use_defense:
+        defense = int(target.get("def", 0))
+        if defense > 0:
+            amount = max(1, round(amount * (100 - defense) / 100))
     if target["dodge"] > 0:
         target["dodge"] -= 1
         _log(state, f"{label}: промах (уклонение)")
@@ -185,7 +204,7 @@ def _begin_turn(state: dict[str, Any], key: str) -> str:
     side["silence"] = max(0, side["silence"] - 1)
 
     if side["poison_turns"] > 0:
-        _deal_damage(state, key, int(side["poison"]), "☠️ Яд", ignore_shield=True)
+        _deal_damage(state, key, int(side["poison"]), "☠️ Яд", ignore_shield=True, use_defense=False)
         side["poison_turns"] -= 1
         if side["poison_turns"] <= 0:
             side["poison_turns"] = 0

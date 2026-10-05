@@ -106,14 +106,16 @@ def render_collection(
     kills: dict[str, int],
     stats: dict[str, int],
     total: int,
+    instances: list[dict[str, Any]] | None = None,
 ) -> str:
+    instances = instances or []
     lines = [
         f"🎒 <b>Коллекция</b> — {stats['unique_cards']}/{total} карт",
         f"💰 Очки: <b>{stats['total']}</b> · всего карт: {stats['total_cards']} · "
         f"🔪 убийств: {stats['card_kills']}",
         "",
     ]
-    if not cards:
+    if not cards and not instances:
         lines.append("Пока пусто. Напиши «Северо-Юг», чтобы получить первую карту.")
     for card in cards:
         count = counts.get(card.card_id, 1)
@@ -121,8 +123,152 @@ def render_collection(
         killed = kills.get(card.card_id, 0)
         kill_suffix = f" · 🔪{killed}" if killed else ""
         lines.append(
-            f"{card.rarity_emoji} {esc(card.name)} · ⚔{card.atk}/❤{card.hp}{suffix}{kill_suffix}"
+            f"{card.rarity_emoji} <code>#{card.card_id}</code> {esc(card.name)} · "
+            f"⚔{card.atk}/❤{card.hp}{suffix}{kill_suffix}"
         )
+    if instances:
+        lines.append("")
+        lines.append("⚡ <b>Улучшенные копии</b> (нельзя улучшить повторно)")
+        for unit in instances:
+            card = unit["card"]
+            st = unit["stats"]
+            tail = f"/🛡{st['def']}" if st["def"] else ""
+            lines.append(
+                f"{card.rarity_emoji} <code>#{unit['inventory_id']}</code> {esc(card.name)} · "
+                f"⚔{st['atk']}/❤{st['hp']}{tail}"
+            )
+            if unit.get("items"):
+                lines.append("      " + " · ".join(unit["items"]))
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Рынок
+# --------------------------------------------------------------------------- #
+
+
+def render_unit_line(unit: dict[str, Any]) -> str:
+    """Одна строка карты в списке (стак или улучшенная копия)."""
+    card = unit["card"]
+    st = unit["stats"]
+    tail = f"/🛡{st['def']}" if st.get("def") else ""
+    mark = "⚡" if unit.get("bonus") else ""
+    count = f" ×{unit['count']}" if unit.get("count", 1) > 1 else ""
+    return (
+        f"{card.rarity_emoji} <code>{esc(unit['handle'])}</code> {mark}{esc(card.name)} · "
+        f"⚔{st['atk']}/❤{st['hp']}{tail}{count}"
+    )
+
+
+def render_market(
+    lots: list[dict[str, Any]], page: int, pages: int, total: int, balance: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        "🏪 <b>Рынок карт</b>",
+        f"Лотов: <b>{total}</b> · твой баланс: <b>{balance}</b> очк.",
+        "",
+    ]
+    if not lots:
+        lines.append("Лотов нет. Выставь свой: /sell #id цена")
+    for lot in lots:
+        card = get_card(lot["card_id"])
+        stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
+        seller = lot.get("first_name") or lot.get("username") or f"id{lot['seller_id']}"
+        tail = f"/🛡{stats['def']}" if stats.get("def") else ""
+        flags = " ⚠️" if lot.get("suspect") else ""
+        lines.append(
+            f"<code>#{lot['id']}</code> {card.rarity_emoji} {esc(card.name)} · "
+            f"⚔{stats['atk']}/❤{stats['hp']}{tail}{flags}"
+        )
+        lines.append(
+            f"      💰 <b>{lot['price']}</b> очк. · продавец {esc(seller)} ⭐{float(lot['rating']):.2f}"
+        )
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for lot in lots:
+        card = get_card(lot["card_id"])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"#{lot['id']} {card.name} — {lot['price']}",
+                    callback_data=f"ml:{lot['id']}",
+                )
+            ]
+        )
+    if pages > 1:
+        rows.append(
+            [
+                InlineKeyboardButton(text="◀️", callback_data=f"mk:{max(0, page - 1)}"),
+                InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="noop:page"),
+                InlineKeyboardButton(text="▶️", callback_data=f"mk:{min(pages - 1, page + 1)}"),
+            ]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_lot(lot: dict[str, Any], viewer_id: int, balance: int) -> tuple[str, InlineKeyboardMarkup]:
+    card = get_card(lot["card_id"])
+    stats = lot.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
+    bonus = lot.get("bonus") or {}
+    seller = lot.get("first_name") or lot.get("username") or f"id{lot['seller_id']}"
+    reference = int(lot.get("market_price") or 0)
+
+    lines = [
+        f"🃏 <b>{esc(card.name)}</b> {card.rarity_emoji} <i>({card.rarity_title})</i>",
+        f"Лот <code>#{lot['id']}</code>",
+        "",
+        f"⚔️ Атака: <b>{stats['atk']}</b> (база {card.atk})",
+        f"❤️ HP: <b>{stats['hp']}</b> (база {card.hp})",
+        f"🛡 Защита: <b>{stats['def']}%</b>",
+        f"✨ Способность: {esc(card.ability.name)} (КД {card.ability.cooldown})",
+    ]
+    if bonus:
+        lines.append("")
+        lines.append("🔧 <b>Улучшения</b>")
+        for slot in ("aura", "background", "effect"):
+            item = lot.get(slot)
+            if item:
+                lines.append(f"  {item['icon']} {esc(item['name'])} — {esc(item['summary'])}")
+        lines.append(f"  Итого: {esc(describe_bonus(bonus))}")
+    else:
+        lines.append("")
+        lines.append("🔧 Улучшений нет")
+    lines.append("")
+    lines.append(f"💰 Цена: <b>{lot['price']}</b> очк. (рынок ~{reference})")
+    lines.append(f"🏷 Продавец: {esc(seller)} ⭐{float(lot['rating']):.2f}")
+    if lot.get("suspect"):
+        lines.append("⚠️ <b>Подозрительный лот</b>: цена ниже 20% рыночной")
+    lines.append(f"💳 Твой баланс: <b>{balance}</b> очк.")
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if lot["seller_id"] == viewer_id:
+        rows.append([InlineKeyboardButton(text="❌ Снять с продажи", callback_data=f"mx:{lot['id']}")])
+    else:
+        rows.append([InlineKeyboardButton(text="✅ Купить", callback_data=f"mb:{lot['id']}")])
+    rows.append([InlineKeyboardButton(text="◀️ К рынку", callback_data="mk:0")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_rating_profile(profile: dict[str, Any], deals: int, gifts_sent: int) -> str:
+    name = profile.get("first_name") or profile.get("username") or f"id{profile['user_id']}"
+    rating = float(profile.get("rating", 5.0))
+    if rating >= 4.5:
+        mark = "🟢"
+    elif rating >= 1.5:
+        mark = "🟡"
+    else:
+        mark = "🔴 запрет на лоты"
+    lines = [
+        f"⭐ <b>Репутация: {name}</b>",
+        f"{mark} <b>{rating:.2f}</b> из 10 (старт 5.00)",
+        "",
+        f"🤝 Сделок на рынке: <b>{deals}</b>",
+        f"🎁 Подарков отправлено: {gifts_sent}",
+        f"📈 Сегодня заработано репутации: {profile.get('gained_today', 0):.2f} / 1.00",
+    ]
+    if rating < 1.5:
+        lines.append("")
+        lines.append("⚠️ Репутация ниже 1.50 — выставлять лоты нельзя.")
     return "\n".join(lines)
 
 
@@ -182,7 +328,10 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
         marker = "👉 " if (not state["over"] and state["turn"] == key) else "   "
         badges = status_badges(side)
         return (
-            f"{marker}<b>{esc(side.get('name') or side['user_id'])}</b> — {esc(card.name)} ⚔{card.atk}\n"
+            f"{marker}<b>{esc(side.get('name') or side['user_id'])}</b> — {esc(card.name)} "
+            f"⚔{side.get('atk', card.atk)}"
+            + (f" 🛡{side['def']}%" if side.get("def") else "")
+            + "\n"
             f"{marker}{hp_bar(side['hp'], side['max_hp'])} {max(0, side['hp'])}/{side['max_hp']}"
             + (f"  {badges}" if badges else "")
         )
@@ -242,17 +391,17 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
 
 def render_pick(
     battle_id: str,
-    cards: list[Card],
-    counts: dict[str, int],
+    units: list[dict[str, Any]],
     page: int,
     per_page: int,
     bot_side: str,
     opponent_name: str,
     picked: str | None,
 ) -> tuple[str, InlineKeyboardMarkup]:
-    pages = max(1, (len(cards) + per_page - 1) // per_page)
+    """units: [{'handle', 'card', 'count', 'bonus', 'stats'}]"""
+    pages = max(1, (len(units) + per_page - 1) // per_page)
     page = max(0, min(page, pages - 1))
-    chunk = cards[page * per_page : (page + 1) * per_page]
+    chunk = units[page * per_page : (page + 1) * per_page]
 
     lines = [
         f"🃏 <b>Выбор карты</b> — бой <code>{esc(battle_id)}</code>",
@@ -260,18 +409,25 @@ def render_pick(
         "",
     ]
     if picked:
-        lines.append(f"Твой выбор: <b>{esc(get_card(picked).name)}</b>. Ждём соперника…")
+        lines.append(f"Твой выбор: <b>{esc(picked)}</b>. Ждём соперника…")
     else:
-        lines.append("Жми на карту — её характеристики и способность решают бой.")
+        lines.append(
+            "Жми на карту — её характеристики и способность решают бой. ⚡ — улучшенная копия."
+        )
 
     rows: list[list[InlineKeyboardButton]] = []
     pair: list[InlineKeyboardButton] = []
-    for card in chunk:
-        label = f"{card.name} ⚔{card.atk}/❤{card.hp}"
-        if counts.get(card.card_id, 1) > 1:
-            label += f" ×{counts[card.card_id]}"
+    for unit in chunk:
+        card = unit["card"]
+        stats = unit["stats"]
+        mark = "⚡" if unit.get("bonus") else ""
+        label = f"{mark}{card.name} ⚔{stats['atk']}/❤{stats['hp']}"
+        if stats.get("def"):
+            label += f"/🛡{stats['def']}"
+        if unit.get("count", 1) > 1:
+            label += f" ×{unit['count']}"
         pair.append(
-            InlineKeyboardButton(text=label, callback_data=f"pickc:{battle_id}:{card.card_id}")
+            InlineKeyboardButton(text=label, callback_data=f"pickc:{battle_id}:{unit['handle']}")
         )
         if len(pair) == 2:
             rows.append(pair)
@@ -298,8 +454,13 @@ def render_help(bot_name: str) -> str:
         "сброс в 12:00 по ЕКБ.\n"
         "• «<b>пвп</b>» <i>ответом</i> на сообщение соперника — вызвать его на бой. "
         "Каждый выбирает карту из своей коллекции, бой идёт в одном сообщении.\n"
-        "• /my — коллекция, /top — счёт по очкам, /rating — рейтинг PvP, "
+        "• /my — коллекция, /top — счёт по очкам, /pvprating — топ боёв, "
         "/profile — профиль.\n\n"
+        "🏪 <b>Рынок</b>\n"
+        "• /market — лоты, /sell #id цена — выставить, /mylots — свои лоты, "
+        "/changeprice id цена — переставить цену\n"
+        "• /upgrade #id — улучшить карту (аура, фон или эффект — навсегда)\n"
+        "• /gift #id @игрок — подарить, /rating [@игрок] — репутация\n\n"
         "За победу в PvP победитель забирает 5% очков карты проигравшего, "
         "а карта победителя получает +1 убийство.\n\n"
         f"Меня зовут @{esc(bot_name)}. В группах нужен выключенный Privacy Mode."

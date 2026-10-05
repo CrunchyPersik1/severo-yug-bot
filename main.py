@@ -19,6 +19,7 @@ from app.cards import CARDS, card_rows
 from app.config import settings
 from app.db import Database
 from app.handlers import router
+from app.market_repo import MarketRepo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +44,9 @@ async def lifespan(app: FastAPI):
     await db.init_schema()
     await db.upsert_cards(card_rows())
 
+    market = MarketRepo(db)
+    await market.seed_items()
+
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
 
@@ -52,8 +56,8 @@ async def lifespan(app: FastAPI):
         return True
 
     dp.include_router(router)
-    service = BattleService(bot, db)
-    runtime.update(db=db, bot=bot, dp=dp, service=service)
+    service = BattleService(bot, db, market)
+    runtime.update(db=db, bot=bot, dp=dp, service=service, market=market)
 
     me = await bot.get_me()
     log.info("Бот: @%s (%s)", me.username, me.id)
@@ -130,7 +134,11 @@ async def telegram_webhook(request: Request) -> Response:
     try:
         update = Update.model_validate(payload, context={"bot": bot})
         await dp.feed_update(
-            bot, update, db=runtime["db"], service=runtime["service"]
+            bot,
+            update,
+            db=runtime["db"],
+            service=runtime["service"],
+            market=runtime["market"],
         )
     except Exception:  # noqa: BLE001 - всегда отвечаем 200, иначе Telegram будет ретраить
         log.exception("Ошибка обработки апдейта")
