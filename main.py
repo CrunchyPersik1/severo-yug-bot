@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -134,7 +135,14 @@ async def health() -> dict[str, Any]:
             alive = await database.ping()
         except Exception:  # noqa: BLE001
             log.warning("Health-check: БД недоступна", exc_info=True)
-    return {"ok": True, "service": "severo-yug-bot", "db": alive}
+    return {
+        "ok": True,
+        "service": "severo-yug-bot",
+        "db": alive,
+        # Render подставляет сюда хеш задеплоенного коммита: по нему видно,
+        # что на сервере именно тот код, который лежит в репозитории
+        "version": (os.getenv("RENDER_GIT_COMMIT") or "dev")[:7],
+    }
 
 
 @app.get("/healthz")
