@@ -14,6 +14,8 @@ import asyncpg
 from .cards import CARDS_BY_ID, get_card
 from .db import Database
 from .gacha import day_key
+from .items import BY_SLOT
+from .market import sum_bonus
 from .roulette import roulette_day_key
 
 HELP = """Админ-команды:
@@ -47,6 +49,23 @@ async def _resolve_player(con: asyncpg.Connection, target: str) -> dict[str, Any
             "where lower(username) = lower($1)",
             clean,
         )
+        if row is None:
+            # Юзернейм есть не у всех, поэтому ищем ещё и по имени.
+            rows = await con.fetch(
+                "select user_id, first_name, username from players "
+                "where lower(first_name) = lower($1) order by user_id",
+                clean,
+            )
+            if len(rows) == 1:
+                row = rows[0]
+            elif len(rows) > 1:
+                variants = ", ".join(
+                    f"{r['first_name']} (id {r['user_id']})" for r in rows
+                )
+                raise ValueError(
+                    f"под именем {clean} сразу несколько игроков: {variants}. "
+                    "Уточни числовым id"
+                )
     if row is None:
         raise ValueError(
             f"игрок {target} не найден. Пусть он хотя бы раз напишет боту — "
@@ -62,6 +81,28 @@ def _resolve_card(raw: str):
             "карты " + card_id + " нет. Доступные: " + ", ".join(sorted(CARDS_BY_ID))
         )
     return get_card(card_id)
+
+
+def _item_of(slot: str, item_id: int | None):
+    if item_id is None:
+        return None
+    return next((item for item in BY_SLOT[slot] if item.id == item_id), None)
+
+
+def _copy_line(row) -> str:
+    """Строка про улучшенную копию: название, предметы и итоговые проценты."""
+    card = CARDS_BY_ID.get(row["card_id"])
+    title = card.display_name if card else row["card_id"]
+    names: list[str] = []
+    bonus: dict[str, int] = {}
+    for slot in ("aura", "background", "effect"):
+        item = _item_of(slot, row[slot + "_id"])
+        if item is not None:
+            names.append(item.name)
+            bonus = sum_bonus(bonus, item.bonus)
+    totals = ", ".join(f"{stat} {value:+d}%" for stat, value in bonus.items())
+    listed = " [на рынке]" if row["listed"] else ""
+    return f"    #{row['id']} {title} — {totals}{listed}\n        {', '.join(names)}"
 
 
 def _int_arg(args: list[str], index: int, default: int, name: str) -> int:
@@ -200,6 +241,17 @@ async def act_player(con: asyncpg.Connection, args: list[str]) -> str:
     cards = await con.fetch(
         "select card_id, count from collection where user_id = $1 order by card_id", uid
     )
+    copies = await con.fetch(
+        """
+        select i.id, i.card_id, i.listed,
+               u.aura_id, u.background_id, u.effect_id
+          from inventory i
+          left join upgrades u on u.inventory_id = i.id
+         where i.user_id = $1
+         order by i.id
+        """,
+        uid,
+    )
     name = player["first_name"] or player["username"] or "без имени"
     lines = [
         f"Игрок: {name} (@{player['username']}) id={uid}",
@@ -209,11 +261,15 @@ async def act_player(con: asyncpg.Connection, args: list[str]) -> str:
         f"  кейсов:  {row['cases']}",
     ]
     if cards:
-        lines.append("  список:")
+        lines.append("  стак (обычные копии):")
         for entry in cards:
             card = CARDS_BY_ID.get(entry["card_id"])
             title = card.display_name if card else entry["card_id"]
             lines.append(f"    #{entry['card_id']} {title} x{entry['count']}")
+    if copies:
+        lines.append("  улучшенные копии:")
+        for row in copies:
+            lines.append(_copy_line(row))
     return "\n".join(lines)
 
 
