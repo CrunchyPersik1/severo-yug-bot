@@ -648,9 +648,13 @@ class MarketRepo:
                 current = await con.fetchrow(
                     "select * from upgrades where inventory_id = $1", int(inventory_id)
                 )
-                filled = dict(current) if current else {}
-                filled_now = sum(1 for s in SLOTS if filled.get(f"{s}_id") is not None)
-                slot = roll_slot(filled)
+                # Ключи в строке БД — aura_id/background_id/effect_id,
+                # а roll_slot ждёт имена слотов: aura/background/effect.
+                filled_slots = {
+                    slot_name: (current[slot_name + "_id"] if current is not None else None)
+                    for slot_name in SLOTS
+                }
+                slot = roll_slot(filled_slots)
                 if slot is None:
                     raise MarketError("У карты уже есть аура, фон и эффект — улучшать больше нечем.")
                 item = self._roll_item(slot)
