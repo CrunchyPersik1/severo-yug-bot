@@ -146,37 +146,48 @@ class Database:
                 first_name,
             )
 
-    async def claim_daily(self, user_id: int, day: Any) -> bool:
-        """Атомарно забирает суточный лимит. True — выпадание разрешено."""
-        async with self._p().acquire() as con:
-            row = await con.fetchrow(
-                """
-                update players
-                   set last_drop_day = $2, updated_at = now()
-                 where user_id = $1
-                   and (last_drop_day is null or last_drop_day < $2)
-                returning user_id
-                """,
-                user_id,
-                day,
-            )
-            return row is not None
+    async def claim_daily(self, user_id: int, day: Any, limit: int = 1) -> int | None:
+        """Атомарно тратит одну попытку. Возвращает остаток или None, если нельзя.
 
-    async def claim_roulette(self, user_id: int, day: Any) -> bool:
-        """Атомарно забирает суточный спин рулетки (сброс в 15:00 UTC)."""
+        При смене дня счётчик обнуляется, а лимит возвращается к дефолтному.
+        """
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
                 update players
-                   set roulette_day = $2, updated_at = now()
+                   set drop_uses = case when last_drop_day = $2 then drop_uses + 1 else 1 end,
+                       drop_limit = case when last_drop_day = $2 then drop_limit else $3 end,
+                       last_drop_day = $2,
+                       updated_at = now()
                  where user_id = $1
-                   and (roulette_day is null or roulette_day < $2)
-                returning user_id
+                   and (last_drop_day is distinct from $2 or drop_uses < drop_limit)
+                returning drop_limit - drop_uses as left
                 """,
                 user_id,
                 day,
+                int(limit),
             )
-        return row is not None
+        return None if row is None else int(row["left"])
+
+    async def claim_roulette(self, user_id: int, day: Any, limit: int = 1) -> int | None:
+        """Атомарно тратит один спин рулетки. Возвращает остаток или None."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                update players
+                   set roulette_uses = case when roulette_day = $2 then roulette_uses + 1 else 1 end,
+                       roulette_limit = case when roulette_day = $2 then roulette_limit else $3 end,
+                       roulette_day = $2,
+                       updated_at = now()
+                 where user_id = $1
+                   and (roulette_day is distinct from $2 or roulette_uses < roulette_limit)
+                returning roulette_limit - roulette_uses as left
+                """,
+                user_id,
+                day,
+                int(limit),
+            )
+        return None if row is None else int(row["left"])
 
     async def add_points(self, user_id: int, amount: int) -> int:
         async with self._p().acquire() as con:

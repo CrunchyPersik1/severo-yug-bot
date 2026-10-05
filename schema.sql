@@ -202,3 +202,10 @@ update players p
 update players set points_backfilled = true where points_backfilled is false;
 -- Фамилии для карт с повторяющимися именами (два Тамерлана, два Амира, два Данияра)
 alter table cards add column if not exists surname text;
+-- Попытки на сутки: сколько уже потрачено и сколько разрешено.
+-- Лимит сбрасывается на дефолтный при смене дня, но его можно поднять разово
+-- (акции, раздачи в честь обновления).
+alter table players add column if not exists drop_uses     integer not null default 0;
+alter table players add column if not exists drop_limit    integer not null default 1;
+alter table players add column if not exists roulette_uses integer not null default 0;
+alter table players add column if not exists roulette_limit integer not null default 1;

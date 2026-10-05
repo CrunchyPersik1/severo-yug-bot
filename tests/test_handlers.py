@@ -70,11 +70,17 @@ class FakeDB:
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
 
-    async def claim_daily(self, user_id: int, day: Any) -> bool:
+    async def claim_daily(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         if self.claimed.get(user_id):
-            return False
+            return None
         self.claimed[user_id] = True
-        return True
+        return 0
+
+    async def claim_roulette(self, user_id: int, day: Any, limit: int = 1) -> int | None:
+        if self.claimed.get(user_id):
+            return None
+        self.claimed[user_id] = True
+        return 0
 
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
@@ -222,7 +228,7 @@ def test_daily_limit_blocks_second_drop():
         db = FakeDB()
         await feed("Северо-Юг", db, FakeService())
         session = await feed("Северо-Юг", db, FakeService())
-        assert "уже выпадала" in sent_texts(session)[0]
+        assert "кончились" in sent_texts(session)[0]
 
     asyncio.run(scenario())
 

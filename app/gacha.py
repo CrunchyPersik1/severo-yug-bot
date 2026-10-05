@@ -14,6 +14,9 @@ from .cards import CARDS_BY_RARITY, RARITIES, Card
 
 RESET_HOUR_UTC = 7  # 12:00 по ЕКБ
 
+# Сколько карт в сутки можно получить по умолчанию.
+DROPS_PER_DAY = 1
+
 
 def day_key(moment: datetime | None = None) -> date:
     """Игровые сутки: сутки начинаются в 07:00 UTC, а не в 00:00."""

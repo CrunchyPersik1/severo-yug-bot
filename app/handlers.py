@@ -17,10 +17,11 @@ from .battle_service import BattleError, BattleService
 from .cards import CARDS, cards_sorted_for_user, get_card
 from .cases import roll_case_card
 from .db import Database
-from .gacha import day_key, next_reset, roll_card
+from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
 from .roulette import (
     PRIZE_CASE,
     PRIZE_POINTS,
+    SPINS_PER_DAY,
     next_roulette_reset,
     roll_prize,
     roulette_day_key,
@@ -98,10 +99,11 @@ async def cmd_drop(message: Message, db: Database) -> None:
     await db.ensure_player(user.id, user.username, user.first_name)
 
     today = day_key()
-    if not await db.claim_daily(user.id, today):
-        left = (next_reset() - datetime.now(timezone.utc)).total_seconds()
+    left = await db.claim_daily(user.id, today, DROPS_PER_DAY)
+    if left is None:
+        seconds = (next_reset() - datetime.now(timezone.utc)).total_seconds()
         await message.reply(
-            f"⏳ Сегодня карта уже выпадала. Следующая — через {_humanize(left)} "
+            f"⏳ Попытки на сегодня кончились. Следующая — через {_humanize(seconds)} "
             "(сброс в 12:00 по ЕКБ)."
         )
         return
@@ -113,7 +115,10 @@ async def cmd_drop(message: Message, db: Database) -> None:
     await db.add_points(user.id, card.points)
     await db.add_drop(user.id, message.chat.id, card.card_id, today)
 
-    await message.reply(render.render_drop(card, count, is_new))
+    text = render.render_drop(card, count, is_new)
+    if left:
+        text += f"\n\n🎟 Осталось попыток сегодня: <b>{left}</b>"
+    await message.reply(text)
 
 
 def upgrade_items(row: dict[str, Any]) -> list[str]:
@@ -657,10 +662,11 @@ async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> No
         return
     await db.ensure_player(user.id, user.username, user.first_name)
 
-    if not await db.claim_roulette(user.id, roulette_day_key()):
-        left = (next_roulette_reset() - datetime.now(timezone.utc)).total_seconds()
+    spins_left = await db.claim_roulette(user.id, roulette_day_key(), SPINS_PER_DAY)
+    if spins_left is None:
+        seconds = (next_roulette_reset() - datetime.now(timezone.utc)).total_seconds()
         await message.reply(
-            f"⏳ Сегодня рулетка уже крутилась. Следующая — через {_humanize(left)} "
+            f"⏳ Спины на сегодня кончились. Следующий — через {_humanize(seconds)} "
             "(в 20:00 по ЕКБ)."
         )
         return
@@ -675,7 +681,10 @@ async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> No
         await db.add_card(user.id, str(value))
 
     balance = await market.balance(user.id)
-    await message.reply(render.render_roulette(kind, value, balance))
+    text = render.render_roulette(kind, value, balance)
+    if spins_left:
+        text += f"\n\n🎟 Осталось спинов сегодня: <b>{spins_left}</b>"
+    await message.reply(text)
 
 
 @router.message(Command("case", "кейс", "открыть"))

@@ -10,6 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 
 ROULETTE_RESET_HOUR_UTC = 15  # 20:00 по ЕКБ (UTC+5)
 
+# Сколько спинов в сутки по умолчанию.
+SPINS_PER_DAY = 1
+
 PRIZE_POINTS = "points"
 PRIZE_CASE = "case"
 PRIZE_CARD = "card"
