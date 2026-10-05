@@ -744,6 +744,11 @@ class MarketRepo:
             "balance": int(balance),
         }
 
+    def _roll_item(self, slot: str) -> Item:
+        from .items import roll_item
+
+        return roll_item(slot)
+
     async def user_inventory(self, user_id: int, include_listed: bool = False) -> list[dict[str, Any]]:
         query = """
             select i.id, i.card_id, i.listed,
