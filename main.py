@@ -142,6 +142,8 @@ async def health() -> dict[str, Any]:
         # Render подставляет сюда хеш задеплоенного коммита: по нему видно,
         # что на сервере именно тот код, который лежит в репозитории
         "version": (os.getenv("RENDER_GIT_COMMIT") or "dev")[:7],
+        # сколько админов прописано в ADMIN_IDS — видно, что бот их прочитал
+        "admins": len(settings.admin_ids),
     }
 
 
