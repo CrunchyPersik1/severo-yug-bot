@@ -264,7 +264,12 @@ def test_case_can_be_sold_and_bought_on_market():
             cases = await db.user_cases(buyer)
             assert len(cases) == 1 and cases[0]["id"] == case_id
             assert await db.open_case(buyer, case_id) is True
-            assert (await db.user_cases(buyer, include_listed=True))[0]["opened"] is True
+            # открытый кейс пропадает из списка, но остаётся в истории
+            assert await db.user_cases(buyer) == []
+            history = await db.user_cases(buyer, include_opened=True)
+            assert len(history) == 1 and history[0]["opened"] is True
+            # и повторно его не открыть
+            assert await db.open_case(buyer, case_id) is False
         finally:
             await db.close()
 

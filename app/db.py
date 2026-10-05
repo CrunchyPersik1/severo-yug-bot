@@ -197,10 +197,22 @@ class Database:
             )
         return int(value)
 
-    async def user_cases(self, user_id: int, include_listed: bool = False) -> list[dict[str, Any]]:
+    async def user_cases(
+        self,
+        user_id: int,
+        include_listed: bool = False,
+        include_opened: bool = False,
+    ) -> list[dict[str, Any]]:
+        """По умолчанию — только закрытые кейсы, которые не на рынке.
+
+        Открытый кейс остаётся в таблице как история, но игроку не показывается
+        и повторно открыть его нельзя.
+        """
         query = "select id, opened, listed, source, created_at from cases where user_id = $1"
         if not include_listed:
             query += " and listed = false"
+        if not include_opened:
+            query += " and opened = false"
         query += " order by id"
         async with self._p().acquire() as con:
             rows = await con.fetch(query, user_id)
