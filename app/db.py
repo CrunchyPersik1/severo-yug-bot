@@ -349,6 +349,52 @@ class Database:
             "card_kills": int(row["card_kills"]),
         }
 
+    async def touch_chat(self, chat_id: int, kind: str, title: str | None = None) -> None:
+        """Запоминает чат — из него потом идёт админская рассылка."""
+        async with self._p().acquire() as con:
+            await con.execute(
+                """
+                insert into chats (chat_id, kind, title) values ($1, $2, $3)
+                on conflict (chat_id) do update
+                   set kind = excluded.kind,
+                       title = coalesce(excluded.title, chats.title),
+                       last_seen = now(),
+                       left_at = null
+                """,
+                chat_id,
+                kind,
+                title,
+            )
+
+    async def mark_chat_left(self, chat_id: int) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update chats set left_at = now() where chat_id = $1", chat_id
+            )
+
+    async def broadcast_targets(self) -> list[int]:
+        """Живые группы и супергруппы. Лички в рассылку не попадают."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                """
+                select chat_id from chats
+                 where left_at is null and kind in ('group', 'supergroup')
+                 order by last_seen desc
+                """
+            )
+        return [int(row["chat_id"]) for row in rows]
+
+    async def chat_count(self) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                select count(*) filter (where left_at is null) as alive,
+                       count(*) as total
+                  from chats where kind in ('group', 'supergroup')
+                """
+            )
+        return {"alive": int(row["alive"]), "total": int(row["total"])}
+
     async def player_profile(self, user_id: int) -> dict[str, Any] | None:
         """Полный профиль игрока + место в PvP-рейтинге."""
         async with self._p().acquire() as con:

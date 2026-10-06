@@ -244,3 +244,25 @@ create table if not exists casino_log (
     created_at timestamptz not null default now()
 );
 create index if not exists casino_log_user_idx on casino_log (user_id, created_at desc);
+-- ===================================================================== --
+-- Чаты с ботом (для админской рассылки в группы)
+-- ===================================================================== --
+
+create table if not exists chats (
+    chat_id   bigint primary key,
+    kind      text not null,
+    title     text,
+    added_at  timestamptz not null default now(),
+    last_seen timestamptz not null default now(),
+    left_at   timestamptz
+);
+create index if not exists chats_alive_idx on chats (kind) where left_at is null;
+-- Бэкфилл: собираем группы, где бот уже играл, из прошлых боёв и дропов.
+-- Лички (положительные id) сюда не попадают.
+insert into chats (chat_id, kind)
+select distinct chat_id, 'supergroup' from battles where chat_id < 0
+on conflict (chat_id) do nothing;
+
+insert into chats (chat_id, kind)
+select distinct chat_id, 'supergroup' from drops where chat_id < 0
+on conflict (chat_id) do nothing;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
 from . import admin_actions, casino, render, team_battle
 from .battle import ability_targets
@@ -94,8 +95,74 @@ async def cmd_help(message: Message, bot: Bot) -> None:
     await message.answer(render.render_help(await _bot_username(bot)))
 
 
+_SEEN_CHATS: set[int] = set()
+
+
+@router.message.outer_middleware()
+async def track_chat(handler, event, data):
+    """Запоминает группы, где есть бот, — чтобы было куда рассылать."""
+    chat = getattr(event, "chat", None)
+    if chat is not None and chat.type in ("group", "supergroup"):
+        if chat.id not in _SEEN_CHATS:
+            db = data.get("db")
+            if db is not None:
+                try:
+                    await db.touch_chat(chat.id, chat.type, chat.title)
+                    _SEEN_CHATS.add(chat.id)
+                except Exception:  # noqa: BLE001
+                    log.exception("Не смог запомнить чат %s", chat.id)
+    return await handler(event, data)
+
+
+@router.my_chat_member()
+async def on_my_chat_member(update: ChatMemberUpdated, db: Database) -> None:
+    chat = update.chat
+    if chat.type not in ("group", "supergroup"):
+        return
+    if update.new_chat_member.status in ("left", "kicked"):
+        await db.mark_chat_left(chat.id)
+        _SEEN_CHATS.discard(chat.id)
+    else:
+        await db.touch_chat(chat.id, chat.type, chat.title)
+        _SEEN_CHATS.add(chat.id)
+
+
+async def broadcast_to_chats(bot: Bot, db: Database, text: str) -> str:
+    """Шлёт сообщение во все живые группы. В лички не отправляет."""
+    targets = await db.broadcast_targets()
+    if not targets:
+        return (
+            "Пока не знаю ни одной группы. Добавь бота в чат или напиши в нём "
+            "любую команду — и он её запомнит."
+        )
+    sent, failed = 0, 0
+    for chat_id in targets:
+        ok = False
+        try:
+            await bot.send_message(chat_id, text)
+            ok = True
+        except TelegramBadRequest:
+            # скорее всего кривой HTML — пробуем отправить как обычный текст
+            try:
+                await bot.send_message(chat_id, text, parse_mode=None)
+                ok = True
+            except Exception:  # noqa: BLE001
+                ok = False
+        except Exception:  # noqa: BLE001
+            ok = False
+            await db.mark_chat_left(chat_id)
+        if ok:
+            sent += 1
+            log.info("Рассылка ушла в чат %s", chat_id)
+        else:
+            failed += 1
+            log.warning("Рассылка не дошла в чат %s", chat_id)
+        await asyncio.sleep(0.05)
+    return f"📣 Разослано в <b>{sent}</b> групп(ы). Не дошло: {failed}."
+
+
 @router.message(Command("admin", "админ"))
-async def cmd_admin(message: Message, db: Database) -> None:
+async def cmd_admin(message: Message, db: Database, bot: Bot) -> None:
     """Админка прямо в Telegram — доступна только id из ADMIN_IDS."""
     user = message.from_user
     if user is None:
@@ -104,9 +171,23 @@ async def cmd_admin(message: Message, db: Database) -> None:
         await message.answer("🔒 Эта команда только для админа.")
         return
 
-    parts = (message.text or "").split()[1:]
+    raw = message.text or ""
+    parts = raw.split()[1:]
     if not parts:
         await message.answer(f"<pre>{render.esc(admin_actions.HELP)}</pre>")
+        return
+
+    # /admin soo <текст> — рассылка по всем группам с ботом
+    head = raw.split(maxsplit=2)
+    if len(head) >= 2 and head[1].lower() in ("soo", "рассылка"):
+        text = head[2].strip() if len(head) > 2 else ""
+        if not text:
+            await message.answer(
+                "Формат: <code>/admin soo текст</code>\n"
+                "Разошлю во все группы, где есть бот. В лички не отправляю."
+            )
+            return
+        await message.answer(await broadcast_to_chats(bot, db, text))
         return
 
     try:
