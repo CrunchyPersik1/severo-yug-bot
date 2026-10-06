@@ -24,6 +24,7 @@ status                     сводка по всей базе
 player @ник                что у игрока: баланс, карты, копии, кейсы
 limits 2 2                 выдать ВСЕМ по 2 карты и по 2 спина на сегодня
 limits                     вернуть всем обычные лимиты (1 и 1)
+limits @ник 2 2            выдать ЛИЧНО игроку 2 выдачи «Северо-Юг» и 2 спина
 points 5000                накинуть ВСЕМ по 5000 очков
 points @ник 5000           накинуть очков лично игроку (минус — списать)
 case 1                     выдать ВСЕМ по кейсу
@@ -116,12 +117,42 @@ def _int_arg(args: list[str], index: int, default: int, name: str) -> int:
 
 
 async def act_limits(con: asyncpg.Connection, args: list[str]) -> str:
-    drops = _int_arg(args, 0, 1, "количество карт")
-    spins = _int_arg(args, 1, drops, "количество спинов")
+    """limits 2 2 — всем, limits @ник 2 2 — лично.
+
+    Числа — это выдачи «Северо-Юг» и спины рулетки. Всё, что не число,
+    считается игроком, поэтому порядок аргументов не важен.
+    """
+    named = [arg for arg in args if not arg.lstrip("+-").isdigit()]
+    numbers = [int(arg) for arg in args if arg.lstrip("+-").isdigit()]
+    drops = numbers[0] if numbers else 1
+    spins = numbers[1] if len(numbers) > 1 else drops
     if drops < 0 or spins < 0:
         raise ValueError("количество не может быть отрицательным")
     if drops > 100 or spins > 100:
         raise ValueError("больше 100 за раз — перебор")
+
+    if named:
+        player = await _resolve_player(con, named[0])
+        await con.execute(
+            """
+            update players
+               set last_drop_day = $2, drop_uses = 0, drop_limit = $3,
+                   roulette_day = $4, roulette_uses = 0, roulette_limit = $5,
+                   updated_at = now()
+             where user_id = $1
+            """,
+            player["user_id"],
+            day_key(),
+            drops,
+            roulette_day_key(),
+            spins,
+        )
+        who = player["first_name"] or player["username"] or player["user_id"]
+        return (
+            f"[ok] {who}: {drops} выдач(и) «Северо-Юг» и {spins} спин(ов) рулетки "
+            "на сегодня"
+        )
+
     await con.execute(
         """
         update players
