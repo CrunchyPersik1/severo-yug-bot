@@ -13,7 +13,7 @@ import asyncpg
 
 from .cards import CARDS_BY_ID, get_card
 from .cases import CASE_PRICE
-from .db import Database
+from .db import Database, as_json_dict
 from .items import BY_SLOT, Item, SLOTS, TABLE_BY_SLOT, seed_rows
 from .market import (
     HONEST_GAIN_PER_DAY,
@@ -163,7 +163,7 @@ class MarketRepo:
                 "select casino_bonus from inventory where id = $1", inventory_id
             )
         bonus = bonuses_of(dict(row) if row else None)
-        casino_bonus = dict(casino_row["casino_bonus"] or {}) if casino_row else {}
+        casino_bonus = as_json_dict(casino_row["casino_bonus"]) if casino_row else {}
         return sum_bonus(bonus, casino_bonus)
 
     # ------------------------------------------------------------------ #
@@ -769,7 +769,7 @@ class MarketRepo:
         for row in rows:
             item = dict(row)
             item["bonus"] = sum_bonus(
-                bonuses_of(item), dict(item.get("casino_bonus") or {})
+                bonuses_of(item), as_json_dict(item.get("casino_bonus"))
             )
             out.append(item)
         return out

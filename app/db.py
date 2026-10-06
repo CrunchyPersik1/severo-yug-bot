@@ -18,6 +18,18 @@ log = logging.getLogger(__name__)
 _STRIP_PARAMS = {"sslmode", "pgbouncer", "connection_limit", "ssl", "application_name"}
 
 
+def as_json_dict(value: Any) -> dict[str, Any]:
+    """asyncpg отдаёт jsonb строкой — приводим к словарю безопасно."""
+    if not value:
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def prepare_dsn(database_url: str) -> tuple[str, Any, int]:
     """Чистит DSN от параметров, которые не понимает asyncpg.
 

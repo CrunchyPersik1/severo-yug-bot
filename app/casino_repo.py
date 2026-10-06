@@ -13,7 +13,7 @@ import asyncpg
 
 from . import casino
 from .cards import get_card
-from .db import Database
+from .db import Database, as_json_dict
 from .market import market_price
 from .market_repo import MarketRepo, bonuses_of
 
@@ -138,7 +138,7 @@ class CasinoRepo:
         current_row = await con.fetchrow(
             "select casino_bonus from inventory where id = $1", int(inventory_id)
         )
-        current = dict(current_row["casino_bonus"] or {}) if current_row else {}
+        current = as_json_dict(current_row["casino_bonus"]) if current_row else {}
         if absolute:
             final = {stat: int(delta[stat]) for stat in casino.STATS if stat in delta}
         else:
@@ -176,13 +176,14 @@ class CasinoRepo:
                 else:
                     fate = casino.card_fate()
                     if fate == "delete":
+                        # снимок и предложение выкупа делаем ДО удаления строки
                         bonus_after = await self._snapshot_before_delete(
                             con, user_id, inventory_id, card
                         )
+                        offer_id = await self._make_offer(con, user_id, inventory_id, card)
                         await con.execute(
                             "delete from inventory where id = $1", int(inventory_id)
                         )
-                        offer_id = await self._make_offer(con, user_id, inventory_id, card)
                         outcome = "delete"
                     else:
                         delta = casino.random_lose_bonus()
@@ -223,7 +224,7 @@ class CasinoRepo:
         row = await con.fetchrow(
             "select casino_bonus from inventory where id = $1", int(inventory_id)
         )
-        return dict(row["casino_bonus"] or {}) if row else {}
+        return as_json_dict(row["casino_bonus"]) if row else {}
 
     async def _make_offer(
         self, con: asyncpg.Connection, user_id: int, inventory_id: int, card
@@ -247,7 +248,7 @@ class CasinoRepo:
             for slot in ("aura", "background", "effect")
             if row[f"{slot}_id"] is not None
         }
-        casino_bonus = dict(row["casino_bonus"] or {})
+        casino_bonus = as_json_dict(row["casino_bonus"])
         bonus = _merge(bonuses_of(upgrades), casino_bonus)
         price = market_price(card, bonus) * casino.BUYBACK_MULT
         return int(
@@ -309,10 +310,10 @@ class CasinoRepo:
                         """,
                         user_id,
                         offer["card_id"],
-                        _json(dict(offer["casino_bonus"] or {})),
+                        _json(as_json_dict(offer["casino_bonus"])),
                     )
                 )
-                upgrades = dict(offer["upgrades"] or {})
+                upgrades = as_json_dict(offer["upgrades"])
                 if upgrades:
                     await con.execute(
                         """
