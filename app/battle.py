@@ -229,10 +229,19 @@ def _check_over(state: dict[str, Any]) -> None:
 
 
 def _begin_turn(state: dict[str, Any], key: str) -> str:
-    """Возвращает 'act' (можно действовать), 'skip' (оглушён) или 'dead'."""
+    return begin_unit_turn(state, key)
+
+
+def begin_unit_turn(state: dict[str, Any], key: str, tick_cd: bool = True) -> str:
+    """Начало хода карты. Возвращает 'act', 'skip' (оглушён) или 'dead'.
+
+    tick_cd=False нужен командному бою: там КД откатывается раз в раунд,
+    а яд, утечка и оглушение — в момент хода конкретной карты.
+    """
     side = state["sides"][key]
-    side["cd"] = max(0, side["cd"] - 1)
-    side["silence"] = max(0, side["silence"] - 1)
+    if tick_cd:
+        side["cd"] = max(0, side["cd"] - 1)
+        side["silence"] = max(0, side["silence"] - 1)
 
     if side["drain"] > 0:
         owner = state["sides"].get(side["drain_from"] or "")

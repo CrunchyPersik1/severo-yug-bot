@@ -12,10 +12,10 @@ from typing import Any
 
 from .battle import (
     _apply_ability,
-    _begin_turn,
     _end_turn,
     _log,
     _strike,
+    begin_unit_turn,
     can_use_ability,
     new_side,
 )
@@ -107,6 +107,9 @@ def check_over(state: dict[str, Any]) -> bool:
 def begin_round(state: dict[str, Any]) -> None:
     for side in state["sides"].values():
         side["acted"] = False
+        # способности восстанавливаются раз в раунд — раньше не восстанавливались
+        side["cd"] = max(0, side["cd"] - 1)
+        side["silence"] = max(0, side["silence"] - 1)
     state["round"] += 1
     _log(state, f"🔁 Раунд {state['round']}")
 
@@ -143,17 +146,6 @@ def activate(state: dict[str, Any], user_id: int, unit_key: str) -> dict[str, An
     if side["acted"]:
         return {"ok": False, "error": "Эта карта уже ходила в этом раунде"}
 
-    status = _begin_turn(state, unit_key)
-    if status == "dead":
-        if check_over(state):
-            return {"ok": True, "status": "finished"}
-        advance(state)
-        return {"ok": True, "status": "skipped"}
-    if status == "skip":
-        side["acted"] = True
-        _end_turn(state, unit_key)
-        advance(state)
-        return {"ok": True, "status": "skipped"}
     return {"ok": True, "status": "ready"}
 
 
@@ -171,6 +163,19 @@ def perform(
         return {"ok": False, "error": "Это не твоя карта"}
     if state["turn"] != user_id or side["acted"]:
         return {"ok": False, "error": "Этот ход уже сделан"}
+
+    status = begin_unit_turn(state, unit_key, tick_cd=False)
+    if status == "dead":
+        side["acted"] = True
+        if not check_over(state):
+            advance(state)
+        return {"ok": True, "skipped": True}
+    if status == "skip":
+        side["acted"] = True
+        _end_turn(state, unit_key)
+        if not check_over(state):
+            advance(state)
+        return {"ok": True, "skipped": True}
 
     card = get_card(side["card_id"])
     ally_key = ally_key or unit_key

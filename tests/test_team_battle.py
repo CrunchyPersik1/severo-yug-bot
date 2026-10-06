@@ -104,3 +104,60 @@ def test_ownership_and_turn_are_enforced():
     not_mine = team_battle.unit_keys(state, 3)[0]
     assert team_battle.activate(state, 1, not_mine)["ok"] is False
     assert team_battle.activate(state, 3, team_battle.unit_keys(state, 3)[0])["ok"] is False
+
+def _make_immortal(state):
+    for side in state["sides"].values():
+        side["hp"] = side["max_hp"] = 5000
+
+
+def test_ability_cooldown_recovers_in_team_battle():
+    """Баг: в командном бою КД не откатывался и способности пропадали навсегда."""
+    state = team_battle.build_state(make_people(), make_picks(("oleg", "karina")), 1)
+    _make_immortal(state)
+    unit = team_battle.available(state, 1)[0]
+    assert team_battle.can_use_ability(state["sides"][unit])
+
+    team_battle.perform(state, 1, unit, team_battle.ACTION_ABILITY, _enemy(state, unit))
+    cooldown = get_card(state["sides"][unit]["card_id"]).ability.cooldown
+    assert state["sides"][unit]["cd"] == cooldown, "способность должна уйти на перезарядку"
+
+    guard = 0
+    while not team_battle.can_use_ability(state["sides"][unit]) and guard < 300:
+        guard += 1
+        uid = state["turn"]
+        key = team_battle.available(state, uid)[0]
+        team_battle.perform(state, uid, key, team_battle.ACTION_HIT, _enemy(state, key))
+    assert team_battle.can_use_ability(state["sides"][unit]), "КД обязан откатиться"
+
+
+def test_healer_can_heal_allies_again_after_cooldown():
+    """Вторая половина того же бага: хил переставал работать навсегда."""
+    state = team_battle.build_state(make_people(), make_picks(("saida", "oleg")), 1)
+    _make_immortal(state)
+    healer = team_battle.available(state, 1)[0]
+    state["sides"][healer]["hp"] = 500
+
+    team_battle.perform(state, 1, healer, team_battle.ACTION_ABILITY, _enemy(state, healer), healer)
+    assert state["sides"][healer]["hp"] == 520, "Саида лечит себя на 20"
+
+    guard = 0
+    while not team_battle.can_use_ability(state["sides"][healer]) and guard < 300:
+        guard += 1
+        uid = state["turn"]
+        key = team_battle.available(state, uid)[0]
+        team_battle.perform(state, uid, key, team_battle.ACTION_HIT, _enemy(state, key))
+    assert team_battle.can_use_ability(state["sides"][healer]), "хил должен восстановиться"
+
+
+def test_poison_now_ticks_in_team_battle():
+    """Раньше начало хода вообще не вызывалось, поэтому яд не работал."""
+    state = team_battle.build_state(make_people(), make_picks(("ravil", "oleg")), 1)
+    _make_immortal(state)
+    for side in state["sides"].values():
+        side["poison"] = 7
+        side["poison_turns"] = 2
+    uid = state["turn"]
+    key = team_battle.available(state, uid)[0]
+    before = state["sides"][key]["hp"]
+    team_battle.perform(state, uid, key, team_battle.ACTION_HIT, _enemy(state, key))
+    assert state["sides"][key]["hp"] == before - 7, "яд тикает в начале хода карты"
