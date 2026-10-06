@@ -209,6 +209,7 @@ async def collection_data(
                 "stats": effective_stats(card, row["bonus"]),
                 "items": upgrade_items(row),
                 "bonus": row["bonus"],
+                "casino_bonus": row.get("casino_bonus") or {},
             }
         )
     cases = await db.user_cases(user_id)

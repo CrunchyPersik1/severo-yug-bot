@@ -120,8 +120,8 @@ def render_collection(
     cases = cases or []
     lines = [
         f"🎒 <b>Коллекция</b> — {stats['unique_cards']}/{total} карт",
-        f"💰 Баланс: <b>{stats['total']}</b> очк. · всего карт: {stats['total_cards']} · "
-        f"🔪 убийств: {stats['card_kills']}",
+        f"💰 Баланс: <b>{stats['total']}</b> очк. · коллекция на {stats['points']} · "
+        f"всего карт: {stats['total_cards']} · 🔪 убийств: {stats['card_kills']}",
         "",
     ]
     if not cards and not instances and not cases:
@@ -154,6 +154,9 @@ def render_collection(
             )
             if unit.get("items"):
                 lines.append("      " + " · ".join(unit["items"]))
+            won_in_casino = unit.get("casino_bonus") or {}
+            if won_in_casino:
+                lines.append("      🎰 казино: " + casino.describe_bonus(won_in_casino))
     return "\n".join(lines)
 
 

@@ -327,8 +327,17 @@ class Database:
             bonus = await con.fetchval(
                 "select coalesce(bonus_points, 0) from players where user_id = $1", user_id
             )
+            # улучшенные копии живут в inventory и в прошлую сумму не попадали
+            inv_points = await con.fetchval(
+                """
+                select coalesce(sum(c.points), 0)
+                  from inventory i join cards c on c.card_id = i.card_id
+                 where i.user_id = $1
+                """,
+                user_id,
+            )
         bonus = int(bonus or 0)
-        points = int(row["points"])
+        points = int(row["points"]) + int(inv_points or 0)
         # Очки — единая валюта: баланс и есть счёт игрока, а points — справочная
         # стоимость коллекции (за неё очки уже начислены при выпадении).
         return {
@@ -350,7 +359,10 @@ class Database:
                        coalesce(sum(c.points), 0) as card_points,
                        count(col.card_id) as unique_cards,
                        coalesce(sum(col.count), 0) as total_cards,
-                       coalesce(sum(col.kills), 0) as card_kills
+                       coalesce(sum(col.kills), 0) as card_kills,
+                       coalesce((select sum(c2.points) from inventory i
+                                  join cards c2 on c2.card_id = i.card_id
+                                 where i.user_id = p.user_id), 0) as inv_points
                   from players p
                   left join collection col on col.user_id = p.user_id
                   left join cards c on c.card_id = col.card_id
@@ -365,6 +377,7 @@ class Database:
                 "select count(*) + 1 from players where wins > $1", int(row["wins"])
             )
         profile = dict(row)
+        profile["card_points"] = int(profile["card_points"]) + int(profile["inv_points"])
         profile["rank"] = int(rank or 1)
         profile["total"] = max(0, int(profile["bonus_points"]))
         return profile

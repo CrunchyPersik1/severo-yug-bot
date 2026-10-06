@@ -768,8 +768,7 @@ class MarketRepo:
         out = []
         for row in rows:
             item = dict(row)
-            item["bonus"] = sum_bonus(
-                bonuses_of(item), as_json_dict(item.get("casino_bonus"))
-            )
+            item["casino_bonus"] = as_json_dict(item.get("casino_bonus"))
+            item["bonus"] = sum_bonus(bonuses_of(item), item["casino_bonus"])
             out.append(item)
         return out
