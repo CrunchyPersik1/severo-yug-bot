@@ -398,7 +398,7 @@ def _advance(state: dict[str, Any], max_turns: int) -> None:
             return
         _end_turn(state, key)
         state["turn_no"] += 1
-        if state["turn_no"] > max_turns:
+        if max_turns and state["turn_no"] > max_turns:
             _declare_draw(state, "turn_limit")
             return
         state["turn"] = other(key)
@@ -415,7 +415,7 @@ def apply_action(
     actor_key: str,
     action: str = ACTION_HIT,
     *,
-    max_turns: int = 30,
+    max_turns: int = 0,          # 0 — без лимита ходов
     max_timeouts: int = 3,
     register_timeout: bool = False,
 ) -> dict[str, Any]:
@@ -455,7 +455,7 @@ def apply_action(
 
     _end_turn(state, actor_key)
     state["turn_no"] += 1
-    if state["turn_no"] > max_turns:
+    if max_turns and state["turn_no"] > max_turns:
         _declare_draw(state, "turn_limit")
         return {"ok": True, "error": None, "status": "draw"}
 

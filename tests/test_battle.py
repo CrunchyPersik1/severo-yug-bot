@@ -256,3 +256,30 @@ def test_new_secret_cards_exist():
         assert card.rarity == "secret"
         assert card.points == 11000
         assert card.budget >= 195
+
+def test_no_turn_limit_by_default():
+    """Без лимита бой не должен закончиться ничьей сам по себе."""
+    state = make_state("valeriya", "tamerlan_mif")
+    state["sides"][KEY_A]["hp"] = 100000
+    state["sides"][KEY_B]["hp"] = 100000
+    state["sides"][KEY_A]["max_hp"] = 100000
+    state["sides"][KEY_B]["max_hp"] = 100000
+    for _ in range(120):
+        if state["over"]:
+            break
+        apply_action(state, state["turn"], ACTION_HIT)
+    assert not state["over"], "бой не должен прерываться лимитом"
+    assert state["turn_no"] > 30
+
+
+def test_explicit_turn_limit_still_works():
+    state = make_state("valeriya", "tamerlan_mif")
+    state["sides"][KEY_A]["hp"] = 100000
+    state["sides"][KEY_B]["hp"] = 100000
+    state["sides"][KEY_A]["max_hp"] = 100000
+    state["sides"][KEY_B]["max_hp"] = 100000
+    for _ in range(40):
+        if state["over"]:
+            break
+        apply_action(state, state["turn"], ACTION_HIT, max_turns=5)
+    assert state["over"] and state["reason"] == "turn_limit"

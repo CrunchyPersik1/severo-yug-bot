@@ -40,7 +40,7 @@ class Settings:
 
     # Бой
     battle_timeout_seconds: int = 60
-    battle_max_turns: int = 30
+    battle_max_turns: int = 0   # 0 — без лимита ходов, бой идёт до победы или «Сдаться»
     battle_max_timeouts: int = 3
     pick_timeout_seconds: int = 600
     cards_per_page: int = 8
