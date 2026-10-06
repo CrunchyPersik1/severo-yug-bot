@@ -15,14 +15,14 @@ EXPECTED = {
     "epic": 10,
     "mythic": 8,
     "legendary": 3,
-    "secret": 2,
+    "secret": 5,
     "ultra": 1,
 }
 
 
 def test_total_and_unique_ids():
-    assert len(CARDS) == 32
-    assert len(CARDS_BY_ID) == 32
+    assert len(CARDS) == 35
+    assert len(CARDS_BY_ID) == 35
 
 
 def test_duplicate_names_have_distinct_ids():
@@ -36,7 +36,7 @@ def test_duplicate_names_have_distinct_ids():
 def test_rarity_counts_match_spec():
     for rarity, expected in EXPECTED.items():
         assert len(CARDS_BY_RARITY[rarity]) == expected, rarity
-    assert sum(EXPECTED.values()) == 32
+    assert sum(EXPECTED.values()) == 35
 
 
 def test_weights_sum_to_one():
@@ -66,7 +66,7 @@ def test_duplicate_names_are_split_by_surname():
 
     display = Counter(card.display_name for card in CARDS)
     assert all(count == 1 for count in display.values()), "отображаемые имена не должны повторяться"
-    assert len(display) == 32
+    assert len(display) == 35
 
 
 def test_only_duplicate_names_have_surnames():

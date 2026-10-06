@@ -39,11 +39,11 @@ def test_schema_and_cards_upsert():
         try:
             async with db.pool.acquire() as con:
                 count = await con.fetchval("select count(*) from cards")
-                assert count == len(CARDS) == 32
+                assert count == len(CARDS) == 35
             # повторный upsert не должен падать и не должен дублировать
             await db.upsert_cards(card_rows())
             async with db.pool.acquire() as con:
-                assert await con.fetchval("select count(*) from cards") == 32
+                assert await con.fetchval("select count(*) from cards") == 35
         finally:
             await db.close()
 

@@ -8,6 +8,7 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
+from . import casino
 from .cards import Card, get_card
 from .items import SLOT_ICONS
 from .market import UPGRADE_PRICE, describe_bonus
@@ -32,12 +33,13 @@ _ABILITY_TEXT = {
     "weaken_turns": "на {v} х.",
     "cleanse": "снимает дебаффы",
     "self_stun": "свой ход пропущен",
+    "drain": "утечка {v} HP в ход (пока жив)",
 }
 
 _ORDER = [
     "heal", "shield", "damage", "hits", "ignore_shield", "steal", "poison",
     "poison_turns", "stun", "silence", "dodge", "counter", "counter_turns",
-    "weaken", "weaken_turns", "cleanse", "self_stun",
+    "weaken", "weaken_turns", "cleanse", "self_stun", "drain",
 ]
 
 
@@ -690,3 +692,102 @@ def render_sell_case(lot: dict[str, Any], ratio: float, penalty: float, rating: 
         lines.append("🚩 Лот помечен как подозрительный.")
     lines.append(f"Изменить цену: <code>/changeprice {lot['id']} новая_цена</code>")
     return "\n".join(lines)
+
+# --------------------------------------------------------------------------- #
+# Казино
+# --------------------------------------------------------------------------- #
+
+
+def render_casino_help(balance: int) -> str:
+    return "\n".join(
+        [
+            "🎰 <b>Казино</b>",
+            "",
+            f"Твой баланс: <b>{balance}</b> очков.",
+            "",
+            "Ставь очки или карту и выбирай цвет:",
+            "🔴 красное и ⚫ чёрное — <b>x2</b>",
+            "🟢 зелёное — <b>x5</b> (выпадает примерно 1 раз на 50)",
+            "",
+            "Ставка очками: <code>/casino 1000</code>",
+            "Ставка картой: <code>/casino #oleg</code> или <code>/casino #12</code>",
+            "",
+            "Проигрыш: очки возвращаются только на треть, карта либо уничтожается (20%), "
+            "либо теряет статы (80%). Редкую карту можно выкупить за двойную цену.",
+        ]
+    )
+
+
+def render_casino_colors(bet_label: str, token: str) -> tuple[str, InlineKeyboardMarkup]:
+    text = "\n".join(["🎰 <b>Ставка принята</b>", "", f"Ставим: {bet_label}", "", "На какой цвет?"])
+    rows = [
+        [InlineKeyboardButton(text="🔴 Красное x2", callback_data=f"cs:{token}:red")],
+        [InlineKeyboardButton(text="⚫ Чёрное x2", callback_data=f"cs:{token}:black")],
+        [InlineKeyboardButton(text="🟢 Зелёное x5", callback_data=f"cs:{token}:green")],
+    ]
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_casino_result(
+    result: dict[str, Any], balance: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    rolled = casino.color_title(result["rolled"])
+    bet_label = casino.color_title(result["color"])
+    lines = [f"🎰 Выпало: <b>{rolled}</b> (ставил на {bet_label})", ""]
+
+    if result["kind"] == "points":
+        if result["won"]:
+            lines += [
+                f"🎉 <b>Победа!</b> Ставка {result['bet']} → <b>{result['payout']}</b> очков.",
+                f"Чистыми: <b>+{result['delta']}</b>",
+            ]
+        else:
+            lines += [
+                f"💀 <b>Проигрыш.</b> Из {result['bet']} вернулась только треть: "
+                f"<b>{result['payout']}</b>.",
+                f"Чистыми: <b>{result['delta']}</b>",
+            ]
+        lines.append(f"💳 Баланс: <b>{balance}</b>")
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=[])
+
+    card = result["card"]
+    if result["won"]:
+        head = (
+            "🟢🟢🟢 <b>ДЖЕКПОТ!</b> Карта улучшена до максимума:"
+            if result["outcome"] == "max"
+            else "🎉 <b>Победа!</b> Карта улучшена:"
+        )
+        lines += [head, f"   {casino.describe_bonus(result['bonus'])}"]
+    elif result["outcome"] == "delete":
+        lines += [
+            "💀 <b>Проигрыш. Карта уничтожена.</b>",
+            f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> ({card.rarity_title})",
+        ]
+    else:
+        lines += [
+            "💀 <b>Проигрыш.</b> Карта потеряла часть статов:",
+            f"   {casino.describe_bonus(result['bonus'])}",
+        ]
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if result.get("offer_id"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="💸 Выкупить карту", callback_data=f"csb:{result['offer_id']}"
+                )
+            ]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_casino_bought(card: Card, price: int, balance: int, inventory_id: int) -> str:
+    return "\n".join(
+        [
+            "💸 <b>Карта выкуплена</b>",
+            "",
+            f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> ({card.rarity_title})",
+            f"Копия <code>#{inventory_id}</code> вернулась в коллекцию.",
+            f"Заплачено: <b>{price}</b> очков · осталось <b>{balance}</b>",
+        ]
+    )

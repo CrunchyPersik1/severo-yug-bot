@@ -159,7 +159,12 @@ class MarketRepo:
             return {}
         async with self.pool.acquire() as con:
             row = await con.fetchrow("select * from upgrades where inventory_id = $1", inventory_id)
-        return bonuses_of(dict(row) if row else None)
+            casino_row = await con.fetchrow(
+                "select casino_bonus from inventory where id = $1", inventory_id
+            )
+        bonus = bonuses_of(dict(row) if row else None)
+        casino_bonus = dict(casino_row["casino_bonus"] or {}) if casino_row else {}
+        return sum_bonus(bonus, casino_bonus)
 
     # ------------------------------------------------------------------ #
     # Репутация
@@ -749,7 +754,7 @@ class MarketRepo:
 
     async def user_inventory(self, user_id: int, include_listed: bool = False) -> list[dict[str, Any]]:
         query = """
-            select i.id, i.card_id, i.listed,
+            select i.id, i.card_id, i.listed, i.casino_bonus,
                    u.aura_id, u.background_id, u.effect_id
               from inventory i
               left join upgrades u on u.inventory_id = i.id
@@ -763,6 +768,8 @@ class MarketRepo:
         out = []
         for row in rows:
             item = dict(row)
-            item["bonus"] = bonuses_of(item)
+            item["bonus"] = sum_bonus(
+                bonuses_of(item), dict(item.get("casino_bonus") or {})
+            )
             out.append(item)
         return out

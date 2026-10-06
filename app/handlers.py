@@ -12,8 +12,9 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, Message
 
-from . import admin_actions, render
+from . import admin_actions, casino, render
 from .battle_service import BattleError, BattleService
+from .casino_repo import CasinoError, CasinoRepo
 from .config import settings
 from .cards import CARDS, cards_sorted_for_user, get_card
 from .cases import roll_case_card
@@ -814,3 +815,99 @@ async def cmd_rating(message: Message, db: Database, market: MarketRepo) -> None
         return
     stats = await market.deal_stats(target_id)
     await message.answer(render.render_rating_profile(profile, stats["deals"], stats["gifts"]))
+
+
+# --------------------------------------------------------------------------- #
+# Казино
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("casino", "казино"))
+@router.message(NormalizedText("казино"))
+async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    balance = await market.balance(user.id)
+    parts = (message.text or "").split()[1:]
+    if not parts:
+        await message.answer(render.render_casino_help(balance))
+        return
+
+    raw = parts[0]
+    if raw.lstrip("-").isdigit():
+        amount = int(raw)
+        if amount < casino.MIN_BET or amount > casino.MAX_BET:
+            await message.answer(
+                f"⚠️ Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков."
+            )
+            return
+        if balance < amount:
+            await message.answer(f"⚠️ Не хватает очков: ставишь {amount}, у тебя {balance}.")
+            return
+        text, keyboard = render.render_casino_colors(f"💰 {amount} очков", f"p:{amount}")
+    else:
+        parsed = parse_handle(raw)
+        if parsed is None:
+            await message.answer("Не понял ставку. Смотри /casino")
+            return
+        try:
+            unit = await market.owned_unit(user.id, parsed)
+        except MarketError as error:
+            await message.answer(f"⚠️ {error}")
+            return
+        card = get_card(unit["card_id"])
+        token = "c:" + raw.lstrip("#")
+        text, keyboard = render.render_casino_colors(
+            f"{card.rarity_emoji} {render.esc(card.display_name)}", token
+        )
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("cs:"))
+async def cb_casino(callback: CallbackQuery, db: Database, market: MarketRepo) -> None:
+    assert callback.data is not None
+    _, token, color = callback.data.split(":", 2)
+    if color not in casino.COLORS:
+        await callback.answer("Неизвестный цвет", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    repo = CasinoRepo(db, market)
+    try:
+        if token.startswith("p:"):
+            result = await repo.bet_points(user_id, int(token[2:]), color)
+        else:
+            parsed = parse_handle(token[2:])
+            if parsed is None:
+                raise CasinoError("Не понял, какую карту ставим.")
+            unit = await market.owned_unit(user_id, parsed)
+            result = await repo.bet_card(user_id, unit, color)
+    except (CasinoError, MarketError) as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+
+    balance = await market.balance(user_id)
+    text, keyboard = render.render_casino_result(result, balance)
+    await _safe_edit(callback, text, keyboard)
+    await callback.answer("Победа!" if result["won"] else "Проигрыш")
+
+
+@router.callback_query(F.data.startswith("csb:"))
+async def cb_casino_buyback(
+    callback: CallbackQuery, db: Database, market: MarketRepo
+) -> None:
+    assert callback.data is not None
+    offer_id = int(callback.data.split(":", 1)[1])
+    repo = CasinoRepo(db, market)
+    try:
+        bought = await repo.buyback(callback.from_user.id, offer_id)
+    except CasinoError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+    text = render.render_casino_bought(
+        bought["card"], bought["price"], bought["balance"], bought["inventory_id"]
+    )
+    await _safe_edit(callback, text, None)
+    await callback.answer("Карта вернулась")

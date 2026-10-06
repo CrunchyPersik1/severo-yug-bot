@@ -209,3 +209,38 @@ alter table players add column if not exists drop_uses     integer not null defa
 alter table players add column if not exists drop_limit    integer not null default 1;
 alter table players add column if not exists roulette_uses integer not null default 0;
 alter table players add column if not exists roulette_limit integer not null default 1;
+-- ===================================================================== --
+-- Казино
+-- ===================================================================== --
+
+-- Бонусы (и штрафы), которые карта получила в казино. Складываются с бонусами
+-- ауры/фона/эффекта и точно так же влияют на статы и цену.
+alter table inventory add column if not exists casino_bonus jsonb not null default '{}'::jsonb;
+
+-- Снимок проигранной карты: её можно выкупить, пока действует предложение.
+create table if not exists casino_lost (
+    id           bigserial primary key,
+    user_id      bigint not null references players(user_id) on delete cascade,
+    card_id      text not null,
+    casino_bonus jsonb not null default '{}'::jsonb,
+    upgrades     jsonb not null default '{}'::jsonb,
+    price        integer not null,
+    bought       boolean not null default false,
+    created_at   timestamptz not null default now(),
+    expires_at   timestamptz not null
+);
+create index if not exists casino_lost_user_idx on casino_lost (user_id, bought, expires_at);
+
+create table if not exists casino_log (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    bet_kind   text not null,
+    bet_value  text,
+    color      text not null,
+    rolled     text not null,
+    won        boolean not null,
+    outcome    text not null,
+    amount     integer not null default 0,
+    created_at timestamptz not null default now()
+);
+create index if not exists casino_log_user_idx on casino_log (user_id, created_at desc);

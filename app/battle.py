@@ -61,6 +61,10 @@ def new_side(user_id: int, card: Card, stats: dict[str, int] | None = None) -> d
         "silence": 0,
         "cd": 0,
         "timeouts": 0,
+        # Вечная утечка (Словесное исцеление Эмина): сколько HP в ход жертвы
+        # уходит хозяину заклинания. Действует, пока хозяин жив.
+        "drain": 0,
+        "drain_from": None,
     }
 
 
@@ -175,9 +179,23 @@ def _counter_attack(state: dict[str, Any], attacker_key: str, defender_key: str)
     _deal_damage(state, attacker_key, int(defender["counter"]), "🛡️ Контрудар")
 
 
+def _clear_owner_drains(state: dict[str, Any], dead_key: str) -> None:
+    """Со смертью хозяина заклинания утечка с противника снимается."""
+    for key in (KEY_A, KEY_B):
+        side = state["sides"][key]
+        if side.get("drain_from") == dead_key and side["drain"] > 0:
+            side["drain"] = 0
+            side["drain_from"] = None
+            _log(state, "🔓 Заклинание спало")
+
+
 def _check_over(state: dict[str, Any]) -> None:
     a_dead = state["sides"][KEY_A]["hp"] <= 0
     b_dead = state["sides"][KEY_B]["hp"] <= 0
+    if a_dead:
+        _clear_owner_drains(state, KEY_A)
+    if b_dead:
+        _clear_owner_drains(state, KEY_B)
     if not (a_dead or b_dead):
         return
     state["over"] = True
@@ -202,6 +220,20 @@ def _begin_turn(state: dict[str, Any], key: str) -> str:
     side = state["sides"][key]
     side["cd"] = max(0, side["cd"] - 1)
     side["silence"] = max(0, side["silence"] - 1)
+
+    if side["drain"] > 0:
+        owner = state["sides"].get(side["drain_from"] or "")
+        if owner is None or owner["hp"] <= 0:
+            side["drain"] = 0
+            side["drain_from"] = None
+        else:
+            moved = min(int(side["drain"]), max(0, side["hp"]))
+            if moved > 0:
+                side["hp"] -= moved
+                owner["hp"] = min(owner["max_hp"], owner["hp"] + moved)
+                _log(state, f"🔗 Заклинание: −{moved} HP в пользу врага")
+            if side["hp"] <= 0:
+                return "dead"
 
     if side["poison_turns"] > 0:
         _deal_damage(state, key, int(side["poison"]), "☠️ Яд", ignore_shield=True, use_defense=False)
@@ -295,6 +327,11 @@ def _apply_ability(state: dict[str, Any], actor_key: str, card: Card) -> None:
         actor["counter"] = int(effects["counter"])
         actor["counter_turns"] = int(effects.get("counter_turns", 2))
         _log(state, f"🛡️ Контрудар {actor['counter']}")
+
+    if "drain" in effects:
+        foe["drain"] = int(effects["drain"])
+        foe["drain_from"] = actor_key
+        _log(state, f"🔗 Заклинание: {int(effects['drain'])} HP в ход в пользу врага")
 
     if "weaken" in effects:
         foe["weaken"] = max(int(foe["weaken"]), int(effects["weaken"]))

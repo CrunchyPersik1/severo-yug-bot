@@ -15,6 +15,7 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="my", description="Коллекция, кейсы, копии и их id"),
     BotCommand(command="upgrade", description="Улучшить карту за 750: /upgrade #id"),
     BotCommand(command="market", description="Рынок: лоты с кнопкой «Купить»"),
+    BotCommand(command="casino", description="Казино: ставка очками или картой"),
     BotCommand(command="sell", description="Выставить лот: /sell #id цена"),
     BotCommand(command="mylots", description="Свои лоты на рынке"),
     BotCommand(command="changeprice", description="Изменить цену: /changeprice id цена"),
