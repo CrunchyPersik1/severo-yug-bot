@@ -839,6 +839,9 @@ def render_team_pick(
             pair = []
     if pair:
         rows.append(pair)
+    rows.append(
+        [InlineKeyboardButton(text="🛑 Остановить бой", callback_data=f"ts:{battle_id}")]
+    )
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -950,6 +953,10 @@ def render_team_battle(
     if tail:
         lines.append("")
         lines.extend(f"· {esc(item)}" for item in tail)
+    if not state.get("over"):
+        rows.append(
+            [InlineKeyboardButton(text="🛑 Остановить бой", callback_data=f"ts:{battle_id}")]
+        )
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 

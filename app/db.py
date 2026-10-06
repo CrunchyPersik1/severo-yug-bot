@@ -601,6 +601,23 @@ class Database:
             )
         return [b for b in (self._row_to_battle(row) for row in rows) if b is not None]
 
+    async def find_active_team_battles(self, user_id: int) -> list[dict[str, Any]]:
+        """Активные командные бои, где игрок участник — для команды «стоп»."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                """
+                select b.* from battles b
+                 where b.status in ('choosing', 'active')
+                   and exists (
+                       select 1 from jsonb_array_elements(b.state->'participants') p
+                        where (p->>'user_id')::bigint = $1
+                   )
+                 order by b.updated_at desc
+                """,
+                user_id,
+            )
+        return [b for b in (self._row_to_battle(row) for row in rows) if b is not None]
+
     async def user_active_battles(self, user_id: int) -> int:
         async with self._p().acquire() as con:
             row = await con.fetchrow(

@@ -1198,3 +1198,43 @@ async def cb_faq(callback: CallbackQuery) -> None:
 
     await _safe_edit(callback, text, keyboard)
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ts:"))
+async def cb_team_stop(
+    callback: CallbackQuery, bot: Bot, db: Database, market: MarketRepo
+) -> None:
+    """Кнопка «Остановить бой» — доступна любому участнику."""
+    assert callback.data is not None
+    battle_id = callback.data.split(":", 1)[1]
+    service = TeamBattleService(bot, db, market)
+    try:
+        await service.stop(battle_id, callback.from_user.id)
+    except TeamBattleError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+    await callback.answer("Бой остановлен")
+
+
+@router.message(Command("stop", "стоп"))
+@router.message(NormalizedText("стоп", "stop", "остановить бой"))
+async def cmd_team_stop(
+    message: Message, bot: Bot, db: Database, market: MarketRepo
+) -> None:
+    """Текстом: останавливает все твои активные командные бои."""
+    user = message.from_user
+    if user is None:
+        return
+    battles = await db.find_active_team_battles(user.id)
+    if not battles:
+        await message.answer("У тебя нет активных командных боёв.")
+        return
+    service = TeamBattleService(bot, db, market)
+    stopped = 0
+    for battle in battles:
+        try:
+            await service.stop(battle["battle_id"], user.id)
+            stopped += 1
+        except TeamBattleError:
+            continue
+    await message.answer(f"🛑 Остановлено боёв: <b>{stopped}</b>.")

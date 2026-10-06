@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import secrets
 from typing import Any
@@ -299,6 +300,42 @@ class TeamBattleService:
             battle["battle_id"],
             lambda b, s, c=chat_id, m=sent.message_id: (None, {"chat_id": c, "message_id": m}),
         )
+
+    # ------------------------------------------------------------------ #
+    # Остановка
+    # ------------------------------------------------------------------ #
+
+    async def stop(self, battle_id: str, user_id: int) -> str:
+        """Останавливает бой. Доступно любому участнику, в любой момент."""
+        stopped_by = ""
+
+        def mutator(battle: dict[str, Any], state: dict[str, Any]):
+            nonlocal stopped_by
+            if battle["status"] not in ("choosing", "active"):
+                raise TeamBattleError("Бой уже закончен.")
+            person = self._person(state, user_id)
+            if person is None:
+                raise TeamBattleError("Ты не участник этого боя.")
+            stopped_by = person["name"]
+            state["over"] = True
+            state["winner"] = None
+            state["cancelled_by"] = user_id
+            state.setdefault("log", []).append(f"🛑 {stopped_by} остановил бой")
+            return {"cancelled": True}, {"status": "finished"}
+
+        battle, _ = await self._commit(battle_id, mutator)
+        if battle is None:
+            raise TeamBattleError("Бой не найден.")
+
+        chat_id = battle.get("chat_id")
+        if chat_id:
+            with contextlib.suppress(Exception):
+                await self.bot.send_message(
+                    chat_id,
+                    "🛑 <b>Командный бой остановлен</b>\n"
+                    f"{render.esc(stopped_by)} нажал стоп. Карты вернулись, никто не пострадал.",
+                )
+        return stopped_by
 
     # ------------------------------------------------------------------ #
     # Таймауты
