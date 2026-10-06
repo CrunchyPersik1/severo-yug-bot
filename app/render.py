@@ -1082,7 +1082,10 @@ def faq_cards(page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
     rows = [
         [
             InlineKeyboardButton(
-                text=f"{card.rarity_emoji} {card.name} — {_money(market_price(card))}",
+                text=(
+                    f"{card.rarity_emoji} {card.display_name} — "
+                    f"{_money(market_price(card))}"
+                ),
                 callback_data=f"fq:card:{card.card_id}",
             )
         ]
