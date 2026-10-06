@@ -104,6 +104,19 @@ def _log(state: dict[str, Any], message: str) -> None:
         del state["log"][: len(state["log"]) - MAX_LOG]
 
 
+def ability_targets(card: Card) -> str:
+    """Кого требует способность: 'enemy', 'ally' или 'both'."""
+    effects = card.ability.effects
+    offence = any(
+        key in effects
+        for key in ("damage", "steal", "poison", "stun", "silence", "weaken", "drain")
+    )
+    support = "heal" in effects or "shield" in effects or bool(effects.get("cleanse"))
+    if offence and support:
+        return "both"
+    return "enemy" if offence else "ally"
+
+
 def can_use_ability(side: dict[str, Any]) -> bool:
     return side["cd"] <= 0 and side["silence"] <= 0
 
@@ -264,17 +277,26 @@ def _end_turn(state: dict[str, Any], key: str) -> None:
             side["counter"] = 0
 
 
-def _strike(state: dict[str, Any], actor_key: str, card: Card) -> None:
-    foe_key = other(actor_key)
+def _strike(
+    state: dict[str, Any], actor_key: str, card: Card, foe_key: str | None = None
+) -> None:
+    foe_key = foe_key or other(actor_key)
     foe = state["sides"][foe_key]
     damage = max(1, card.atk - int(foe["weaken"]))
     _deal_damage(state, foe_key, damage, "⚔️ Удар")
     _counter_attack(state, actor_key, foe_key)
 
 
-def _apply_ability(state: dict[str, Any], actor_key: str, card: Card) -> None:
+def _apply_ability(
+    state: dict[str, Any],
+    actor_key: str,
+    card: Card,
+    foe_key: str | None = None,
+    ally_key: str | None = None,
+) -> None:
     actor = state["sides"][actor_key]
-    foe_key = other(actor_key)
+    foe_key = foe_key or other(actor_key)
+    ally_key = ally_key or actor_key
     foe = state["sides"][foe_key]
     effects = card.ability.effects
     name = card.ability.name
@@ -298,10 +320,10 @@ def _apply_ability(state: dict[str, Any], actor_key: str, card: Card) -> None:
             _heal(state, actor_key, stolen)
 
     if "heal" in effects:
-        _heal(state, actor_key, int(effects["heal"]))
+        _heal(state, ally_key, int(effects["heal"]))
 
     if "shield" in effects:
-        actor["shield"] += int(effects["shield"])
+        state["sides"][ally_key]["shield"] += int(effects["shield"])
         _log(state, f"🛡️ Щит: +{int(effects['shield'])}")
 
     if "poison" in effects:
@@ -341,7 +363,7 @@ def _apply_ability(state: dict[str, Any], actor_key: str, card: Card) -> None:
         _log(state, f"🔻 Ослабление −{int(effects['weaken'])} к урону")
 
     if effects.get("cleanse"):
-        _cleanse(state, actor_key)
+        _cleanse(state, ally_key)
 
     if "self_stun" in effects:
         actor["stun"] += int(effects["self_stun"])

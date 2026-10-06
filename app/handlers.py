@@ -12,9 +12,11 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, Message
 
-from . import admin_actions, casino, render
+from . import admin_actions, casino, render, team_battle
+from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
+from .team_service import TeamBattleError, TeamBattleService
 from .config import settings
 from .cards import CARDS, cards_sorted_for_user, get_card
 from .cases import roll_case_card
@@ -911,3 +913,158 @@ async def cb_casino_buyback(
     )
     await _safe_edit(callback, text, None)
     await callback.answer("Карта вернулась")
+
+
+# --------------------------------------------------------------------------- #
+# Командный PvP
+# --------------------------------------------------------------------------- #
+
+TEAM_PVP_PREFIX = re.compile(r"(?i)^/?\s*пвп\s+")
+
+
+def _first_enemy(state: dict[str, Any], unit_key: str) -> str | None:
+    actor = state["sides"][unit_key]
+    foe_team = team_battle.enemy_team(actor["team"])
+    for key in state["teams"].get(foe_team, []):
+        if state["sides"][key]["hp"] > 0:
+            return key
+    return None
+
+
+@router.message(F.text.regexp(r"(?i)^/?\s*пвп\s+"))
+async def cmd_team_pvp(
+    message: Message, bot: Bot, db: Database, market: MarketRepo
+) -> None:
+    user = message.from_user
+    if user is None or not message.text:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+
+    body = TEAM_PVP_PREFIX.sub("", message.text).strip()
+    cards_per_player = 2
+    named: list[str] = []
+    for token in body.split():
+        if token.isdigit():
+            cards_per_player = int(token)
+        else:
+            named.append(token)
+
+    if named:
+        if len(named) != 4:
+            await message.answer(
+                "⚔️ Для боя 2 на 2 перечисли всех четырёх: "
+                "<code>пвп @я @союзник @враг1 @враг2</code>"
+            )
+            return
+        people = []
+        for token in named:
+            row = await market.find_by_username(token)
+            if row is None:
+                await message.answer(f"⚠️ Не нашёл игрока {render.esc(token)}.")
+                return
+            people.append(
+                {"user_id": int(row["user_id"]), "name": row["first_name"] or token}
+            )
+        if user.id not in [person["user_id"] for person in people]:
+            await message.answer("⚠️ Тебя нет среди участников — так бой не начнётся.")
+            return
+        cards_per_player = 2 if cards_per_player not in (2, 3) else cards_per_player
+    else:
+        replied = message.reply_to_message
+        if replied is None or replied.from_user is None:
+            await message.answer(
+                "⚔️ Ответь этой командой на сообщение соперника "
+                "(например <code>пвп 2</code>), либо перечисли 4 юзернейма."
+            )
+            return
+        opponent = replied.from_user
+        if opponent.id == user.id or opponent.is_bot:
+            await message.answer("⚔️ Нужен живой соперник.")
+            return
+        await db.ensure_player(opponent.id, opponent.username, opponent.first_name)
+        people = [
+            {"user_id": user.id, "name": user.first_name or "Игрок"},
+            {
+                "user_id": opponent.id,
+                "name": opponent.first_name or opponent.username or "Игрок",
+            },
+        ]
+
+    service = TeamBattleService(bot, db, market)
+    try:
+        await service.create(message.chat.id, user.id, people, cards_per_player)
+    except TeamBattleError as error:
+        await message.answer(f"⚠️ {error}")
+        return
+    await message.answer(
+        "⚔️ <b>Командный бой создан!</b>\nКаждый участник выбирает карты в личке с ботом."
+    )
+
+
+@router.callback_query(F.data.startswith("tk:"))
+async def cb_team_pick(
+    callback: CallbackQuery, bot: Bot, db: Database, market: MarketRepo
+) -> None:
+    assert callback.data is not None
+    _, battle_id, handle = callback.data.split(":", 2)
+    service = TeamBattleService(bot, db, market)
+    try:
+        await service.toggle_card(callback, battle_id, handle)
+    except TeamBattleError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+    await callback.answer("Карта принята")
+
+
+@router.callback_query(F.data.startswith("tb:"))
+async def cb_team_battle(
+    callback: CallbackQuery, bot: Bot, db: Database, market: MarketRepo
+) -> None:
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    battle_id, step = parts[1], parts[2]
+    service = TeamBattleService(bot, db, market)
+    battle = await db.get_battle(battle_id)
+    if battle is None:
+        await callback.answer("Бой не найден", show_alert=True)
+        return
+    state = battle["state"]
+
+    try:
+        if step == "u":
+            unit_key = parts[3]
+            text, keyboard = render.render_team_battle(
+                battle, state, {"unit": unit_key}
+            )
+            await _safe_edit(callback, text, keyboard)
+        elif step == "a":
+            unit_key, action = parts[3], parts[4]
+            text, keyboard = render.render_team_battle(
+                battle, state, {"unit": unit_key, "action": action}
+            )
+            await _safe_edit(callback, text, keyboard)
+        elif step == "t":
+            unit_key, action, target = parts[3], parts[4], parts[5]
+            card = get_card(state["sides"][unit_key]["card_id"])
+            need = ability_targets(card) if action == "ability" else "enemy"
+            if need == "both":
+                text, keyboard = render.render_team_battle(
+                    battle, state, {"unit": unit_key, "action": action, "target": target}
+                )
+                await _safe_edit(callback, text, keyboard)
+            elif need == "ally":
+                await service.act(
+                    callback, battle_id, unit_key, action, _first_enemy(state, unit_key), target
+                )
+            else:
+                await service.act(callback, battle_id, unit_key, action, target, None)
+        elif step == "y":
+            unit_key, target, ally = parts[3], parts[4], parts[5]
+            await service.act(callback, battle_id, unit_key, "ability", target, ally)
+        else:
+            await callback.answer("Не понял шаг", show_alert=True)
+            return
+    except TeamBattleError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+    await callback.answer()

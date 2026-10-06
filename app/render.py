@@ -8,8 +8,10 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
-from . import casino
+from . import casino, team_battle
+from .battle import ability_targets, can_use_ability
 from .cards import Card, get_card
+from .team_battle import TEAM_BLUE, TEAM_RED
 from .items import SLOT_ICONS
 from .market import UPGRADE_PRICE, describe_bonus
 
@@ -791,3 +793,187 @@ def render_casino_bought(card: Card, price: int, balance: int, inventory_id: int
             f"Заплачено: <b>{price}</b> очков · осталось <b>{balance}</b>",
         ]
     )
+
+# --------------------------------------------------------------------------- #
+# Командный PvP
+# --------------------------------------------------------------------------- #
+
+
+def render_team_pick(
+    battle_id: str, units: list[dict[str, Any]], picked: int, need: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        "⚔️ <b>Командный бой</b>",
+        f"Выбрано карт: <b>{picked}</b> из {need}.",
+        "Жми на карту — она пойдёт в бой.",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    pair: list[InlineKeyboardButton] = []
+    for unit in units:
+        label = f"{unit['card'].name} ⚔{unit['stats']['atk']}/❤{unit['stats']['hp']}"
+        pair.append(
+            InlineKeyboardButton(text=label, callback_data=f"tk:{battle_id}:{unit['handle']}")
+        )
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _team_board_lines(state: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for team, title in ((TEAM_RED, "🔴 Красные"), (TEAM_BLUE, "🔵 Синие")):
+        lines.append(f"<b>{title}</b>")
+        for key in state["teams"].get(team, []):
+            side = state["sides"][key]
+            card = get_card(side["card_id"])
+            if side["hp"] <= 0:
+                lines.append(f"  ☠️ {esc(card.display_name)} — уничтожена")
+                continue
+            marks = ""
+            if side.get("acted"):
+                marks += " ✔"
+            if side.get("shield"):
+                marks += f" 🛡{side['shield']}"
+            if side.get("drain"):
+                marks += " 🔗"
+            if side.get("poison_turns"):
+                marks += f" ☠{side['poison']}"
+            lines.append(
+                f"  {card.rarity_emoji} {esc(card.display_name)} — "
+                f"<b>{max(0, side['hp'])}</b>/{side['max_hp']}{marks} · {esc(side['name'])}"
+            )
+        lines.append("")
+    return lines
+
+
+def render_team_battle(
+    battle: dict[str, Any], state: dict[str, Any], view: dict[str, Any] | None = None
+) -> tuple[str, InlineKeyboardMarkup]:
+    battle_id = battle["battle_id"]
+    view = view or {}
+    lines = [f"⚔️ <b>Командный бой</b> <code>{esc(battle_id)}</code> · раунд {state['round']}", ""]
+    lines += _team_board_lines(state)
+
+    rows: list[list[InlineKeyboardButton]] = []
+    if state.get("over"):
+        winner = state.get("winner")
+        if winner:
+            title = "🔴 Красные" if winner == TEAM_RED else "🔵 Синие"
+            lines.append(f"🏆 Победили <b>{title}</b>")
+        else:
+            lines.append("🤝 Ничья")
+    else:
+        turn = state["turn"]
+        person = next(
+            (p for p in state["participants"] if p["user_id"] == turn), None
+        )
+        name = person["name"] if person else str(turn)
+        unit_key = view.get("unit")
+        action = view.get("action")
+        target = view.get("target")
+
+        if unit_key is None:
+            lines.append(f"Ходит <b>{esc(name)}</b>. Выбери карту:")
+            for key in team_battle.available(state, turn):
+                side = state["sides"][key]
+                card = get_card(side["card_id"])
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=f"{card.name} ❤{max(0, side['hp'])}",
+                            callback_data=f"tb:{battle_id}:u:{key}",
+                        )
+                    ]
+                )
+        else:
+            side = state["sides"][unit_key]
+            card = get_card(side["card_id"])
+            lines.append(f"Карта: <b>{esc(card.display_name)}</b>")
+            if action is None:
+                lines.append("Что делаем?")
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=f"⚔️ Удар ({side['atk']})",
+                            callback_data=f"tb:{battle_id}:a:{unit_key}:hit",
+                        )
+                    ]
+                )
+                if can_use_ability(side):
+                    rows.append(
+                        [
+                            InlineKeyboardButton(
+                                text=f"✨ {card.ability.name}",
+                                callback_data=f"tb:{battle_id}:a:{unit_key}:ability",
+                            )
+                        ]
+                    )
+            else:
+                need = ability_targets(card) if action == "ability" else "enemy"
+                if need == "both" and target is None:
+                    lines.append("Кого бьём?")
+                    rows += _team_target_rows(state, battle_id, unit_key, action, team_battle, enemy=True)
+                elif need == "both":
+                    lines.append("Кого лечим?")
+                    rows += _team_ally_rows(state, battle_id, unit_key, target, team_battle)
+                elif need == "ally":
+                    lines.append("Кого лечим или прикрываем?")
+                    rows += _team_ally_rows(state, battle_id, unit_key, None, team_battle)
+                else:
+                    lines.append("Кого бьём?")
+                    rows += _team_target_rows(state, battle_id, unit_key, action, team_battle, enemy=True)
+
+    tail = state.get("log", [])[-3:]
+    if tail:
+        lines.append("")
+        lines.extend(f"· {esc(item)}" for item in tail)
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _team_target_rows(state, battle_id, unit_key, action, tb, enemy: bool):
+    actor = state["sides"][unit_key]
+    team = actor["team"]
+    keys = tb.team_keys(state, tb.enemy_team(team) if enemy else team)
+    rows = []
+    for key in keys:
+        side = state["sides"][key]
+        if side["hp"] <= 0:
+            continue
+        card = get_card(side["card_id"])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{card.name} ❤{max(0, side['hp'])}",
+                    callback_data=f"tb:{battle_id}:t:{unit_key}:{action}:{key}",
+                )
+            ]
+        )
+    return rows
+
+
+def _team_ally_rows(state, battle_id, unit_key, target_key, tb):
+    actor = state["sides"][unit_key]
+    rows = []
+    for key in tb.team_keys(state, actor["team"]):
+        side = state["sides"][key]
+        if side["hp"] <= 0:
+            continue
+        card = get_card(side["card_id"])
+        suffix = " · себя" if key == unit_key else ""
+        callback = (
+            f"tb:{battle_id}:y:{unit_key}:{target_key}:{key}"
+            if target_key
+            else f"tb:{battle_id}:t:{unit_key}:ability:{key}"
+        )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{card.name} ❤{max(0, side['hp'])}{suffix}",
+                    callback_data=callback,
+                )
+            ]
+        )
+    return rows

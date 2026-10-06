@@ -22,6 +22,7 @@ from app.config import settings
 from app.db import Database
 from app.handlers import router
 from app.market_repo import MarketRepo
+from app.team_service import TeamBattleService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,11 +50,13 @@ async def setup_commands(bot: Bot) -> None:
     log.info("Меню команд обновлено: %d шт.", len(COMMANDS))
 
 
-async def _ticker(service: BattleService) -> None:
+async def _ticker(service: BattleService, team: TeamBattleService) -> None:
     while True:
         await asyncio.sleep(15)
         with contextlib.suppress(Exception):
             await service.tick()
+        with contextlib.suppress(Exception):
+            await team.tick()
 
 
 @asynccontextmanager
@@ -82,7 +85,8 @@ async def lifespan(app: FastAPI):
 
     dp.include_router(router)
     service = BattleService(bot, db, market)
-    runtime.update(db=db, bot=bot, dp=dp, service=service, market=market)
+    team = TeamBattleService(bot, db, market)
+    runtime.update(db=db, bot=bot, dp=dp, service=service, market=market, team=team)
 
     me = await bot.get_me()
     log.info("Бот: @%s (%s)", me.username, me.id)
@@ -106,7 +110,7 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
 
-    task = asyncio.create_task(_ticker(service))
+    task = asyncio.create_task(_ticker(service, team))
     log.info("Бот запущен: %d карт", len(CARDS))
     try:
         yield
