@@ -54,6 +54,17 @@ def color_title(color: str) -> str:
     return COLORS.get(color, color)
 
 
+def parse_bet_callback(data: str) -> tuple[str, str] | None:
+    """Разбирает кнопку цвета. 'cs:p:1000:red' -> ('p:1000', 'red').
+
+    Ставка сама содержит двоеточие ('p:1000'), поэтому делить надо с конца.
+    """
+    parts = (data or "").split(":")
+    if len(parts) < 4 or parts[0] != "cs":
+        return None
+    return ":".join(parts[1:-1]), parts[-1]
+
+
 def roll_color(rng: random.Random | None = None) -> str:
     rng = rng or random
     return rng.choices(

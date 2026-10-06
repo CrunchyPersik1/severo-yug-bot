@@ -54,3 +54,22 @@ def test_only_rare_cards_can_be_bought_back():
 
 def test_max_bonus_is_reachable():
     assert casino.MAX_BONUS == {"atk": 30, "hp": 30, "def": 30}
+
+def test_color_callback_is_parsed_from_the_end():
+    # ставка на очки: токен сам содержит двоеточие
+    assert casino.parse_bet_callback("cs:p:1000:red") == ("p:1000", "red")
+    assert casino.parse_bet_callback("cs:p:50000:green") == ("p:50000", "green")
+    # ставка картой
+    assert casino.parse_bet_callback("cs:c:oleg:black") == ("c:oleg", "black")
+    assert casino.parse_bet_callback("cs:c:12:red") == ("c:12", "red")
+    # битые данные
+    assert casino.parse_bet_callback("cs:red") is None
+    assert casino.parse_bet_callback("") is None
+
+
+def test_every_color_button_round_trips():
+    for token in ("p:100", "p:1000", "c:oleg", "c:12"):
+        for color in casino.COLORS:
+            text, keyboard = __import__("app.render", fromlist=["render"]).render_casino_colors("x", token)
+            data = keyboard.inline_keyboard[[c for c in casino.COLORS].index(color)][0].callback_data
+            assert casino.parse_bet_callback(data) == (token, color)

@@ -870,7 +870,11 @@ async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None
 @router.callback_query(F.data.startswith("cs:"))
 async def cb_casino(callback: CallbackQuery, db: Database, market: MarketRepo) -> None:
     assert callback.data is not None
-    _, token, color = callback.data.split(":", 2)
+    parsed_bet = casino.parse_bet_callback(callback.data)
+    if parsed_bet is None:
+        await callback.answer("Не понял ставку", show_alert=True)
+        return
+    token, color = parsed_bet
     if color not in casino.COLORS:
         await callback.answer("Неизвестный цвет", show_alert=True)
         return
