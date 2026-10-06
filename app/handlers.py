@@ -278,6 +278,7 @@ async def resolve_profile_target(
 
 
 @router.message(Command("profile", "me", "профиль"))
+@router.message(NormalizedText("профиль", "мой профиль"))
 async def cmd_profile(message: Message, db: Database, market: MarketRepo) -> None:
     user = message.from_user
     if user is None:
@@ -344,12 +345,14 @@ async def cb_profile(
 
 
 @router.message(Command("pvprating", "пвптоп", "pvp_top"))
+@router.message(NormalizedText("пвптоп", "пвп топ"))
 async def cmd_pvp_rating(message: Message, db: Database) -> None:
     rows = await db.rating(10)
     await message.answer(render.render_rating(rows))
 
 
 @router.message(Command("top", "leaderboard"))
+@router.message(NormalizedText("топ", "топ игроков", "топ по очкам"))
 async def cmd_top(message: Message, db: Database) -> None:
     rows = await db.top_players(10)
     lines = ["🏆 <b>Топ по очкам</b>", ""]

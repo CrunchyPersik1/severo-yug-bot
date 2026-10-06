@@ -25,6 +25,7 @@ player @ник                что у игрока: баланс, карты, 
 limits 2 2                 выдать ВСЕМ по 2 карты и по 2 спина на сегодня
 limits                     вернуть всем обычные лимиты (1 и 1)
 points 5000                накинуть ВСЕМ по 5000 очков
+points @ник 5000           накинуть очков лично игроку (минус — списать)
 case 1                     выдать ВСЕМ по кейсу
 card daniel 1              выдать ВСЕМ по карте
 give @ник daniel 3         выдать ОДНОМУ игроку 3 карты
@@ -138,12 +139,45 @@ async def act_limits(con: asyncpg.Connection, args: list[str]) -> str:
 
 
 async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
+    """points 5000 — всем, points @ник 5000 — лично. Минус списывает."""
+    if not args:
+        raise ValueError("формат: points 5000 (всем) или points @ник 5000 (одному)")
+
+    if len(args) >= 2:
+        # порядок не важен: points 5000 @ник и points @ник 5000 работают одинаково
+        if args[0].lstrip("+-").isdigit():
+            target, raw_amount = args[1], args[0]
+        else:
+            target, raw_amount = args[0], args[1]
+        player = await _resolve_player(con, target)
+        try:
+            amount = int(raw_amount)
+        except ValueError as error:
+            raise ValueError(f"сумма должна быть числом, а не {raw_amount}") from error
+        if not amount:
+            raise ValueError("укажи сумму, отличную от нуля")
+        balance = await con.fetchval(
+            """
+            update players set bonus_points = greatest(0, bonus_points + $2)
+             where user_id = $1
+            returning bonus_points
+            """,
+            player["user_id"],
+            amount,
+        )
+        who = player["first_name"] or player["username"] or player["user_id"]
+        return f"[ok] {who}: {amount:+d} очков, теперь {int(balance)}"
+
     amount = _int_arg(args, 0, 0, "количество очков")
     if not amount:
         raise ValueError("укажи сколько очков: points 5000")
-    await con.execute("update players set bonus_points = bonus_points + $1", amount)
+    await con.execute(
+        "update players set bonus_points = greatest(0, bonus_points + $1)", amount
+    )
     total = await con.fetchval("select count(*) from players")
-    return f"[ok] {total} игрокам начислено по {amount} очков"
+    if amount > 0:
+        return f"[ok] {total} игрокам начислено по {amount} очков"
+    return f"[ok] у {total} игроков списано по {abs(amount)} очков"
 
 
 async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
