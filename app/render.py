@@ -10,10 +10,27 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
 from . import casino, team_battle
 from .battle import ability_targets, can_use_ability
-from .cards import Card, get_card
+from .cards import CARDS, Card, cards_sorted_for_user, get_card
 from .team_battle import TEAM_BLUE, TEAM_RED
-from .items import SLOT_ICONS
-from .market import UPGRADE_PRICE, describe_bonus
+from .items import (
+    AURAS,
+    BACKGROUNDS,
+    BY_SLOT,
+    EFFECTS,
+    SLOTS,
+    SLOT_AURA,
+    SLOT_ICONS,
+    SLOT_TITLES,
+)
+from .market import (
+    RARITY_COEF,
+    UPGRADE_MULT_MIN,
+    UPGRADE_PRICE,
+    describe_bonus,
+    market_price,
+    rarity_coef,
+    upgrade_multiplier,
+)
 
 FLEE = "🏳️ Сдаться"
 
@@ -980,3 +997,205 @@ def _team_ally_rows(state, battle_id, unit_key, target_key, tb):
             ]
         )
     return rows
+
+# --------------------------------------------------------------------------- #
+# FAQ
+# --------------------------------------------------------------------------- #
+
+FAQ_PAGE_SIZE = 6
+
+
+def _money(value: int) -> str:
+    return f"{int(value):,}".replace(",", " ")
+
+
+def _ability_line(card: Card) -> str:
+    effects = card.ability.effects
+    parts: list[str] = []
+    if "damage" in effects:
+        parts.append(f"урон {effects['damage']}")
+    if effects.get("hits"):
+        parts.append(f"целей: {effects['hits']}")
+    if "steal" in effects:
+        parts.append(f"отжимает {effects['steal']} HP")
+    if "heal" in effects:
+        parts.append(f"лечит {effects['heal']}")
+    if "shield" in effects:
+        parts.append(f"щит +{effects['shield']}")
+    if "poison" in effects:
+        turns = effects.get("poison_turns", 2)
+        parts.append(f"яд {effects['poison']} на {turns} хода")
+    if "drain" in effects:
+        parts.append(f"утечка {effects['drain']} HP в ход")
+    if "stun" in effects:
+        parts.append("оглушение")
+    if "silence" in effects:
+        parts.append("немота")
+    if "weaken" in effects:
+        parts.append("ослабление")
+    if effects.get("cleanse"):
+        parts.append("снимает дебаффы")
+    if effects.get("self_stun"):
+        parts.append("свой ход пропущен")
+    if effects.get("ignore_shield"):
+        parts.append("пробивает щит")
+    return ", ".join(parts) or "без эффектов"
+
+
+def _rarity_list() -> list[str]:
+    sample: dict[str, Card] = {}
+    for card in CARDS:
+        sample.setdefault(card.rarity, card)
+    out = []
+    for rarity, coef in sorted(RARITY_COEF.items(), key=lambda pair: pair[1]):
+        card = sample.get(rarity)
+        emoji = card.rarity_emoji if card else "▫️"
+        title = card.rarity_title if card else rarity
+        out.append(f"  {emoji} {title} — ×{coef:g}")
+    return out
+
+
+def faq_menu() -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        "📖 <b>FAQ</b>",
+        "",
+        "Самое частое: цены, статы, способности и множители улучшений.",
+    ]
+    rows = [
+        [InlineKeyboardButton(text="🃏 Персонажи и цены", callback_data="fq:cards:0")],
+        [InlineKeyboardButton(text="🎨 Ауры, фоны, эффекты", callback_data="fq:items:aura")],
+        [InlineKeyboardButton(text="🧮 Как считается цена", callback_data="fq:price")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def faq_cards(page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    ordered = cards_sorted_for_user([card.card_id for card in CARDS])
+    pages = max(1, (len(ordered) + FAQ_PAGE_SIZE - 1) // FAQ_PAGE_SIZE)
+    page = max(0, min(int(page), pages - 1))
+    chunk = ordered[page * FAQ_PAGE_SIZE : (page + 1) * FAQ_PAGE_SIZE]
+    lines = [
+        "🃏 <b>Персонажи</b> — рыночная цена",
+        f"Страница <b>{page + 1}</b> из {pages}. Жми на карту: покажу статы и способность.",
+        "",
+    ]
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{card.rarity_emoji} {card.name} — {_money(market_price(card))}",
+                callback_data=f"fq:card:{card.card_id}",
+            )
+        ]
+        for card in chunk
+    ]
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"fq:cards:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="fq:menu"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"fq:cards:{page + 1}"))
+    rows.append(nav)
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def faq_card(card: Card) -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> ({card.rarity_title})",
+        f"<code>#{card.card_id}</code>",
+        "",
+        f"💰 <b>Рыночная цена: {_money(market_price(card))}</b>",
+        f"     база {_money(card.points)} × редкость {rarity_coef(card):g}",
+        "",
+        f"⚔️ Атака: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💪 Бюджет: {card.budget}",
+        "",
+        f"✨ <b>{esc(card.ability.name)}</b> · перезарядка {card.ability.cooldown} х.",
+        f"     {esc(_ability_line(card))}",
+    ]
+    rows = [
+        [
+            InlineKeyboardButton(text="◀️ К списку", callback_data="fq:cards:0"),
+            InlineKeyboardButton(text="🎨 Улучшения", callback_data="fq:items:aura"),
+        ],
+        [InlineKeyboardButton(text="🧮 Как считается цена", callback_data="fq:price")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def faq_items(slot: str = SLOT_AURA) -> tuple[str, InlineKeyboardMarkup]:
+    if slot not in BY_SLOT:
+        slot = SLOT_AURA
+    lines = [
+        f"{SLOT_ICONS[slot]} <b>{SLOT_TITLES[slot]}</b> — бонусы и множитель цены",
+        "",
+        "Аура множит все три стата, фон и эффект — только один.",
+        "Множитель ниже — во сколько раз один этот предмет поднимает цену карты.",
+        "",
+    ]
+    for item in BY_SLOT[slot]:
+        total = sum(item.bonus.values())
+        lines.append(f"<b>{esc(item.name)}</b> — {item.summary}")
+        lines.append(f"     всего {total:+d}% → цена ×{upgrade_multiplier(item.bonus):.2f}")
+    rows = [
+        [
+            InlineKeyboardButton(
+                text=f"{SLOT_ICONS[s]} {SLOT_TITLES[s]}", callback_data=f"fq:items:{s}"
+            )
+        ]
+        for s in SLOTS
+    ]
+    rows.append([InlineKeyboardButton(text="🧮 Как считается цена", callback_data="fq:price")])
+    rows.append([InlineKeyboardButton(text="◀️ В меню", callback_data="fq:menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def faq_price() -> tuple[str, InlineKeyboardMarkup]:
+    card = get_card("valeriya")
+    aura = AURAS[0]
+    aura_total = sum(aura.bonus.values())
+
+    best_aura = max(AURAS, key=lambda item: sum(item.bonus.values()))
+    best_bg = max(BACKGROUNDS, key=lambda item: sum(item.bonus.values()))
+    best_fx = max(EFFECTS, key=lambda item: sum(item.bonus.values()))
+    best_total = (
+        sum(best_aura.bonus.values())
+        + sum(best_bg.bonus.values())
+        + sum(best_fx.bonus.values())
+    )
+    max_mult = 1 + best_total * 2.0 / 100
+
+    lines = [
+        "🧮 <b>Как считается рыночная цена</b>",
+        "",
+        "Формула:",
+        "<b>цена = очки карты × коэффициент редкости × множитель улучшений</b>",
+        "",
+        "Множитель улучшений:",
+        "<b>1 + (сумма всех процентов × 2 / 100)</b>",
+        f"Не ниже {UPGRADE_MULT_MIN:g}. Максимум в игре — <b>×{max_mult:.2f}</b> "
+        f"(аура «{esc(best_aura.name)}», фон «{esc(best_bg.name)}», "
+        f"эффект «{esc(best_fx.name)}»: суммарно {best_total:+d}%).",
+        "",
+        "<b>Коэффициенты редкости:</b>",
+    ]
+    lines += _rarity_list()
+    lines += [
+        "",
+        f"<b>Пример 1 — чистая карта.</b> {esc(card.display_name)}: "
+        f"{_money(card.points)} × {rarity_coef(card):g} = <b>{_money(market_price(card))}</b>",
+        "",
+        f"<b>Пример 2 — с аурой «{esc(aura.name)}»</b> "
+        f"({aura.summary}, суммарно {aura_total:+d}%):",
+        f"множитель = 1 + {aura_total} × 2 / 100 = {upgrade_multiplier(aura.bonus):.2f}",
+        f"{_money(card.points)} × {rarity_coef(card):g} × "
+        f"{upgrade_multiplier(aura.bonus):.2f} = <b>{_money(market_price(card, aura.bonus))}</b>",
+        "",
+        "<b>Запомни главное:</b> проценты всех трёх улучшений складываются, и цена "
+        "растёт от суммы — неважно, в какой стат они ушли. Отрицательные проценты "
+        "снижают цену так же, как положительные её поднимают.",
+    ]
+    rows = [
+        [InlineKeyboardButton(text="🃏 Персонажи", callback_data="fq:cards:0")],
+        [InlineKeyboardButton(text="🎨 Улучшения", callback_data="fq:items:aura")],
+        [InlineKeyboardButton(text="◀️ В меню", callback_data="fq:menu")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)

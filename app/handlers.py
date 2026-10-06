@@ -1157,3 +1157,44 @@ async def cb_team_battle(
         await callback.answer(str(error), show_alert=True)
         return
     await callback.answer()
+
+
+# --------------------------------------------------------------------------- #
+# FAQ
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("faq"))
+@router.message(NormalizedText("faq", "фак", "частые вопросы"))
+async def cmd_faq(message: Message) -> None:
+    text, keyboard = render.faq_menu()
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("fq:"))
+async def cb_faq(callback: CallbackQuery) -> None:
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    kind = parts[1] if len(parts) > 1 else "menu"
+
+    if kind == "menu":
+        text, keyboard = render.faq_menu()
+    elif kind == "cards":
+        text, keyboard = render.faq_cards(int(parts[2]) if len(parts) > 2 else 0)
+    elif kind == "card":
+        try:
+            card = get_card(parts[2])
+        except Exception:  # noqa: BLE001
+            await callback.answer("Такой карты нет", show_alert=True)
+            return
+        text, keyboard = render.faq_card(card)
+    elif kind == "items":
+        text, keyboard = render.faq_items(parts[2] if len(parts) > 2 else "aura")
+    elif kind == "price":
+        text, keyboard = render.faq_price()
+    else:
+        await callback.answer("Не понял", show_alert=True)
+        return
+
+    await _safe_edit(callback, text, keyboard)
+    await callback.answer()
