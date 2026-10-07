@@ -149,6 +149,22 @@ def test_healer_can_heal_allies_again_after_cooldown():
     assert team_battle.can_use_ability(state["sides"][healer]), "хил должен восстановиться"
 
 
+def test_finalize_produces_winners_and_losers():
+    """_finalize обязан отдавать состав победителей/проигравших один раз."""
+    from app.team_service import TeamBattleService
+
+    people = make_people()
+    state = team_battle.build_state(people, make_picks(), 1)
+    state["participants"] = people
+    state["winner"] = team_battle.TEAM_RED
+    service = TeamBattleService.__new__(TeamBattleService)
+
+    result = service._finalize(state)
+    assert set(result["team_result"]["winners"]) == {1, 2}
+    assert set(result["team_result"]["losers"]) == {3, 4}
+    assert service._finalize(state) == {}, "повторно результат не начисляем"
+
+
 def test_poison_now_ticks_in_team_battle():
     """Раньше начало хода вообще не вызывалось, поэтому яд не работал."""
     state = team_battle.build_state(make_people(), make_picks(("ravil", "oleg")), 1)

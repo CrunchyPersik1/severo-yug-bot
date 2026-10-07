@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -86,11 +85,6 @@ async def _bot_username(bot: Bot) -> str:
         except Exception:  # noqa: BLE001 - справка должна работать всегда
             return "бот"
     return getattr(me, "username", None) or "бот"
-
-
-@router.message(CommandStart())
-async def cmd_start(message: Message, bot: Bot) -> None:
-    await message.answer(render.render_help(await _bot_username(bot)))
 
 
 @router.message(Command("help"))
@@ -638,8 +632,11 @@ async def cb_buy(callback: CallbackQuery, market: MarketRepo) -> None:
     except MarketError as error:
         await callback.answer(str(error), show_alert=True)
         return
-    card = get_card(result["card_id"])
-    await callback.answer(f"Куплено: {card.display_name}", show_alert=True)
+    if result.get("kind") == "case":
+        await callback.answer("Куплено: кейс 📦", show_alert=True)
+    else:
+        card = get_card(result["card_id"])
+        await callback.answer(f"Куплено: {card.display_name}", show_alert=True)
     text, keyboard = await _market_view(market, callback.from_user.id, 0)
     await _safe_edit(callback, text, keyboard)
 
@@ -722,9 +719,13 @@ async def cmd_mylots(message: Message, market: MarketRepo) -> None:
         return
     lines = ["📦 <b>Твои лоты</b>", ""]
     for lot in lots:
-        card = get_card(lot["card_id"])
+        if lot.get("kind") == "case" or not lot.get("card_id"):
+            title = "📦 <b>Кейс</b>"
+        else:
+            card = get_card(lot["card_id"])
+            title = f"{card.rarity_emoji} {render.esc(card.display_name)}"
         lines.append(
-            f"<code>#{lot['id']}</code> {card.rarity_emoji} {render.esc(card.display_name)} — "
+            f"<code>#{lot['id']}</code> {title} — "
             f"<b>{lot['price']}</b> очк. (рынок {lot['market_price']})"
             + (" 🚩" if lot["suspect"] else "")
         )
@@ -841,7 +842,9 @@ async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> No
         case_id = await db.add_case(user.id, "roulette")
         log.info("Кейс #%s выпал игроку %s", case_id, user.id)
     else:
-        await db.add_card(user.id, str(value))
+        card = get_card(str(value))
+        await db.add_card(user.id, card.card_id)
+        await db.add_points(user.id, card.points)
 
     balance = await market.balance(user.id)
     text = render.render_roulette(kind, value, balance)
@@ -1005,6 +1008,12 @@ async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None
         except MarketError as error:
             await message.answer(f"⚠️ {error}")
             return
+        if unit.get("kind") == "case":
+            await message.answer(
+                "⚠️ Кейс нельзя поставить в казино — его открывают (/case) "
+                "или продают на рынке."
+            )
+            return
         card = get_card(unit["card_id"])
         token = "c:" + raw.lstrip("#")
         text, keyboard = render.render_casino_colors(
@@ -1026,6 +1035,44 @@ async def cb_casino(callback: CallbackQuery, db: Database, market: MarketRepo) -
         return
 
     user_id = callback.from_user.id
+
+    # Сначала проверяем ставку, и только потом тратим крутку: иначе из-за
+    # опечатки в ставке или уже проданной карты день пропадал впустую.
+    unit: dict | None = None
+    bet_points: int | None = None
+    if token.startswith("p:"):
+        try:
+            bet_points = int(token[2:])
+        except ValueError:
+            await callback.answer("Не понял ставку", show_alert=True)
+            return
+        if not casino.MIN_BET <= bet_points <= casino.MAX_BET:
+            await callback.answer(
+                f"⚠️ Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков.",
+                show_alert=True,
+            )
+            return
+        balance = await market.balance(user_id)
+        if balance < bet_points:
+            await callback.answer(
+                f"⚠️ Не хватает очков: ставишь {bet_points}, у тебя {balance}.",
+                show_alert=True,
+            )
+            return
+    else:
+        parsed = parse_handle(token[2:])
+        if parsed is None:
+            await callback.answer("Не понял, какую карту ставим.", show_alert=True)
+            return
+        try:
+            unit = await market.owned_unit(user_id, parsed)
+        except MarketError as error:
+            await callback.answer(str(error), show_alert=True)
+            return
+        if unit.get("kind") == "case":
+            await callback.answer("⚠️ Кейс нельзя поставить в казино.", show_alert=True)
+            return
+
     left = await db.claim_casino(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
     if left is None:
         await callback.answer(
@@ -1034,13 +1081,10 @@ async def cb_casino(callback: CallbackQuery, db: Database, market: MarketRepo) -
         return
     repo = CasinoRepo(db, market)
     try:
-        if token.startswith("p:"):
-            result = await repo.bet_points(user_id, int(token[2:]), color)
+        if bet_points is not None:
+            result = await repo.bet_points(user_id, bet_points, color)
         else:
-            parsed = parse_handle(token[2:])
-            if parsed is None:
-                raise CasinoError("Не понял, какую карту ставим.")
-            unit = await market.owned_unit(user_id, parsed)
+            assert unit is not None
             result = await repo.bet_card(user_id, unit, color)
     except (CasinoError, MarketError) as error:
         await callback.answer(str(error), show_alert=True)
@@ -1316,15 +1360,12 @@ async def cmd_team_stop(
 
 
 def _base_url() -> str:
-    return (
-        os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
-    ).rstrip("/")
+    # settings.public_url уже нормализован (добавляет схему, если её нет).
+    return (settings.public_url or "").rstrip("/")
 
 
 def _app_url() -> str:
-    base = (
-        os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
-    ).rstrip("/")
+    base = _base_url()
     return f"{base}/app" if base else ""
 
 
@@ -1500,7 +1541,10 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
 
 @router.message(CommandStart())
 async def cmd_start_menu(message: Message, bot: Bot) -> None:
-    text, keyboard = render.render_main_menu(await _bot_username(bot), _base_url())
+    # Кнопки-мини-апп Telegram разрешает только в личке: в группе /start
+    # должен отдать то же меню, но без web_app-кнопок.
+    app_url = _base_url() if message.chat.type == "private" else ""
+    text, keyboard = render.render_main_menu(await _bot_username(bot), app_url)
     await message.answer(text, reply_markup=keyboard)
 
 
@@ -1544,16 +1588,17 @@ async def cb_extra_spin(
 ) -> None:
     """Докупка одной крутки казино за 2000 очков."""
     user_id = callback.from_user.id
-    balance = await market.balance(user_id)
-    if balance < casino.EXTRA_SPIN_PRICE:
+    left = await db.buy_casino_spin(
+        user_id, roulette_day_key(), casino.EXTRA_SPIN_PRICE, casino.SPINS_PER_DAY
+    )
+    if left is None:
+        balance = await market.balance(user_id)
         await callback.answer(
             f"Крутка стоит {casino.EXTRA_SPIN_PRICE}, у тебя {balance}.",
             show_alert=True,
         )
         return
-    await db.add_points(user_id, -casino.EXTRA_SPIN_PRICE)
-    cap = await db.add_casino_limit(user_id, 1)
     await callback.answer(
-        f"🎰 Крутка куплена! Всего на сегодня: {cap}. "
-        f"Осталось очков: {await market.balance(user_id)}"
+        f"🎰 Крутка куплена! Осталось на сегодня: {left}. "
+        f"Очков: {await market.balance(user_id)}"
     )

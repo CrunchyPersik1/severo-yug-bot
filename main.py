@@ -96,7 +96,6 @@ async def lifespan(app: FastAPI):
         return True
 
     dp.include_router(router)
-    app.include_router(webapp_router)
     service = BattleService(bot, db, market)
     team = TeamBattleService(bot, db, market)
     shop = ShopRepo(db, market)
@@ -155,6 +154,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="severo-yug-bot", lifespan=lifespan)
+# Роуты мини-аппок подключаем сразу при импорте, а не в lifespan: иначе они
+# добавляются в уже работающий роутер на каждом старте.
+app.include_router(webapp_router)
 
 
 @app.get("/")

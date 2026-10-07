@@ -290,8 +290,11 @@ def _strike(
     state: dict[str, Any], actor_key: str, card: Card, foe_key: str | None = None
 ) -> None:
     foe_key = foe_key or other(actor_key)
-    foe = state["sides"][foe_key]
-    damage = max(1, card.atk - int(foe["weaken"]))
+    # Ослабление снижает урон того, на кого наложено, поэтому берём стат актёра,
+    # а не цели: раньше урон падал при ударе по ослабленному врагу и не падал
+    # у самого ослабленного.
+    attacker = state["sides"][actor_key]
+    damage = max(1, card.atk - int(attacker["weaken"]))
     _deal_damage(state, foe_key, damage, "⚔️ Удар")
     _counter_attack(state, actor_key, foe_key)
 
@@ -438,6 +441,10 @@ def apply_action(
             _log(state, "⏱️ Слишком много пропусков хода — техническое поражение")
             return {"ok": True, "error": None, "status": "timeout_forfeit"}
         _log(state, "⏱️ Время вышло — автоудар")
+    else:
+        # Считаем именно подряд идущие пропуски: после настоящего хода счётчик
+        # таймаутов сбрасывается, иначе три промаха за весь бой = поражение.
+        side["timeouts"] = 0
 
     card = get_card(side["card_id"])
     if action == ACTION_ABILITY and can_use_ability(side):

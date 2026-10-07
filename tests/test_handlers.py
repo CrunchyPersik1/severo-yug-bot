@@ -19,6 +19,7 @@ from aiogram.client.session.base import BaseSession
 from aiogram.methods import TelegramMethod
 from aiogram.types import Chat, Message, Update, User
 
+from app.cards import get_card
 from app.handlers import router
 
 _DISPATCHER: Dispatcher | None = None
@@ -147,6 +148,40 @@ class FakeMarket:
 
     async def user_inventory(self, user_id: int, include_listed: bool = False):
         return []
+
+    async def balance(self, user_id: int) -> int:
+        return 0
+
+    async def buy_lot(self, lot_id: int, buyer_id: int):
+        return {
+            "kind": "case",
+            "card_id": None,
+            "price": 5000,
+            "fee": 250,
+            "income": 4750,
+            "honest": True,
+            "seller_id": 999,
+        }
+
+    async def count_lots(self) -> int:
+        return 0
+
+    async def list_lots(self, limit: int = 6, offset: int = 0):
+        return []
+
+    async def seller_lots(self, seller_id: int, limit: int = 20):
+        return [
+            {
+                "id": 1,
+                "kind": "case",
+                "card_id": None,
+                "status": "active",
+                "price": 5000,
+                "market_price": 5000,
+                "suspect": False,
+                "seller_id": seller_id,
+            }
+        ]
 
     async def find_by_username(self, username: str):
         if username.lstrip("@").lower() == "friend":
@@ -459,5 +494,48 @@ def test_admin_help_is_shown_to_admin():
         session = await feed("/admin", FakeDB(), FakeService(), user_id=111)
         body = sent_texts(session)[0]
         assert "Админ-команды" in body and "give" in body
+
+    asyncio.run(scenario())
+
+
+def test_start_shows_main_menu_with_buttons():
+    """Раньше /start перехватывался старым хэндлером, и меню с кнопками не показывалось."""
+    async def scenario():
+        session = await feed("/start", FakeDB(), FakeService())
+        payload = next(p for n, p in session.calls if n == "SendMessage")
+        markup = str(payload.get("reply_markup"))
+        assert "my:home" in markup, "главное меню должно быть кнопочным"
+
+    asyncio.run(scenario())
+
+
+def test_buying_a_case_lot_does_not_crash():
+    """Регрессия: у кейса card_id = NULL, get_card(None) ронял покупку."""
+    async def scenario():
+        session = await feed_callback("mb:1", FakeDB(), FakeMarket())
+        assert any(name == "EditMessageText" for name, _ in session.calls)
+
+    asyncio.run(scenario())
+
+
+def test_mylots_handles_case_lots():
+    """Регрессия: /mylots падал на лоте-кейсе."""
+    async def scenario():
+        session = await feed("/mylots", FakeDB(), FakeService(), market=FakeMarket())
+        assert "Кейс" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_roulette_jackpot_credits_points(monkeypatch):
+    """Главный приз рулетки — карта; она тоже должна начислять свои очки."""
+    async def scenario():
+        import app.handlers as handlers
+
+        monkeypatch.setattr(handlers, "roll_prize", lambda: ("card", "daniel"))
+        db = FakeDB()
+        await feed("/roulette", db, FakeService())
+        assert db.collection[111]["daniel"] == 1
+        assert db.balance[111] == get_card("daniel").points > 0
 
     asyncio.run(scenario())

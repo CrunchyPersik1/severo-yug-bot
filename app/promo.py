@@ -36,6 +36,8 @@ async def redeem(db: Database, user_id: int, raw_code: str) -> str:
     card_id = str(entry["card"])
     card = get_card(card_id)
     await db.add_card(user_id, card_id)
+    # Карта, как и при выпадении, сразу начисляет свои очки на баланс.
+    await db.add_points(user_id, card.points)
     return (
         "🎁 <b>Промокод принят!</b>\n\n"
         f"{card.rarity_emoji} <b>{card.display_name}</b> ({card.rarity_title})\n"

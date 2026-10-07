@@ -196,6 +196,8 @@ class TeamBattleService:
                 if parsed is None:
                     continue
                 unit = await self.market.owned_unit(person["user_id"], parsed)
+                if unit.get("kind") == "case":
+                    continue
                 bonus = await self.market.unit_bonus(unit["inventory_id"])
                 card = get_card(unit["card_id"])
                 entries.append(
@@ -225,6 +227,13 @@ class TeamBattleService:
 
     async def _commit(self, battle_id: str, mutator):
         battle, result = await self.db.mutate_battle(battle_id, mutator)
+        if battle is None:
+            return None, None
+        # _finalize кладёт результат в record, а не в extra: только так он
+        # доезжает до БД и превращается в победы/поражения игроков.
+        record = result.get("record") if isinstance(result, dict) else None
+        if record and record.get("team_result"):
+            await self.db.apply_team_result(**record["team_result"])
         return battle, result
 
     # ------------------------------------------------------------------ #
@@ -251,10 +260,11 @@ class TeamBattleService:
             if not result["ok"]:
                 raise TeamBattleError(result.get("error") or "Ход невозможен.")
             extra: dict[str, Any] = {}
+            record: dict[str, Any] = {}
             if state["over"]:
                 extra["status"] = "finished"
-                extra.update(self._finalize(state))
-            return {"ok": True, "record": None}, extra or None
+                record = self._finalize(state)
+            return {"ok": True, "record": record}, extra or None
 
         battle, _ = await self._commit(battle_id, mutator)
         if battle is None:
@@ -362,10 +372,11 @@ class TeamBattleService:
                 return {"skipped": True}, None
             team_battle.register_timeout(state, state["turn"])
             extra: dict[str, Any] = {}
+            record: dict[str, Any] = {}
             if state["over"]:
                 extra["status"] = "finished"
-                extra.update(self._finalize(state))
-            return {"skipped": False}, extra or None
+                record = self._finalize(state)
+            return {"skipped": False, "record": record}, extra or None
 
         battle, _ = await self._commit(battle_id, mutator)
         if battle:

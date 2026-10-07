@@ -151,6 +151,8 @@ class CasinoRepo:
         return final
 
     async def bet_card(self, user_id: int, unit: dict[str, Any], color: str) -> dict[str, Any]:
+        if unit.get("kind") == "case" or not unit.get("card_id"):
+            raise CasinoError("Кейс нельзя поставить в казино.")
         card = get_card(unit["card_id"])
         rolled = casino.roll_color()
         won = casino.is_win(color, rolled)

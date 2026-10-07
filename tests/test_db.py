@@ -39,11 +39,11 @@ def test_schema_and_cards_upsert():
         try:
             async with db.pool.acquire() as con:
                 count = await con.fetchval("select count(*) from cards")
-                assert count == len(CARDS) == 35
+                assert count == len(CARDS)
             # повторный upsert не должен падать и не должен дублировать
             await db.upsert_cards(card_rows())
             async with db.pool.acquire() as con:
-                assert await con.fetchval("select count(*) from cards") == 35
+                assert await con.fetchval("select count(*) from cards") == len(CARDS)
         finally:
             await db.close()
 
@@ -60,10 +60,10 @@ def test_daily_limit_is_atomic():
                 await con.execute("delete from players where user_id = $1", user)
             await db.ensure_player(user, "tester", "Тестер")
             today = day_key()
-            assert await db.claim_daily(user, today) is True
-            assert await db.claim_daily(user, today) is False
+            assert await db.claim_daily(user, today) is not None
+            assert await db.claim_daily(user, today) is None
             tomorrow = today + timedelta(days=1)
-            assert await db.claim_daily(user, tomorrow) is True
+            assert await db.claim_daily(user, tomorrow) is not None
         finally:
             await db.close()
 

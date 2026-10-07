@@ -290,3 +290,35 @@ def test_explicit_turn_limit_still_works():
             break
         apply_action(state, state["turn"], ACTION_HIT, max_turns=5)
     assert state["over"] and state["reason"] == "turn_limit"
+
+
+def test_weaken_lowers_only_the_weakened_side_damage():
+    """Ослабление бьёт по урону того, на кого наложено, а не по его врагу."""
+    state = make_state("egor", "oleg")
+    oleg_atk = get_card("oleg").atk
+    egor_atk = get_card("egor").atk
+    weaken = get_card("egor").ability.effects["weaken"]
+
+    apply_action(state, KEY_A, ACTION_ABILITY)  # Егор вешает ослабление на Олега
+    assert state["sides"][KEY_B]["weaken"] == weaken
+
+    hp_a = state["sides"][KEY_A]["hp"]
+    apply_action(state, KEY_B, ACTION_HIT)  # ослабленный Олег бьёт слабее
+    assert state["sides"][KEY_A]["hp"] == hp_a - max(1, oleg_atk - weaken)
+
+    hp_b = state["sides"][KEY_B]["hp"]
+    apply_action(state, KEY_A, ACTION_HIT)  # Егор бьёт в полную силу
+    assert state["sides"][KEY_B]["hp"] == hp_b - egor_atk
+
+
+def test_timeout_counter_resets_after_a_real_move():
+    """Техническое поражение — за три пропуска ПОДРЯД, а не за три за весь бой."""
+    state = make_state()
+    for _ in range(2):
+        state["turn"] = KEY_A
+        apply_action(state, KEY_A, ACTION_HIT, max_timeouts=3, register_timeout=True)
+    assert state["sides"][KEY_A]["timeouts"] == 2
+
+    state["turn"] = KEY_A
+    apply_action(state, KEY_A, ACTION_HIT, max_timeouts=3)
+    assert state["sides"][KEY_A]["timeouts"] == 0

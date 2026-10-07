@@ -308,9 +308,9 @@ def test_roulette_limit_is_once_a_day():
             from app.roulette import roulette_day_key
 
             today = roulette_day_key()
-            assert await db.claim_roulette(user, today) is True
-            assert await db.claim_roulette(user, today) is False
-            assert await db.claim_roulette(user, today + timedelta(days=1)) is True
+            assert await db.claim_roulette(user, today) is not None
+            assert await db.claim_roulette(user, today) is None
+            assert await db.claim_roulette(user, today + timedelta(days=1)) is not None
         finally:
             await db.close()
 

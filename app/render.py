@@ -512,7 +512,8 @@ def render_battle(battle: dict[str, Any], state: dict[str, Any]) -> tuple[str, I
     else:
         turn_side = sides[state["turn"]]
         lines.append(
-            f"Ход {state['turn_no']}/30 · ходит <b>{esc(turn_side.get('name') or turn_side['user_id'])}</b>"
+            f"Ход {state['turn_no']} · ходит "
+            f"<b>{esc(turn_side.get('name') or turn_side['user_id'])}</b>"
         )
 
     tail = state["log"][-4:]
@@ -675,6 +676,7 @@ def render_roulette(kind: str, value: Any, balance: int) -> str:
             f"🏆 Главный приз рулетки — {card_title(card)}",
             f"⚔️ {card.atk} · ❤️ {card.hp} · 💰 {card.points}",
             f"✨ {esc(card.ability.name)}: {describe_ability(card)}",
+            f"💰 <b>+{card.points}</b> очков на баланс",
             "",
             "Следующий спин — после 20:00 по ЕКБ.",
         ]

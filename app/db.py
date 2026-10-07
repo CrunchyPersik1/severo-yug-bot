@@ -514,6 +514,32 @@ class Database:
                         winner_card_id,
                     )
 
+    async def apply_team_result(
+        self, winners: list[int], losers: list[int]
+    ) -> None:
+        """Итог командного боя: +1 победа победителям, +1 поражение проигравшим.
+
+        Ничья/остановка передаёт пустые списки — тогда ничего не меняется.
+        """
+        winners = [int(uid) for uid in (winners or [])]
+        losers = [int(uid) for uid in (losers or [])]
+        if not winners and not losers:
+            return
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                if winners:
+                    await con.execute(
+                        "update players set wins = wins + 1 "
+                        "where user_id = any($1::bigint[])",
+                        winners,
+                    )
+                if losers:
+                    await con.execute(
+                        "update players set losses = losses + 1 "
+                        "where user_id = any($1::bigint[])",
+                        losers,
+                    )
+
     # ------------------------------------------------------------------ #
     # Бои
     # ------------------------------------------------------------------ #
@@ -647,15 +673,46 @@ class Database:
         cap = max(int(row["casino_limit"]), limit)
         return max(0, cap - int(row["casino_uses"]))
 
-    async def add_casino_limit(self, user_id: int, amount: int = 1) -> int:
+    async def buy_casino_spin(
+        self, user_id: int, day: Any, price: int, limit: int = 25
+    ) -> int | None:
+        """Покупает одну крутку казино: атомарно списывает очки и поднимает лимит.
+
+        Возвращает, сколько круток осталось на сегодня, или None, если очков
+        не хватает. Важно: покупка сразу проставляет дату, иначе первый же
+        claim_casino сбрасывал купленную крутку к дефолтному лимиту.
+        """
         async with self._p().acquire() as con:
-            value = await con.fetchval(
-                "update players set casino_limit = casino_limit + $2 "
-                "where user_id = $1 returning casino_limit",
-                user_id,
-                int(amount),
-            )
-        return int(value or 0)
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select casino_day, casino_uses, casino_limit, bonus_points "
+                    "from players where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None or int(row["bonus_points"]) < int(price):
+                    return None
+                if row["casino_day"] != day:
+                    uses, cap = 0, int(limit)
+                else:
+                    uses = int(row["casino_uses"])
+                    cap = max(int(row["casino_limit"]), int(limit))
+                await con.execute(
+                    """
+                    update players
+                       set bonus_points = bonus_points - $2,
+                           casino_day = $3,
+                           casino_uses = $4,
+                           casino_limit = $5,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    user_id,
+                    int(price),
+                    day,
+                    uses,
+                    cap + 1,
+                )
+                return cap + 1 - uses
 
     async def redeem_promo(self, user_id: int, code: str) -> bool:
         """True — промокод принят, False — уже использован."""

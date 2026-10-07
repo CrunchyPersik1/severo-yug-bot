@@ -185,6 +185,8 @@ class BattleService:
             unit = await self.market.owned_unit(user_id, parsed)
         except MarketError as error:
             raise BattleError(str(error)) from error
+        if unit.get("kind") == "case":
+            raise BattleError("Кейсом воевать нельзя.")
         bonus = await self.market.unit_bonus(unit["inventory_id"])
 
         started: dict[str, Any] = {}
@@ -367,6 +369,10 @@ class BattleService:
         stale = await self.db.stale_battles(settings.pick_timeout_seconds, settings.battle_timeout_seconds)
         for battle in stale:
             battle_id = battle["battle_id"]
+            # Командные бои обслуживает TeamBattleService: здесь state["turn"] —
+            # это user_id, а не "a"/"b", и обычный движок на них падает.
+            if battle["state"].get("mode") == "team":
+                continue
             try:
                 if battle["status"] == "choosing":
                     await self._expire_choice(battle_id)
