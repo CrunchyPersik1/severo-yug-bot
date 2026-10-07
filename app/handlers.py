@@ -21,7 +21,7 @@ from .casino_repo import CasinoError, CasinoRepo
 from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
-from .cards import CARDS, cards_sorted_for_user, get_card
+from .cards import CARDS, cards_sorted_for_user, get_card, image_url
 from .cases import roll_case_card
 from .db import Database
 from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
@@ -1197,6 +1197,9 @@ async def cb_faq(callback: CallbackQuery) -> None:
             await callback.answer("Такой карты нет", show_alert=True)
             return
         text, keyboard = render.faq_card(card)
+        await _card_page(callback, card, text, keyboard)
+        await callback.answer()
+        return
     elif kind == "items":
         text, keyboard = render.faq_items(parts[2] if len(parts) > 2 else "aura")
     elif kind == "price":
@@ -1311,6 +1314,30 @@ async def _my_unit(db: Database, market: MarketRepo, user_id: int, handle: str):
     return next((unit for unit in units if unit["handle"] == handle), None)
 
 
+async def _card_page(
+    callback: CallbackQuery, card: Any, text: str, keyboard: Any
+) -> None:
+    """Показывает карту с артом. Не вышло — обычным текстом."""
+    url = image_url(card.card_id)
+    if url and callback.message is not None:
+        try:
+            await callback.bot.send_photo(
+                chat_id=callback.message.chat.id,
+                photo=url,
+                caption=text,
+                reply_markup=keyboard,
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("Арт %s не отправился", url)
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+    await _safe_edit(callback, text, keyboard)
+
+
 @router.callback_query(F.data.startswith("my:"))
 async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> None:
     assert callback.data is not None
@@ -1340,7 +1367,9 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
         cases = await db.user_cases(user_id)
         lines = ["📦 <b>Кейсы</b>", ""]
         if cases:
-            lines += [f"      <code>#c{case['id']}</code> закрытый кейс" for case in cases]
+            lines += [
+                f"      <code>#c{case['id']}</code> закрытый кейс" for case in cases
+            ]
             lines += ["", "Открыть: /case"]
         else:
             lines.append("Пусто. Крути рулетку: /roulette")
@@ -1384,10 +1413,15 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
 
         if action == "i":
             text, keyboard = render.my_items(unit, owned)
-        else:
-            worn = [item for item in owned if item.get("card_id") == card_id]
-            text, keyboard = render.my_card(unit, worn)
-        await _safe_edit(callback, text, keyboard)
+            await _safe_edit(callback, text, keyboard)
+            await callback.answer()
+            return
+
+        worn = [item for item in owned if item.get("card_id") == card_id]
+        text, keyboard = render.my_card(unit, worn)
+        await _card_page(callback, unit["card"], text, keyboard)
+        await callback.answer()
+        return
     else:
         await callback.answer()
         return

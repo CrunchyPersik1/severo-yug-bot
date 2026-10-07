@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from .cards import get_card
+from .cards import get_card, image_url
 from .items import ACCESSORIES
 from .shop import ShopError, catalog
 
@@ -73,6 +73,9 @@ def _entry_payload(entry) -> dict[str, Any]:
     }
     if entry.kind == "card":
         card = get_card(str(entry.payload["card_id"]))
+        image = image_url(card.card_id)
+        if image:
+            data["image"] = image
         data["card"] = {
             "emoji": card.rarity_emoji,
             "rarity": card.rarity_title,

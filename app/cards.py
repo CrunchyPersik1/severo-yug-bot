@@ -248,6 +248,34 @@ CARDS_BY_RARITY: dict[str, tuple[Card, ...]] = {
 SORTED_RARITY_INDEX: dict[str, int] = {key: i for i, key in enumerate(reversed(RARITY_ORDER))}
 
 
+# Картинки лежат в репозитории на GitHub и отдаются по прямой ссылке.
+# В базе не хранятся — Render их не занимает.
+IMAGE_BASE = (
+    "https://raw.githubusercontent.com/CrunchyPersik1/severo-yug-bot/main/images/"
+)
+
+CARD_IMAGES: dict[str, str] = {
+    "amir_1": "amir_1.jpg",
+    "arina": "arina.jpg",
+    "daniel": "daniel.jpg",
+    "daniyar_mif": "daniyar_mif.jpg",
+    "egor": "egor.jpg",
+    "konstantin": "konstantin.jpg",
+    "misha": "misha.jpg",
+    "oleg": "oleg.jpg",
+    "rustam": "rustam.jpg",
+    "trofim": "trofim.jpg",
+    "valeriya": "valeriya.jpg",
+    "yana": "yana.jpg",
+}
+
+
+def image_url(card_id: str) -> str | None:
+    """Прямая ссылка на арт карты. None, если арта ещё нет."""
+    name = CARD_IMAGES.get(card_id)
+    return f"{IMAGE_BASE}{name}" if name else None
+
+
 def get_card(card_id: str) -> Card:
     return CARDS_BY_ID[card_id]
 
