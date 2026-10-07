@@ -349,20 +349,24 @@ load();
 
 
 def _lot_payload(lot: dict[str, Any], viewer_id: int) -> dict[str, Any]:
+    """Лот для мини-аппки. decorate_lot НЕ кладёт карту в словарь — берём её
+    из card_id сами, иначе все лоты выглядят кейсами."""
     from .handlers import decorate_lot
 
-    decorated = decorate_lot(lot)
-    card = decorated.get("card")
+    decorated = decorate_lot(dict(lot))
+    card_id = decorated.get("card_id")
+    is_case = decorated.get("kind") == "case" or not card_id
     data: dict[str, Any] = {
-        "id": int(lot["id"]),
-        "price": int(lot["price"]),
-        "seller": lot.get("first_name") or lot.get("username") or "игрок",
-        "seller_id": int(lot.get("seller_id") or 0),
-        "rating": round(float(lot.get("rating") or 5.0), 2),
-        "mine": int(lot.get("seller_id") or 0) == int(viewer_id),
-        "case": decorated.get("kind") == "case" or bool(lot.get("case_id")),
+        "id": int(decorated["id"]),
+        "price": int(decorated["price"]),
+        "seller": decorated.get("first_name") or decorated.get("username") or "игрок",
+        "seller_id": int(decorated.get("seller_id") or 0),
+        "rating": round(float(decorated.get("rating") or 5.0), 2),
+        "mine": int(decorated.get("seller_id") or 0) == int(viewer_id),
+        "case": is_case,
     }
-    if card is not None:
+    if not is_case:
+        card = get_card(str(card_id))
         stats = decorated.get("stats") or {}
         data["card"] = {
             "name": card.display_name,

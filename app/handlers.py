@@ -559,7 +559,9 @@ async def _safe_edit(callback: CallbackQuery, text: str, keyboard) -> None:
 
 
 @router.message(Command("market", "рынок"))
-async def cmd_market(message: Message, db: Database, market: MarketRepo) -> None:
+async def cmd_market(
+    message: Message, db: Database, market: MarketRepo, bot: Bot
+) -> None:
     user = message.from_user
     if user is None:
         return
@@ -567,7 +569,7 @@ async def cmd_market(message: Message, db: Database, market: MarketRepo) -> None
     text, keyboard = await _market_view(market, user.id, 0)
     await message.answer(text, reply_markup=keyboard)
     base = _base_url()
-    if message.chat.type == "private" and base:
+    if base and message.chat.type == "private":
         from aiogram.types import WebAppInfo
 
         await message.answer(
@@ -583,6 +585,24 @@ async def cmd_market(message: Message, db: Database, market: MarketRepo) -> None
                 ]
             ),
         )
+    elif base:
+        # В группах Telegram запрещает кнопки мини-апп — даём ссылку в личку.
+        username = await _bot_username(bot) if bot else ""
+        if username:
+            await message.answer(
+                "🏪 Рынок приложением открывается в личке со мной — "
+                "у меня там кнопка «Рынок» рядом с полем ввода.",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="🏪 Открыть бота",
+                                url=f"https://t.me/{username}",
+                            )
+                        ]
+                    ]
+                ),
+            )
 
 
 @router.callback_query(F.data.startswith("mk:"))
