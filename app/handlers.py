@@ -1257,6 +1257,12 @@ async def cmd_team_stop(
 # --------------------------------------------------------------------------- #
 
 
+def _base_url() -> str:
+    return (
+        os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
+    ).rstrip("/")
+
+
 def _app_url() -> str:
     base = (
         os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
@@ -1318,7 +1324,7 @@ async def _card_page(
     callback: CallbackQuery, card: Any, text: str, keyboard: Any
 ) -> None:
     """Показывает карту с артом. Не вышло — обычным текстом."""
-    url = image_url(card.card_id)
+    url = image_url(card.card_id, _base_url())
     if url and callback.message is not None:
         try:
             await callback.bot.send_photo(

@@ -248,11 +248,10 @@ CARDS_BY_RARITY: dict[str, tuple[Card, ...]] = {
 SORTED_RARITY_INDEX: dict[str, int] = {key: i for i, key in enumerate(reversed(RARITY_ORDER))}
 
 
-# Картинки лежат в репозитории на GitHub и отдаются по прямой ссылке.
-# В базе не хранятся — Render их не занимает.
-IMAGE_BASE = (
-    "https://raw.githubusercontent.com/CrunchyPersik1/severo-yug-bot/main/images/"
-)
+# Картинки лежат файлами в репозитории и раздаются самим Render как статика.
+# В базе НЕ хранятся: Supabase не занимают. Репозиторий приватный, поэтому
+# raw.githubusercontent.com не подходит — он требует авторизацию.
+IMAGE_PATH = "/images/"
 
 CARD_IMAGES: dict[str, str] = {
     "amir_1": "amir_1.jpg",
@@ -270,10 +269,17 @@ CARD_IMAGES: dict[str, str] = {
 }
 
 
-def image_url(card_id: str) -> str | None:
-    """Прямая ссылка на арт карты. None, если арта ещё нет."""
+def image_file(card_id: str) -> str | None:
+    """Имя файла арта. None, если арта ещё нет."""
+    return CARD_IMAGES.get(card_id)
+
+
+def image_url(card_id: str, base: str = "") -> str | None:
+    """Ссылка на арт. base нужен там, где требуется полный адрес (Telegram)."""
     name = CARD_IMAGES.get(card_id)
-    return f"{IMAGE_BASE}{name}" if name else None
+    if not name:
+        return None
+    return f"{base.rstrip('/')}{IMAGE_PATH}{name}"
 
 
 def get_card(card_id: str) -> Card:

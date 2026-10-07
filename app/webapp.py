@@ -14,8 +14,10 @@ import logging
 from typing import Any
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .cards import get_card, image_url
 from .items import ACCESSORIES
@@ -24,6 +26,18 @@ from .shop import ShopError, catalog
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Картинки берём прямо из репозитория — в базу не пишем.
+IMAGES_DIR = Path(__file__).resolve().parent.parent / "images"
+
+
+@router.get("/images/{name}")
+async def card_image(name: str) -> FileResponse:
+    safe = Path(name).name
+    path = IMAGES_DIR / safe
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="нет такой картинки")
+    return FileResponse(path)
 
 
 # --------------------------------------------------------------------------- #
