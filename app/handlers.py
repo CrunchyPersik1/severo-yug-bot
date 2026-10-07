@@ -566,6 +566,23 @@ async def cmd_market(message: Message, db: Database, market: MarketRepo) -> None
     await db.ensure_player(user.id, user.username, user.first_name)
     text, keyboard = await _market_view(market, user.id, 0)
     await message.answer(text, reply_markup=keyboard)
+    base = _base_url()
+    if message.chat.type == "private" and base:
+        from aiogram.types import WebAppInfo
+
+        await message.answer(
+            "🏪 А ещё рынок открывается приложением — с артами и покупкой в один тап.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🏪 Открыть рынок",
+                            web_app=WebAppInfo(url=f"{base}/market"),
+                        )
+                    ]
+                ]
+            ),
+        )
 
 
 @router.callback_query(F.data.startswith("mk:"))

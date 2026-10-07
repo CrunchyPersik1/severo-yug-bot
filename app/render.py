@@ -1393,24 +1393,27 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
             InlineKeyboardButton(text="📖 FAQ", callback_data="fq:menu"),
         ]
     ]
-    middle: list[InlineKeyboardButton] = []
     if app_url:
         from aiogram.types import WebAppInfo
 
-        middle.append(
-            InlineKeyboardButton(
-                text="🛒 Магазин", web_app=WebAppInfo(url=f"{app_url}/app")
-            )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🛒 Магазин", web_app=WebAppInfo(url=f"{app_url}/app")
+                ),
+                InlineKeyboardButton(
+                    text="🏪 Рынок", web_app=WebAppInfo(url=f"{app_url}/market")
+                ),
+            ]
         )
-    middle.append(
-        InlineKeyboardButton(text="🏆 Топ", callback_data="mn:top")
-    )
-    rows.append(middle)
     rows.append(
         [
+            InlineKeyboardButton(text="🏆 Топ", callback_data="mn:top"),
             InlineKeyboardButton(text="👤 Профиль", callback_data="my:p"),
-            InlineKeyboardButton(text="❓ Помощь", callback_data="mn:help"),
         ]
+    )
+    rows.append(
+        [InlineKeyboardButton(text="❓ Помощь", callback_data="mn:help")]
     )
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
