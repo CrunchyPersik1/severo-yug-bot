@@ -114,18 +114,12 @@ def render_drop(card: Card, count: int, is_new: bool) -> str:
         else f"🔁 Дубликат, теперь у тебя их <b>{count}</b>"
     )
     desc = f"<i>{esc(card.description)}</i>\n" if card.description else ""
-    ability_desc = (
-        f"     <i>{esc(card.ability.description)}</i>\n"
-        if card.ability.description
-        else ""
-    )
     return (
         f"{head}\n\n"
         f"{card_title(card)}\n"
         f"{desc}"
         f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}\n"
-        f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}\n"
-        f"{ability_desc}\n"
+        f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}\n\n"
         f"💰 <b>+{card.points}</b> очков на баланс\n"
         f"{tail}\n"
         f"Следующее выпадание — после 12:00 ЕКБ."
@@ -433,8 +427,6 @@ def render_card_detail(
         f"🛡 Защита: <b>{stats['def']}%</b>",
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}",
     ]
-    if card.ability.description:
-        lines.append(f"     <i>{esc(card.ability.description)}</i>")
     lines += [
         f"💰 Стоимость карты: {card.points}",
         f"🔪 Убийств этой картой: {unit.get('kills', 0)}",
@@ -710,8 +702,6 @@ def render_case_open(card: Card, is_new: bool, count: int, cases_left: int) -> s
     lines.append(
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}"
     )
-    if card.ability.description:
-        lines.append(f"     <i>{esc(card.ability.description)}</i>")
     lines += [f"💰 <b>+{card.points}</b> очков на баланс", "", tail]
     if cases_left:
         lines.append(f"Осталось кейсов: <b>{cases_left}</b> — /case")
@@ -1147,8 +1137,6 @@ def faq_card(card: Card) -> tuple[str, InlineKeyboardMarkup]:
         f"✨ <b>{esc(card.ability.name)}</b> · перезарядка {card.ability.cooldown} х.",
         f"     {esc(_ability_line(card))}",
     ]
-    if card.ability.description:
-        lines.append(f"     <i>{esc(card.ability.description)}</i>")
     rows = [
         [
             InlineKeyboardButton(text="◀️ К списку", callback_data="fq:cards:0"),

@@ -51,11 +51,12 @@ def test_students_balance_is_tight():
     assert all(card.atk >= 16 for card in CARDS)
 
 
-def test_teachers_have_ability_descriptions():
+def test_teacher_abilities_show_concrete_effects():
+    from app.render import describe_ability
+
     teachers = [card for card in CARDS if card.rarity == "teacher"]
-    assert all(card.ability.description for card in teachers), (
-        "у способности каждого учителя должно быть описание"
-    )
+    for card in teachers:
+        assert describe_ability(card), f"{card.card_id}: у способности нет эффектов"
 
 
 def test_glafira_and_mikhail_are_a_pair():

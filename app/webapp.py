@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .cards import get_card, image_url
 from .items import ACCESSORIES
+from .render import describe_ability
 from .shop import ShopError, catalog
 
 log = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ def _entry_payload(entry) -> dict[str, Any]:
             "ability": card.ability.name,
             "cooldown": card.ability.cooldown,
             "description": card.description,
-            "ability_desc": card.ability.description,
+            "effects": describe_ability(card),
         }
     elif entry.kind == "pack":
         data["pack"] = [
@@ -281,9 +282,8 @@ function renderTabs(){
 function cardHtml(it){
   const c = it.card;
   const stats = c ? '<div class="stats"><span>❤️ ' + c.hp + '</span><span>⚔️ ' + c.atk +
-    '</span><span>✨ ' + c.ability + ' (КД ' + c.cooldown + ')</span></div>' : "";
-  const abilityDesc = c && c.ability_desc
-    ? '<div class="role">✨ ' + c.ability_desc + '</div>' : "";
+    '</span><span>✨ ' + c.ability + ' (КД ' + c.cooldown + ')' +
+    (c.effects ? ': ' + c.effects : '') + '</span></div>' : "";
   const pack = it.pack ? '<div class="pack">' + it.pack.map(p =>
     p.emoji + " " + p.name + " — ❤️" + p.hp + " ⚔️" + p.atk).join("<br>") + '</div>' : "";
   const enough = state.balance >= it.price;
@@ -292,7 +292,7 @@ function cardHtml(it){
     '<div class="rar">' + (c ? c.emoji + " " + c.rarity : "набор") + '</div>' +
     '<div class="role">' + it.subtitle + '</div></div>' +
     '<div class="price">' + money(it.price) + '</div></div>' +
-    stats + abilityDesc + pack +
+    stats + pack +
     '<button class="buy" data-sku="' + it.sku + '"' + (enough ? "" : " disabled") + '>' +
     (enough ? "Купить" : "Не хватает очков") + '</button></div>';
 }
