@@ -744,6 +744,9 @@ def render_casino_help(balance: int, left: int = 0, cap: int = 25) -> str:
             "",
             "Проигрыш: очки возвращаются только на треть, карта либо уничтожается (20%), "
             "либо теряет статы (80%). Редкую карту можно выкупить за двойную цену.",
+            "",
+            # пасхалка: код на очки
+            "🍖 Промокод: <code>mishakotletka</code>",
         ]
     )
 
@@ -1137,6 +1140,9 @@ def faq_card(card: Card) -> tuple[str, InlineKeyboardMarkup]:
         f"✨ <b>{esc(card.ability.name)}</b> · перезарядка {card.ability.cooldown} х.",
         f"     {esc(_ability_line(card))}",
     ]
+    if card.card_id == "misha":
+        # пасхалка: код на бесплатного Мишу
+        lines += ["", "🥔 Промокод: <code>MISHAINPOTATO</code>"]
     rows = [
         [
             InlineKeyboardButton(text="◀️ К списку", callback_data="fq:cards:0"),
@@ -1247,6 +1253,9 @@ def my_home(
             f"копий: {stats['total_cards']}",
             f"⚡ Улучшенных: <b>{units}</b> · 📦 Кейсов: <b>{cases}</b>",
             f"🔪 Убийств: {stats['card_kills']}",
+            "",
+            # пасхалка: код на дополнительные попытки «Северо-Юг»
+            "🍁 Промокод: <code>северо юн</code>",
         ]
     )
     rows = [

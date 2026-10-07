@@ -184,6 +184,45 @@ class Database:
             )
         return None if row is None else int(row["left"])
 
+    async def grant_drop_limit(
+        self, user_id: int, day: Any, amount: int, default_limit: int = 1
+    ) -> int:
+        """Выдаёт дополнительные попытки «Северо-Юг» на текущие сутки.
+
+        Если день ещё не начинался, сначала выставляем обычный лимит, потом
+        добавляем к нему amount. Возвращает, сколько попыток осталось.
+        """
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select last_drop_day, drop_uses, drop_limit "
+                    "from players where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return int(amount)
+                if row["last_drop_day"] != day:
+                    uses, limit = 0, int(default_limit)
+                else:
+                    uses = int(row["drop_uses"])
+                    limit = int(row["drop_limit"])
+                new_limit = limit + int(amount)
+                await con.execute(
+                    """
+                    update players
+                       set last_drop_day = $2,
+                           drop_uses = $3,
+                           drop_limit = $4,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    user_id,
+                    day,
+                    uses,
+                    new_limit,
+                )
+                return max(0, new_limit - uses)
+
     async def claim_roulette(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         """Атомарно тратит один спин рулетки. Возвращает остаток или None."""
         async with self._p().acquire() as con:

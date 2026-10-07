@@ -1563,7 +1563,8 @@ async def cmd_promo(message: Message, db: Database) -> None:
         )
         return
     try:
-        await message.answer(await promo.redeem(db, user.id, parts[1]))
+        # Код может состоять из нескольких слов («северо юн»).
+        await message.answer(await promo.redeem(db, user.id, " ".join(parts[1:])))
     except PromoError as error:
         await message.answer(str(error))
 

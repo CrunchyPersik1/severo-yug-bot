@@ -109,6 +109,14 @@ class FakeDB:
     async def add_drop(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    async def redeem_promo(self, user_id: int, code: str) -> bool:
+        return True
+
+    async def grant_drop_limit(
+        self, user_id: int, day: Any, amount: int, default_limit: int = 1
+    ) -> int:
+        return int(default_limit) + int(amount)
+
     async def player_profile(self, user_id: int):
         return {
             "user_id": user_id,
@@ -523,6 +531,15 @@ def test_mylots_handles_case_lots():
     async def scenario():
         session = await feed("/mylots", FakeDB(), FakeService(), market=FakeMarket())
         assert "Кейс" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_promo_with_a_space_in_the_code():
+    """Код «северо юн» состоит из двух слов: /promo должен склеивать аргументы."""
+    async def scenario():
+        session = await feed("/promo северо юн", FakeDB(), FakeService())
+        assert "Промокод принят" in sent_texts(session)[0]
 
     asyncio.run(scenario())
 

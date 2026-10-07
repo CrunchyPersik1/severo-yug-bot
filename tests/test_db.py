@@ -70,6 +70,28 @@ def test_daily_limit_is_atomic():
     run(scenario())
 
 
+def test_grant_drop_limit_adds_attempts_for_today():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            user = 900007
+            async with db.pool.acquire() as con:
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Лимитчик")
+            today = day_key()
+            # базовый лимит 1 + 5 = 6 попыток
+            assert await db.grant_drop_limit(user, today, 5) == 6
+            assert await db.claim_daily(user, today) == 5
+            assert await db.claim_daily(user, today) == 4
+            # на следующий день лимит снова обычный
+            tomorrow = today + timedelta(days=1)
+            assert await db.claim_daily(user, tomorrow) == 0
+        finally:
+            await db.close()
+
+    run(scenario())
+
+
 def test_collection_counts_and_points():
     async def scenario():
         db = await fresh_db()
