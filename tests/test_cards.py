@@ -51,6 +51,24 @@ def test_students_balance_is_tight():
     assert all(card.atk >= 16 for card in CARDS)
 
 
+def test_my_card_shows_ability_effects():
+    """В /my карточка должна показывать, что делает способность, а не только имя."""
+    from app.market import effective_stats
+    from app.render import my_card
+
+    card = get_card("elmira_secret")
+    unit = {
+        "handle": "#elmira_secret",
+        "card": card,
+        "stats": effective_stats(card, {}),
+        "bonus": {},
+        "count": 1,
+    }
+    text, _ = my_card(unit, [])
+    assert "Строгий выговор" in text
+    assert "урон 170" in text and "оглушение" in text
+
+
 def test_teacher_abilities_show_concrete_effects():
     from app.render import describe_ability
 

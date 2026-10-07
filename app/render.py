@@ -1345,7 +1345,8 @@ def my_card(
         "",
         f"⚔️ Атака: <b>{stats['atk']}</b>   ❤️ HP: <b>{stats['hp']}</b>   "
         f"🛡 Защита: <b>{stats['def']}%</b>",
-        f"✨ {esc(card.ability.name)} — КД {card.ability.cooldown}",
+        f"✨ <b>{esc(card.ability.name)}</b> — КД {card.ability.cooldown}: "
+        f"{describe_ability(card)}",
     ]
     if unit.get("items"):
         lines += ["", "Улучшения: " + " · ".join(unit["items"])]
