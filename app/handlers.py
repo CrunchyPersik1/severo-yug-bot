@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -18,6 +19,7 @@ from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
 from .team_service import TeamBattleError, TeamBattleService
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
 from .cards import CARDS, cards_sorted_for_user, get_card
 from .cases import roll_case_card
@@ -1238,3 +1240,47 @@ async def cmd_team_stop(
         except TeamBattleError:
             continue
     await message.answer(f"🛑 Остановлено боёв: <b>{stopped}</b>.")
+
+
+# --------------------------------------------------------------------------- #
+# Магазин (Telegram Mini App)
+# --------------------------------------------------------------------------- #
+
+
+def _app_url() -> str:
+    base = (
+        os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or ""
+    ).rstrip("/")
+    return f"{base}/app" if base else ""
+
+
+@router.message(Command("shop", "магазин"))
+@router.message(NormalizedText("магазин", "шоп", "shop"))
+async def cmd_shop(message: Message) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    url = _app_url()
+    if not url:
+        await message.answer("⚠️ Магазин не настроен: нет PUBLIC_URL.")
+        return
+    if message.chat.type != "private":
+        await message.answer(
+            "🍁 Магазин открывается только в личке со мной — "
+            "напиши мне туда, там кнопка снизу."
+        )
+        return
+
+    from aiogram.types import WebAppInfo
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🍁 Открыть магазин", web_app=WebAppInfo(url=url))]
+        ]
+    )
+    await message.answer(
+        "🍁 <b>Магазин «Северо-Юг»</b>\n\n"
+        "🟤 Учителя · 🎁 Наборы · ❤️ Аксессуары\n"
+        "Открывай кнопкой — или жми «Магазин» рядом с полем ввода.",
+        reply_markup=keyboard,
+    )

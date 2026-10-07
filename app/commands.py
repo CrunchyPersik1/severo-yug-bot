@@ -9,6 +9,7 @@ from aiogram.types import BotCommand
 
 COMMANDS: list[BotCommand] = [
     BotCommand(command="start", description="Справка и правила игры"),
+    BotCommand(command="shop", description="Магазин: учителя, наборы, аксессуары"),
     BotCommand(command="drop", description="Выбить карту «Северо-Юг» (раз в сутки)"),
     BotCommand(command="roulette", description="Рулетка — раз в сутки в 20:00 по ЕКБ"),
     BotCommand(command="case", description="Открыть кейс: карта от эпической и выше"),
@@ -26,5 +27,11 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="rating", description="Репутация торговца: /rating @игрок"),
     BotCommand(command="top", description="Топ по очкам коллекции"),
     BotCommand(command="profile", description="Профиль и карты: свой или /profile @игрок"),
+    BotCommand(command="stop", description="Остановить свой командный бой"),
     BotCommand(command="help", description="Справка"),
+]
+
+# Админу меню показывается отдельно — обычным игрокам /admin не светится.
+ADMIN_COMMANDS: list[BotCommand] = COMMANDS + [
+    BotCommand(command="admin", description="Админка: сводка, выдачи, рассылка"),
 ]

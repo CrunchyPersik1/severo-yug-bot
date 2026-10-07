@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request, Response
 
 from app.battle_service import BattleService
 from app.cards import CARDS, card_rows
-from app.commands import COMMANDS
+from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
 from app.db import Database
 from app.handlers import router
@@ -40,6 +40,7 @@ async def setup_commands(bot: Bot) -> None:
     from aiogram.types import (
         BotCommandScopeAllGroupChats,
         BotCommandScopeAllPrivateChats,
+        BotCommandScopeChat,
         BotCommandScopeDefault,
     )
 
@@ -49,6 +50,15 @@ async def setup_commands(bot: Bot) -> None:
         BotCommandScopeAllGroupChats(),
     ):
         await bot.set_my_commands(COMMANDS, scope=scope)
+
+    # Админу — отдельное меню, где видно /admin. Остальным он не светится.
+    for admin_id in settings.admin_ids:
+        with contextlib.suppress(Exception):
+            await bot.set_my_commands(
+                ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+            log.info("Админское меню выставлено для %s", admin_id)
+
     log.info("Меню команд обновлено: %d шт.", len(COMMANDS))
 
 
