@@ -289,3 +289,18 @@ create table if not exists shop_log (
     created_at timestamptz not null default now()
 );
 create index if not exists shop_log_user_idx on shop_log (user_id, created_at desc);
+
+-- ===================================================================== --
+-- Промокоды и лимит круток казино
+-- ===================================================================== --
+
+alter table players add column if not exists casino_day date;
+alter table players add column if not exists casino_uses integer not null default 0;
+alter table players add column if not exists casino_limit integer not null default 25;
+
+create table if not exists promo_uses (
+    user_id    bigint not null references players(user_id) on delete cascade,
+    code       text not null,
+    created_at timestamptz not null default now(),
+    primary key (user_id, code)
+);

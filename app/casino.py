@@ -34,6 +34,9 @@ LOSS_DIVISOR = 3
 DELETE_CHANCE = 0.20
 WORSEN_CHANCE = 0.80
 
+SPINS_PER_DAY = 25            # сколько круток даётся на сутки
+EXTRA_SPIN_PRICE = 2_000      # докупка одной крутки
+
 BUYBACK_MULT = 2
 BUYBACK_MINUTES = 10
 

@@ -14,10 +14,11 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
-from . import admin_actions, casino, render, team_battle
+from . import admin_actions, casino, promo, render, team_battle
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
+from .promo import PromoError
 from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
@@ -928,7 +929,21 @@ async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None
     balance = await market.balance(user.id)
     parts = (message.text or "").split()[1:]
     if not parts:
-        await message.answer(render.render_casino_help(balance))
+        left = await db.casino_left(user.id, roulette_day_key(), casino.SPINS_PER_DAY)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=f"➕ Купить крутку за {casino.EXTRA_SPIN_PRICE}",
+                        callback_data="cspin",
+                    )
+                ]
+            ]
+        )
+        await message.answer(
+            render.render_casino_help(balance, left, casino.SPINS_PER_DAY),
+            reply_markup=keyboard,
+        )
         return
 
     raw = parts[0]
@@ -974,6 +989,12 @@ async def cb_casino(callback: CallbackQuery, db: Database, market: MarketRepo) -
         return
 
     user_id = callback.from_user.id
+    left = await db.claim_casino(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    if left is None:
+        await callback.answer(
+            "🎰 Крутки на сегодня кончились. Докупка — 2 000 очков.", show_alert=True
+        )
+        return
     repo = CasinoRepo(db, market)
     try:
         if token.startswith("p:"):
@@ -1432,3 +1453,70 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
         await callback.answer()
         return
     await callback.answer()
+
+
+
+# --------------------------------------------------------------------------- #
+# Промокоды и главное меню
+# --------------------------------------------------------------------------- #
+
+
+@router.message(CommandStart())
+async def cmd_start_menu(message: Message, bot: Bot) -> None:
+    text, keyboard = render.render_main_menu(await _bot_username(bot), _base_url())
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.message(Command("promo", "промокод"))
+@router.message(NormalizedText("промокод", "промо"))
+async def cmd_promo(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer(
+            "🎁 Формат: <code>/promo КОД</code>\n"
+            "Коды раздаю в чате — следи за анонсами."
+        )
+        return
+    try:
+        await message.answer(await promo.redeem(db, user.id, parts[1]))
+    except PromoError as error:
+        await message.answer(str(error))
+
+
+@router.callback_query(F.data.startswith("mn:"))
+async def cb_menu(callback: CallbackQuery, db: Database, bot: Bot) -> None:
+    assert callback.data is not None
+    action = callback.data.split(":", 1)[1]
+    if action == "top":
+        await _safe_edit(callback, render.render_top(await db.top_players(10)), None)
+    elif action == "help":
+        await _safe_edit(callback, render.render_help(await _bot_username(bot)), None)
+    else:
+        await callback.answer()
+        return
+    await callback.answer()
+
+
+@router.callback_query(F.data == "cspin")
+async def cb_extra_spin(
+    callback: CallbackQuery, db: Database, market: MarketRepo
+) -> None:
+    """Докупка одной крутки казино за 2000 очков."""
+    user_id = callback.from_user.id
+    balance = await market.balance(user_id)
+    if balance < casino.EXTRA_SPIN_PRICE:
+        await callback.answer(
+            f"Крутка стоит {casino.EXTRA_SPIN_PRICE}, у тебя {balance}.",
+            show_alert=True,
+        )
+        return
+    await db.add_points(user_id, -casino.EXTRA_SPIN_PRICE)
+    cap = await db.add_casino_limit(user_id, 1)
+    await callback.answer(
+        f"🎰 Крутка куплена! Всего на сегодня: {cap}. "
+        f"Осталось очков: {await market.balance(user_id)}"
+    )

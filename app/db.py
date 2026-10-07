@@ -604,6 +604,70 @@ class Database:
             )
         return [b for b in (self._row_to_battle(row) for row in rows) if b is not None]
 
+    async def claim_casino(self, user_id: int, day: Any, limit: int = 25) -> int | None:
+        """Списывает крутку казино. None — на сегодня круток не осталось."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select casino_day, casino_uses, casino_limit from players "
+                    "where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return 0
+                if row["casino_day"] != day:
+                    await con.execute(
+                        "update players set casino_day = $2, casino_uses = 0, "
+                        "casino_limit = $3 where user_id = $1",
+                        user_id,
+                        day,
+                        limit,
+                    )
+                    uses, cap = 0, limit
+                else:
+                    uses = int(row["casino_uses"])
+                    cap = max(int(row["casino_limit"]), limit)
+                if uses >= cap:
+                    return None
+                await con.execute(
+                    "update players set casino_uses = casino_uses + 1 where user_id = $1",
+                    user_id,
+                )
+                return max(0, cap - uses - 1)
+
+    async def casino_left(self, user_id: int, day: Any, limit: int = 25) -> int:
+        """Сколько круток осталось. Ничего не списывает."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select casino_day, casino_uses, casino_limit from players where user_id = $1",
+                user_id,
+            )
+        if row is None or row["casino_day"] != day:
+            return limit
+        cap = max(int(row["casino_limit"]), limit)
+        return max(0, cap - int(row["casino_uses"]))
+
+    async def add_casino_limit(self, user_id: int, amount: int = 1) -> int:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "update players set casino_limit = casino_limit + $2 "
+                "where user_id = $1 returning casino_limit",
+                user_id,
+                int(amount),
+            )
+        return int(value or 0)
+
+    async def redeem_promo(self, user_id: int, code: str) -> bool:
+        """True — промокод принят, False — уже использован."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "insert into promo_uses (user_id, code) values ($1, $2) "
+                "on conflict do nothing returning user_id",
+                user_id,
+                code,
+            )
+        return row is not None
+
     async def my_accessories(self, user_id: int) -> list[dict[str, Any]]:
         async with self._p().acquire() as con:
             rows = await con.fetch(

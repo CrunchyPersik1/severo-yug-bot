@@ -720,12 +720,14 @@ def render_sell_case(lot: dict[str, Any], ratio: float, penalty: float, rating: 
 # --------------------------------------------------------------------------- #
 
 
-def render_casino_help(balance: int) -> str:
+def render_casino_help(balance: int, left: int = 0, cap: int = 25) -> str:
     return "\n".join(
         [
             "🎰 <b>Казино</b>",
             "",
             f"Твой баланс: <b>{balance}</b> очков.",
+            f"🎟 Круток на сегодня: <b>{left}</b> из {cap}",
+            "Докупить одну — 2 000 очков (кнопка ниже).",
             "",
             "Ставь очки или карту и выбирай цвет:",
             "🔴 красное и ⚫ чёрное — <b>x2</b>",
@@ -1365,3 +1367,64 @@ def my_items(
         [InlineKeyboardButton(text="⬅️ К карте", callback_data=f"my:d:{unit['handle']}")]
     )
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# --------------------------------------------------------------------------- #
+# Главное меню
+# --------------------------------------------------------------------------- #
+
+
+def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    text = "\n".join(
+        [
+            f"🍁 <b>Северо-Юг</b> · <i>@{esc(bot_name)}</i>",
+            "коллекционные карточки и PvP · школьная осень",
+            "",
+            "🎴 <b>«Северо-Юг»</b> — выбить карту (раз в сутки)",
+            "🎰 <b>«рулетка»</b> — крутка в 20:00 по ЕКБ",
+            "📦 <b>«кейс»</b> — открыть кейс",
+            "⚔️ <b>«пвп»</b> ответом — вызвать на бой",
+            "🎲 <b>/casino</b> — ставка очками или картой",
+        ]
+    )
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(text="🎒 Коллекция", callback_data="my:home"),
+            InlineKeyboardButton(text="📖 FAQ", callback_data="fq:menu"),
+        ]
+    ]
+    middle: list[InlineKeyboardButton] = []
+    if app_url:
+        from aiogram.types import WebAppInfo
+
+        middle.append(
+            InlineKeyboardButton(
+                text="🛒 Магазин", web_app=WebAppInfo(url=f"{app_url}/app")
+            )
+        )
+    middle.append(
+        InlineKeyboardButton(text="🏆 Топ", callback_data="mn:top")
+    )
+    rows.append(middle)
+    rows.append(
+        [
+            InlineKeyboardButton(text="👤 Профиль", callback_data="my:p"),
+            InlineKeyboardButton(text="❓ Помощь", callback_data="mn:help"),
+        ]
+    )
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_top(rows: list[dict[str, Any]]) -> str:
+    lines = ["🏆 <b>Топ по очкам</b>", ""]
+    medals = ["🥇", "🥈", "🥉"]
+    for index, row in enumerate(rows):
+        medal = medals[index] if index < len(medals) else f"{index + 1}."
+        name = row.get("first_name") or row.get("username") or "игрок"
+        lines.append(
+            f"{medal} {esc(name)} — <b>{int(row['points'])}</b> очк. · "
+            f"{int(row['unique_cards'])} карт"
+        )
+    if not rows:
+        lines.append("Пока пусто.")
+    return "\n".join(lines)
