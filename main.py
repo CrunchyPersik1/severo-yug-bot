@@ -22,7 +22,9 @@ from app.config import settings
 from app.db import Database
 from app.handlers import router
 from app.market_repo import MarketRepo
+from app.shop import ShopRepo
 from app.team_service import TeamBattleService
+from app.webapp import router as webapp_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -84,8 +86,16 @@ async def lifespan(app: FastAPI):
         return True
 
     dp.include_router(router)
+    app.include_router(webapp_router)
     service = BattleService(bot, db, market)
     team = TeamBattleService(bot, db, market)
+    shop = ShopRepo(db, market)
+
+    # мини-аппка магазина читает это из app.state
+    app.state.settings = settings
+    app.state.db = db
+    app.state.market = market
+    app.state.shop = shop
     runtime.update(db=db, bot=bot, dp=dp, service=service, market=market, team=team)
 
     me = await bot.get_me()
@@ -109,6 +119,18 @@ async def lifespan(app: FastAPI):
             log.info("Webhook уже настроен: %s", url)
     else:
         log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
+
+    base = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
+    if base:
+        from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+        with contextlib.suppress(Exception):
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="Магазин", web_app=WebAppInfo(url=f"{base}/app")
+                )
+            )
+            log.info("Кнопка мини-аппки: %s/app", base)
 
     task = asyncio.create_task(_ticker(service, team))
     log.info("Бот запущен: %d карт", len(CARDS))

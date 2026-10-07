@@ -266,3 +266,26 @@ on conflict (chat_id) do nothing;
 insert into chats (chat_id, kind)
 select distinct chat_id, 'supergroup' from drops where chat_id < 0
 on conflict (chat_id) do nothing;
+-- ===================================================================== --
+-- Магазин и аксессуары
+-- ===================================================================== --
+
+-- Аксессуары (четвёртый слот улучшений) покупаются в магазине.
+create table if not exists accessories (
+    id         bigserial primary key,
+    user_id    bigint not null references players(user_id) on delete cascade,
+    item_id    integer not null,
+    card_id    text,
+    created_at timestamptz not null default now()
+);
+create index if not exists accessories_user_idx on accessories (user_id);
+
+-- История покупок: чтобы видеть, кто и что брал.
+create table if not exists shop_log (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    sku        text not null,
+    price      integer not null,
+    created_at timestamptz not null default now()
+);
+create index if not exists shop_log_user_idx on shop_log (user_id, created_at desc);
