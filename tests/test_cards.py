@@ -51,6 +51,22 @@ def test_students_balance_is_tight():
     assert all(card.atk >= 16 for card in CARDS)
 
 
+def test_teachers_have_ability_descriptions():
+    teachers = [card for card in CARDS if card.rarity == "teacher"]
+    assert all(card.ability.description for card in teachers), (
+        "у способности каждого учителя должно быть описание"
+    )
+
+
+def test_glafira_and_mikhail_are_a_pair():
+    from app.cards import CARD_PAIRS
+
+    assert CARD_PAIRS.get("glafira") == "mikhail_nik"
+    assert CARD_PAIRS.get("mikhail_nik") == "glafira"
+    assert get_card("glafira").description
+    assert get_card("mikhail_nik").description
+
+
 def test_teachers_are_stronger_and_varied():
     teachers = [card for card in CARDS if card.rarity == "teacher"]
     budgets = [card.budget for card in teachers]

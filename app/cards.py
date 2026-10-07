@@ -89,6 +89,8 @@ class Ability:
     name: str
     cooldown: int
     effects: dict[str, Any]
+    # Своё описание приёма: показывается рядом с эффектами.
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,7 @@ def _c(
     cooldown: int,
     surname: str | None = None,
     description: str | None = None,
+    ability_description: str | None = None,
     **effects: Any,
 ) -> Card:
     return Card(
@@ -143,7 +146,12 @@ def _c(
         points=points,
         hp=hp,
         atk=atk,
-        ability=Ability(name=ability, cooldown=cooldown, effects=effects),
+        ability=Ability(
+            name=ability,
+            cooldown=cooldown,
+            effects=effects,
+            description=ability_description,
+        ),
         surname=surname,
         description=description,
     )
@@ -157,32 +165,48 @@ CARDS: tuple[Card, ...] = (
     # сопоставим с учениками, а способность бьёт больно и по-разному.
     # ======================================================================= #
     _c("irina_val", "Ирина Валерьевна", "teacher", 45000, 860, 44, "Классный час", 3,
-       description="Классная руководительница", damage=120, silence=1),
+       description="Классная руководительница", damage=120, silence=1,
+       ability_description="Собирает класс и ставит болтунов на место — урон и немота."),
     _c("filaria", "Филария Талгатовна", "teacher", 40000, 860, 44, "Историческая справка", 3,
-       description="Лучшая историчка", damage=140, weaken=25, weaken_turns=2),
+       description="Лучшая историчка", ability_description="Пара фактов из прошлого — враг теряет хватку.",
+       damage=140, weaken=25, weaken_turns=2),
     _c("guzel", "Гузель Ахметовна", "teacher", 50000, 850, 45, "Диктант", 3,
-       description="Русичка", damage=135, stun=1),
+       description="Русичка", ability_description="Красная ручка находит ошибку и оглушает.",
+       damage=135, stun=1),
     _c("dilara", "Дилара Галимовна", "teacher", 38000, 850, 46, "Эстафета", 3,
-       description="Учитель физкультуры", damage=70, hits=2, dodge=1),
+       description="Учитель физкультуры", ability_description="Быстрая смена: два удара и уклонение.",
+       damage=70, hits=2, dodge=1),
     _c("nasima", "Насима Зуфаровна", "teacher", 47000, 870, 38, "Биологический яд", 3,
-       description="Биологичка", poison=30, poison_turns=3, drain=6),
+       description="Биологичка", ability_description="Токсины из кабинета биологии разъедают врага.",
+       poison=30, poison_turns=3, drain=6),
     _c("elmira_rad", "Эльмира Радиковна", "teacher", 55000, 840, 47, "Резвый наскок", 2,
-       description="Башкирёнок", damage=60, hits=2, steal=20),
+       description="Башкирёнок", ability_description="Молодой башкирёнок бьёт дважды и подлечивается.",
+       damage=60, hits=2, steal=20),
     _c("mikhail_nik", "Михаил Николаевич", "teacher", 42000, 870, 36, "Тёплое течение", 3,
-       description="Учитель географии · М + Г = ❤️", heal=55, shield=35),
+       description="Учитель географии · М + Г = ❤️",
+       ability_description="Тёплый поток лечит союзника и укрывает щитом. Рядом с Глафирой греет и её.",
+       heal=55, shield=35),
     _c("natalya_nik", "Наталья Николаевна", "teacher", 39000, 890, 42, "Системный сбой", 4,
-       description="Главная в школе, информатичка", damage=160, silence=1, stun=1),
+       description="Главная в школе, информатичка",
+       ability_description="Школьный сервер падает — оглушение и немота.",
+       damage=160, silence=1, stun=1),
     _c("ilgiz", "Ильгиз Винерович", "teacher", 41000, 900, 40, "Кросс", 3,
-       description="Учитель физкультуры", counter=35, counter_turns=2, dodge=1),
+       description="Учитель физкультуры", ability_description="Встаёт в стойку: уклонение и ответный удар.",
+       counter=35, counter_turns=2, dodge=1),
     _c("gulsum", "Гульсум Муратовна", "teacher", 36000, 880, 30, "Курай", 3,
-       description="Башкирёнок", heal=70, cleanse=True),
+       description="Башкирёнок", ability_description="Мелодия курая лечит и снимает порчу.",
+       heal=70, cleanse=True),
     _c("elvira", "Эльвира Хасановна", "teacher", 35000, 900, 34, "Стаж 40 лет", 4,
-       description="Старый учитель", damage=150, shield=40),
+       description="Старый учитель", ability_description="Ветеран прикрывается щитом и бьёт наотмашь.",
+       damage=150, shield=40),
     _c("valeriy_akr", "Валерий Акрамович", "teacher", 43000, 880, 48, "Контрольная работа", 3,
-       description="Математик", damage=130, ignore_shield=True),
+       description="Математик", ability_description="Просчитывает ответ на несколько ходов и пробивает щит.",
+       damage=130, ignore_shield=True),
     # секретка по промокоду OCEHb — в магазине её нет
     _c("elmira_secret", "Эльмира Ракидовна", "teacher", 60000, 920, 52, "Строгий выговор", 3,
-       description="Завуч — только за промокод", damage=170, stun=1, heal=40),
+       description="Завуч — только за промокод",
+       ability_description="Вызывает в кабинет: больно, оглушительно и с воспитательной беседой.",
+       damage=170, stun=1, heal=40),
 
     # ======================================================================= #
     # ЛЕГЕНДАРНЫЙ (3)
@@ -199,7 +223,10 @@ CARDS: tuple[Card, ...] = (
     _c("daniyar_mif", "Данияр", "mythic", 6500, 620, 42, "Контрудар", 2, surname="Жайлибаев", shield=20, damage=22),
     _c("amaliya", "Амалия", "mythic", 5000, 600, 34, "Чародейский щит", 3, shield=45, cleanse=True),
     _c("arina", "Арина", "mythic", 5000, 580, 44, "Прозрение", 3, damage=26, dodge=1),
-    _c("glafira", "Глафира", "mythic", 7500, 640, 34, "Благословение", 3, heal=60),
+    _c("glafira", "Глафира", "mythic", 7500, 640, 34, "Благословение", 3,
+       description="Влюблена в Михаила Николаевича ❤️",
+       ability_description="Тёплый свет исцеляет союзника, а рядом с Михаилом сияет ярче.",
+       heal=60),
     _c("trofim", "Трофим", "mythic", 7500, 680, 34, "Удушающая", 3, damage=26, silence=1),
     _c("emin", "Эмин", "mythic", 6500, 620, 40, "Словесное исцеление", 2, steal=18, drain=2),
     # --- новые карты, продаются паками в магазине ---
@@ -263,6 +290,13 @@ CARDS_BY_ID: dict[str, Card] = {card.card_id: card for card in CARDS}
 # Карты, которые нельзя ни купить в магазине, ни выбить случайно:
 # они выдаются только промокодом.
 PROMO_ONLY_CARD_IDS: frozenset[str] = frozenset({"elmira_secret"})
+
+# Парные карты: когда обе в одной команде, поддерживают друг друга.
+# Михаил Николаевич (географ) и Глафира — «М + Г = ❤️».
+CARD_PAIRS: dict[str, str] = {
+    "glafira": "mikhail_nik",
+    "mikhail_nik": "glafira",
+}
 
 CARDS_BY_RARITY: dict[str, tuple[Card, ...]] = {
     key: tuple(card for card in CARDS if card.rarity == key) for key in RARITIES

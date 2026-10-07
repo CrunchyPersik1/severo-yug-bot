@@ -9,7 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from .cards import Card, get_card
+from .cards import CARD_PAIRS, Card, get_card
 
 KEY_A = "a"
 KEY_B = "b"
@@ -119,6 +119,27 @@ def ability_targets(card: Card) -> str:
 
 def can_use_ability(side: dict[str, Any]) -> bool:
     return side["cd"] <= 0 and side["silence"] <= 0
+
+
+def pair_partner(state: dict[str, Any], actor_key: str) -> str | None:
+    """Живой союзник, который составляет пару с картой актёра.
+
+    Работает только в командном бою: у сторон должна совпадать команда.
+    В бою 1 на 1 у карт нет команды, поэтому пара не срабатывает — там они враги.
+    """
+    actor = state["sides"][actor_key]
+    partner_card = CARD_PAIRS.get(str(actor.get("card_id")))
+    if not partner_card:
+        return None
+    for key, side in state["sides"].items():
+        if key == actor_key or side.get("card_id") != partner_card:
+            continue
+        if side["hp"] <= 0:
+            continue
+        if actor.get("team") is None or side.get("team") != actor.get("team"):
+            continue
+        return key
+    return None
 
 
 def _cleanse(state: dict[str, Any], key: str) -> None:
@@ -331,12 +352,28 @@ def _apply_ability(
         if stolen > 0:
             _heal(state, actor_key, stolen)
 
+    heal_amount = 0
     if "heal" in effects:
-        _heal(state, ally_key, int(effects["heal"]))
+        heal_amount = int(effects["heal"])
+        _heal(state, ally_key, heal_amount)
 
+    shield_amount = 0
     if "shield" in effects:
-        state["sides"][ally_key]["shield"] += int(effects["shield"])
-        _log(state, f"🛡️ Щит: +{int(effects['shield'])}")
+        shield_amount = int(effects["shield"])
+        state["sides"][ally_key]["shield"] += shield_amount
+        _log(state, f"🛡️ Щит: +{shield_amount}")
+
+    # Парная синергия: пока напарник жив и в той же команде, он лечится и
+    # прикрывается вместе с актёром. Если эффект и так нацелен на напарника,
+    # второй раз не накладываем.
+    partner_key = pair_partner(state, actor_key)
+    if partner_key is not None and partner_key != ally_key:
+        if heal_amount:
+            _heal(state, partner_key, heal_amount)
+            _log(state, "❤️ Пара: напарник тоже лечится")
+        if shield_amount:
+            state["sides"][partner_key]["shield"] += shield_amount
+            _log(state, f"❤️ Пара: щит +{shield_amount} напарнику")
 
     if "poison" in effects:
         poison = int(effects["poison"])

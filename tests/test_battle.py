@@ -311,6 +311,19 @@ def test_weaken_lowers_only_the_weakened_side_damage():
     assert state["sides"][KEY_B]["hp"] == hp_b - egor_atk
 
 
+def test_pair_synergy_is_off_in_1v1():
+    """Глафира и Михаил в 1 на 1 — враги, парная синергия не должна помогать сопернику."""
+    state = make_state("glafira", "mikhail_nik")
+    state["sides"][KEY_A]["hp"] = 100
+    enemy_hp = state["sides"][KEY_B]["hp"]
+    heal = get_card("glafira").ability.effects["heal"]
+
+    apply_action(state, KEY_A, ACTION_ABILITY)
+
+    assert state["sides"][KEY_A]["hp"] == 100 + heal
+    assert state["sides"][KEY_B]["hp"] == enemy_hp
+
+
 def test_timeout_counter_resets_after_a_real_move():
     """Техническое поражение — за три пропуска ПОДРЯД, а не за три за весь бой."""
     state = make_state()

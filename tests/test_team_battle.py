@@ -149,6 +149,59 @@ def test_healer_can_heal_allies_again_after_cooldown():
     assert team_battle.can_use_ability(state["sides"][healer]), "хил должен восстановиться"
 
 
+def test_pair_heals_each_other_in_team():
+    """Глафира и Михаил Николаевич в одной команде лечат друг друга."""
+    people = [
+        {"user_id": 1, "name": "Пара", "team": team_battle.TEAM_RED},
+        {"user_id": 2, "name": "Соперник", "team": team_battle.TEAM_BLUE},
+    ]
+    picks = {
+        1: [{"card": get_card("glafira")}, {"card": get_card("mikhail_nik")}],
+        2: [{"card": get_card("oleg")}, {"card": get_card("oleg")}],
+    }
+    state = team_battle.build_state(people, picks, 1)
+    for side in state["sides"].values():
+        side["hp"] = side["max_hp"] = 5000
+    keys = team_battle.unit_keys(state, 1)
+    glafira = next(k for k in keys if state["sides"][k]["card_id"] == "glafira")
+    mikhail = next(k for k in keys if state["sides"][k]["card_id"] == "mikhail_nik")
+    state["sides"][glafira]["hp"] = 100
+    state["sides"][mikhail]["hp"] = 100
+    heal = get_card("glafira").ability.effects["heal"]
+
+    team_battle.perform(
+        state, 1, glafira, team_battle.ACTION_ABILITY, _enemy(state, glafira), glafira
+    )
+
+    assert state["sides"][glafira]["hp"] == 100 + heal
+    assert state["sides"][mikhail]["hp"] == 100 + heal, "напарник тоже лечится"
+    assert any("Пара" in entry for entry in state["log"])
+
+
+def test_pair_synergy_needs_the_partner():
+    people = [
+        {"user_id": 1, "name": "Один", "team": team_battle.TEAM_RED},
+        {"user_id": 2, "name": "Соперник", "team": team_battle.TEAM_BLUE},
+    ]
+    picks = {
+        1: [{"card": get_card("glafira")}, {"card": get_card("oleg")}],
+        2: [{"card": get_card("oleg")}, {"card": get_card("oleg")}],
+    }
+    state = team_battle.build_state(people, picks, 1)
+    for side in state["sides"].values():
+        side["hp"] = side["max_hp"] = 5000
+    keys = team_battle.unit_keys(state, 1)
+    glafira = next(k for k in keys if state["sides"][k]["card_id"] == "glafira")
+    state["sides"][glafira]["hp"] = 100
+
+    team_battle.perform(
+        state, 1, glafira, team_battle.ACTION_ABILITY, _enemy(state, glafira), glafira
+    )
+
+    assert state["sides"][glafira]["hp"] == 100 + get_card("glafira").ability.effects["heal"]
+    assert not any("Пара" in entry for entry in state["log"])
+
+
 def test_finalize_produces_winners_and_losers():
     """_finalize обязан отдавать состав победителей/проигравших один раз."""
     from app.team_service import TeamBattleService
