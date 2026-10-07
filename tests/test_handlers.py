@@ -321,7 +321,10 @@ def test_decorate_lot_still_computes_card_stats():
 
     card_lot = {"id": 2, "kind": "card", "card_id": "oleg", "inventory_id": None, "price": 400}
     decorated = decorate_lot(card_lot)
-    assert decorated["stats"] == {"atk": 10, "hp": 95, "def": 0}
+    from app.cards import get_card as _get_card
+
+    oleg = _get_card("oleg")
+    assert decorated["stats"] == {"atk": oleg.atk, "hp": oleg.hp, "def": 0}
 
 def test_gift_actually_sends_the_card():
     """Регрессия: раньше cmd_gift обрывался и молча ничего не дарил."""

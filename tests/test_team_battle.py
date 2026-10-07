@@ -85,7 +85,7 @@ def test_healing_an_ally_does_not_touch_enemies():
     enemy = _enemy(state, healer)
     enemy_hp = state["sides"][enemy]["hp"]
     team_battle.perform(state, 1, healer, team_battle.ACTION_ABILITY, enemy, healer)
-    assert state["sides"][healer]["hp"] == 70
+    assert state["sides"][healer]["hp"] == 50 + get_card("saida").ability.effects["heal"]
     assert state["sides"][enemy]["hp"] == enemy_hp
 
 
@@ -138,7 +138,7 @@ def test_healer_can_heal_allies_again_after_cooldown():
     state["sides"][healer]["hp"] = 500
 
     team_battle.perform(state, 1, healer, team_battle.ACTION_ABILITY, _enemy(state, healer), healer)
-    assert state["sides"][healer]["hp"] == 520, "Саида лечит себя на 20"
+    assert state["sides"][healer]["hp"] == 500 + get_card("saida").ability.effects["heal"]
 
     guard = 0
     while not team_battle.can_use_ability(state["sides"][healer]) and guard < 300:

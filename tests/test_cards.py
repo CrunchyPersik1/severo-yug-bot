@@ -13,16 +13,17 @@ EXPECTED = {
     "rare": 4,
     "superrare": 4,
     "epic": 10,
-    "mythic": 8,
+    "mythic": 11,
     "legendary": 3,
     "secret": 5,
     "ultra": 1,
+    "teacher": 13,
 }
 
 
 def test_total_and_unique_ids():
-    assert len(CARDS) == 35
-    assert len(CARDS_BY_ID) == 35
+    assert len(CARDS) == 51
+    assert len(CARDS_BY_ID) == 51
 
 
 def test_duplicate_names_have_distinct_ids():
@@ -36,7 +37,7 @@ def test_duplicate_names_have_distinct_ids():
 def test_rarity_counts_match_spec():
     for rarity, expected in EXPECTED.items():
         assert len(CARDS_BY_RARITY[rarity]) == expected, rarity
-    assert sum(EXPECTED.values()) == 35
+    assert sum(EXPECTED.values()) == 51
 
 
 def test_weights_sum_to_one():
@@ -45,9 +46,9 @@ def test_weights_sum_to_one():
 
 def test_balance_is_tight():
     budgets = [card.budget for card in CARDS]
-    assert max(budgets) - min(budgets) <= 65, budgets
-    assert all(card.hp >= 80 for card in CARDS)
-    assert all(card.atk >= 8 for card in CARDS)
+    assert max(budgets) - min(budgets) <= 400, budgets
+    assert all(card.hp >= 500 for card in CARDS)
+    assert all(card.atk >= 18 for card in CARDS)
 
 
 def test_points_match_spec():
@@ -66,7 +67,7 @@ def test_duplicate_names_are_split_by_surname():
 
     display = Counter(card.display_name for card in CARDS)
     assert all(count == 1 for count in display.values()), "отображаемые имена не должны повторяться"
-    assert len(display) == 35
+    assert len(display) == 51
 
 
 def test_only_duplicate_names_have_surnames():

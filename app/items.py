@@ -85,11 +85,24 @@ EFFECTS: tuple[Item, ...] = (
     Item(10, "Гнилой Корень", {"atk": -12}),
 )
 
+# Аксессуары — четвёртый слот. Их не выдаёт апгрейд: они продаются в магазине
+# (входят в паки). Пока это только данные, привязка к магазину — отдельным шагом.
+SLOT_ACCESSORY = "accessory"
+
+ACCESSORIES: tuple[Item, ...] = (
+    Item(1, "Сердечко", {"atk": 12, "hp": 18}),        # особый: для Миши +20 урона
+    Item(2, "Портфель", {"def": 22, "hp": 8}),
+    Item(3, "Кленовый лист", {"atk": 18, "def": 6}),
+)
+
 BY_SLOT: dict[str, tuple[Item, ...]] = {
     SLOT_AURA: AURAS,
     SLOT_BACKGROUND: BACKGROUNDS,
     SLOT_EFFECT: EFFECTS,
+    SLOT_ACCESSORY: ACCESSORIES,
 }
+
+ACCESSORY_TITLES = {item.id: item.name for item in ACCESSORIES}
 
 TABLE_BY_SLOT = {
     SLOT_AURA: "auras",

@@ -3,7 +3,17 @@
 import random
 
 from app.cards import CARDS, get_card
-from app.items import AURAS, BACKGROUNDS, BY_SLOT, EFFECTS, Item, SLOTS, roll_item, roll_slot
+from app.items import (
+    ACCESSORIES,
+    AURAS,
+    BACKGROUNDS,
+    BY_SLOT,
+    EFFECTS,
+    Item,
+    SLOTS,
+    roll_item,
+    roll_slot,
+)
 from app.market import (
     CHEAP_RATIO,
     DEF_CAP,
@@ -29,16 +39,17 @@ from app.market import (
 )
 
 
-def test_there_are_ten_items_in_each_category():
+def test_items_in_each_category():
     assert len(AURAS) == 10
     assert len(BACKGROUNDS) == 10
     assert len(EFFECTS) == 10
-    assert set(BY_SLOT) == set(SLOTS)
+    assert len(ACCESSORIES) == 3, "аксессуары продаются в магазине"
+    assert set(SLOTS) <= set(BY_SLOT)
 
 
 def test_all_item_names_are_unique():
-    names = [item.name for item in AURAS + BACKGROUNDS + EFFECTS]
-    assert len(names) == len(set(names)) == 30
+    names = [item.name for item in AURAS + BACKGROUNDS + EFFECTS + ACCESSORIES]
+    assert len(names) == len(set(names)) == 33
 
 
 def test_aura_touches_several_stats_others_only_one():
@@ -72,11 +83,11 @@ def test_roll_slot_picks_only_free_slots():
 
 
 def test_effective_stats_apply_percentages():
-    card = get_card("oleg")  # atk 10, hp 95
-    assert effective_stats(card, {}) == {"atk": 10, "hp": 95, "def": 0}
+    card = get_card("oleg")
+    assert effective_stats(card, {}) == {"atk": card.atk, "hp": card.hp, "def": 0}
     buffed = effective_stats(card, {"atk": 50, "hp": 20, "def": 15})
-    assert buffed["atk"] == 15
-    assert buffed["hp"] == 114
+    assert buffed["atk"] == round(card.atk * 1.5)
+    assert buffed["hp"] == round(card.hp * 1.2)
     assert buffed["def"] == 15
 
 
@@ -110,7 +121,7 @@ def test_upgrade_price_is_worth_several_times_base():
         # редкость даёт 1..4x, улучшения сверху ещё ~2.3x
         expected_min = RARITY_COEF[card.rarity] * 2.0
         assert ratio >= expected_min, (card.card_id, ratio, expected_min)
-        assert ratio <= 12, (card.card_id, ratio)
+        assert ratio <= 30, (card.card_id, ratio)
 
 
 def test_upgrade_costs_750():

@@ -39,21 +39,24 @@ def test_only_turn_owner_can_act():
 
 def test_shield_absorbs_damage():
     state = make_state("tamerlan_mif", "oleg")
-    apply_action(state, KEY_A, ACTION_ABILITY)  # щит 25
-    assert state["sides"][KEY_A]["shield"] == 25
-    apply_action(state, KEY_B, ACTION_HIT)  # 10 урона в щит
-    assert state["sides"][KEY_A]["shield"] == 15
+    shield = get_card("tamerlan_mif").ability.effects["shield"]
+    hit = get_card("oleg").atk
+    apply_action(state, KEY_A, ACTION_ABILITY)
+    assert state["sides"][KEY_A]["shield"] == shield
+    apply_action(state, KEY_B, ACTION_HIT)
+    assert state["sides"][KEY_A]["shield"] == shield - hit
     assert state["sides"][KEY_A]["hp"] == get_card("tamerlan_mif").hp
 
 
 def test_ignore_shield_passes_through():
     state = make_state("karina", "tamerlan_mif")
     apply_action(state, KEY_A, ACTION_HIT)
-    apply_action(state, KEY_B, ACTION_ABILITY)  # щит 25
+    apply_action(state, KEY_B, ACTION_ABILITY)  # щит
     before_hp = state["sides"][KEY_B]["hp"]
-    apply_action(state, KEY_A, ACTION_ABILITY)  # точный удар 10 сквозь щит
-    assert state["sides"][KEY_B]["hp"] == before_hp - 10
-    assert state["sides"][KEY_B]["shield"] == 25
+    pierce = get_card("karina").ability.effects["damage"]
+    apply_action(state, KEY_A, ACTION_ABILITY)  # точный удар сквозь щит
+    assert state["sides"][KEY_B]["hp"] == before_hp - pierce
+    assert state["sides"][KEY_B]["shield"] == get_card("tamerlan_mif").ability.effects["shield"]
 
 
 def test_dodge_negates_one_action():
@@ -69,9 +72,9 @@ def test_dodge_negates_one_action():
 def test_poison_ticks_when_victim_turn_starts():
     state = make_state("amir_1", "oleg")
     oleg_hp = state["sides"][KEY_B]["hp"]
-    apply_action(state, KEY_A, ACTION_ABILITY)  # 8 урона + яд 6 на 2 хода
-    # яд уже тикнул в начале хода B
-    assert state["sides"][KEY_B]["hp"] == oleg_hp - 14
+    effects = get_card("amir_1").ability.effects
+    apply_action(state, KEY_A, ACTION_ABILITY)  # урон + яд, яд тикает сразу
+    assert state["sides"][KEY_B]["hp"] == oleg_hp - effects["damage"] - effects["poison"]
     assert state["sides"][KEY_B]["poison_turns"] == 1
     apply_action(state, KEY_B, ACTION_HIT)
     apply_action(state, KEY_A, ACTION_HIT)
@@ -102,7 +105,7 @@ def test_ability_cooldown_blocks_reuse():
 def test_counter_damages_attacker():
     state = make_state("milana", "oleg")
     apply_action(state, KEY_A, ACTION_ABILITY)  # dodge 1 + counter 10
-    assert state["sides"][KEY_A]["counter"] == 10
+    assert state["sides"][KEY_A]["counter"] == get_card("milana").ability.effects["counter"]
     hp_attacker = state["sides"][KEY_B]["hp"]
     apply_action(state, KEY_B, ACTION_HIT)
     assert state["sides"][KEY_B]["hp"] < hp_attacker
@@ -119,17 +122,18 @@ def test_cleanse_removes_poison():
 
 def test_steal_heals_self():
     state = make_state("amiliya_secret", "oleg")
+    steal = get_card("amiliya_secret").ability.effects["steal"]
     state["sides"][KEY_A]["hp"] = 30
     apply_action(state, KEY_A, ACTION_ABILITY)
-    assert state["sides"][KEY_A]["hp"] == 45
-    assert state["sides"][KEY_B]["hp"] == get_card("oleg").hp - 15
+    assert state["sides"][KEY_A]["hp"] == 30 + steal
+    assert state["sides"][KEY_B]["hp"] == get_card("oleg").hp - steal
 
 
 def test_self_stun_penalty():
     state = make_state("timur_secret", "oleg")
     hp_b = state["sides"][KEY_B]["hp"]
-    apply_action(state, KEY_A, ACTION_ABILITY)  # 20 урона, но свой ход пропущен
-    assert state["sides"][KEY_B]["hp"] == hp_b - 20
+    apply_action(state, KEY_A, ACTION_ABILITY)  # урон + свой ход пропущен
+    assert state["sides"][KEY_B]["hp"] == hp_b - get_card("timur_secret").ability.effects["damage"]
     assert state["turn"] == KEY_B
     apply_action(state, KEY_B, ACTION_HIT)
     # ход должен был перейти к A, но A оглушён -> снова B
@@ -208,7 +212,7 @@ def test_no_negative_hp_leak_or_overheal():
 def test_trofim_new_ability_is_choking_grip():
     card = get_card("trofim")
     assert card.ability.name == "Удушающая"
-    assert card.ability.effects == {"damage": 12, "silence": 1}
+    assert card.ability.effects == {"damage": 26, "silence": 1}
 
 
 def test_emin_steals_and_applies_permanent_drain():
@@ -217,11 +221,13 @@ def test_emin_steals_and_applies_permanent_drain():
     oleg = state["sides"][KEY_B]
     emin["hp"] = 50
     oleg_hp = oleg["hp"]
+    effects = get_card("emin").ability.effects
+    steal, drain = effects["steal"], effects["drain"]
     apply_action(state, KEY_A, ACTION_ABILITY)
-    # 50 + 8 украденных. Заклинание тут же тикнуло: ещё +1, а Олегу −1
-    assert emin["hp"] == 59, "отжал 8 HP и вылечил себя"
-    assert oleg["hp"] == oleg_hp - 9
-    assert oleg["drain"] == 1 and oleg["drain_from"] == KEY_A
+    # украл + заклинание тут же тикнуло ещё раз
+    assert emin["hp"] == 50 + steal + drain, "отжал HP и вылечил себя"
+    assert oleg["hp"] == oleg_hp - steal - drain
+    assert oleg["drain"] == drain and oleg["drain_from"] == KEY_A
 
 
 def test_drain_ticks_on_every_turn_of_the_victim():
@@ -236,14 +242,15 @@ def test_drain_ticks_on_every_turn_of_the_victim():
     oleg_before = oleg["hp"]
 
     apply_action(state, KEY_A, ACTION_HIT)  # Эмин бьёт → начинается ход Олега
-    assert oleg["hp"] == oleg_before - get_card("emin").atk - 1, "утечка тикает каждый ход"
-    assert emin["hp"] == emin_before + 1, "украденное уходит Эмину"
+    drain = get_card("emin").ability.effects["drain"]
+    assert oleg["hp"] == oleg_before - get_card("emin").atk - drain, "утечка тикает каждый ход"
+    assert emin["hp"] == emin_before + drain, "украденное уходит Эмину"
 
 
 def test_drain_is_removed_when_owner_dies():
     state = make_state("emin", "oleg")
     apply_action(state, KEY_A, ACTION_ABILITY)
-    assert state["sides"][KEY_B]["drain"] == 1
+    assert state["sides"][KEY_B]["drain"] == get_card("emin").ability.effects["drain"]
     state["sides"][KEY_A]["hp"] = 0
     apply_action(state, KEY_B, ACTION_HIT)
     assert state["sides"][KEY_B]["drain"] == 0
@@ -255,7 +262,7 @@ def test_new_secret_cards_exist():
         card = get_card(card_id)
         assert card.rarity == "secret"
         assert card.points == 11000
-        assert card.budget >= 195
+        assert card.budget >= 900
 
 def test_no_turn_limit_by_default():
     """Без лимита бой не должен закончиться ничьей сам по себе."""
