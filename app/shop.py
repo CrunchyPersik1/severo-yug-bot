@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 PACK_AUTUMN_SKU = "pack:autumn"
 PACK_AUTUMN_PRICE = 200_000
-PACK_AUTUMN_CARDS: tuple[str, ...] = ("misya", "stringi", "misha")
+PACK_AUTUMN_CARDS: tuple[str, ...] = ("misya", "misha")
 PACK_AUTUMN_ACCESSORY = 1  # Сердечко
 
 ACCESSORY_PRICE = 60_000

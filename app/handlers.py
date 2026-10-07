@@ -34,7 +34,7 @@ from .roulette import (
     roulette_day_key,
 )
 from .items import SLOT_ICONS
-from .market import UPGRADE_PRICE, effective_stats, parse_handle
+from .market import UPGRADE_PRICE, effective_stats, parse_handle, sum_bonus
 from .market_repo import MarketError, MarketRepo, item_of
 
 MARKET_PAGE_SIZE = 6
@@ -299,7 +299,6 @@ async def collection_data(
     text = render.render_collection(
         cards, counts, kills, stats, len(CARDS), instances, cases
     )
-
     units: list[dict[str, Any]] = [
         {
             "handle": f"#{card.card_id}",
@@ -325,6 +324,14 @@ async def collection_data(
         }
         for inst in instances
     )
+    # аксессуары надеваются на конкретную карту и меняют её статы
+    for unit in units:
+        extra = await db.accessory_bonus(user_id, unit["card"].card_id)
+        if extra:
+            merged = sum_bonus(unit.get("bonus") or {}, extra)
+            unit["bonus"] = merged
+            unit["stats"] = effective_stats(unit["card"], merged)
+            unit["accessories"] = extra
     return text, units
 
 
@@ -334,8 +341,8 @@ async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> 
     if user is None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
-    text, units = await collection_data(db, market, user.id)
-    await message.answer(text, reply_markup=render.collection_keyboard(user.id, units))
+    text, keyboard = await _my_home_text(db, market, user.id)
+    await message.answer(text, reply_markup=keyboard)
 
 
 async def resolve_profile_target(
@@ -1284,3 +1291,104 @@ async def cmd_shop(message: Message) -> None:
         "Открывай кнопкой — или жми «Магазин» рядом с полем ввода.",
         reply_markup=keyboard,
     )
+
+
+# --------------------------------------------------------------------------- #
+# /my — коллекция по страницам
+# --------------------------------------------------------------------------- #
+
+
+async def _my_home_text(db: Database, market: MarketRepo, user_id: int):
+    stats = await db.collection_stats(user_id)
+    _, units = await collection_data(db, market, user_id)
+    upgraded = sum(1 for unit in units if unit.get("inventory_id"))
+    cases = len(await db.user_cases(user_id))
+    return render.my_home(stats, len(CARDS), upgraded, cases)
+
+
+async def _my_unit(db: Database, market: MarketRepo, user_id: int, handle: str):
+    _, units = await collection_data(db, market, user_id)
+    return next((unit for unit in units if unit["handle"] == handle), None)
+
+
+@router.callback_query(F.data.startswith("my:"))
+async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> None:
+    assert callback.data is not None
+    user_id = callback.from_user.id
+    parts = callback.data.split(":", 3)
+    action = parts[1] if len(parts) > 1 else "home"
+
+    if action == "home":
+        text, keyboard = await _my_home_text(db, market, user_id)
+        await _safe_edit(callback, text, keyboard)
+    elif action == "c":
+        counts = await db.get_collection(user_id)
+        text, keyboard = render.my_cards(
+            cards_sorted_for_user(list(counts)),
+            counts,
+            int(parts[2]) if len(parts) > 2 else 0,
+        )
+        await _safe_edit(callback, text, keyboard)
+    elif action == "u":
+        _, units = await collection_data(db, market, user_id)
+        upgraded = [unit for unit in units if unit.get("inventory_id")]
+        text, keyboard = render.my_units(
+            upgraded, int(parts[2]) if len(parts) > 2 else 0
+        )
+        await _safe_edit(callback, text, keyboard)
+    elif action == "k":
+        cases = await db.user_cases(user_id)
+        lines = ["📦 <b>Кейсы</b>", ""]
+        if cases:
+            lines += [f"      <code>#c{case['id']}</code> закрытый кейс" for case in cases]
+            lines += ["", "Открыть: /case"]
+        else:
+            lines.append("Пусто. Крути рулетку: /roulette")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="my:home")]
+            ]
+        )
+        await _safe_edit(callback, "\n".join(lines), keyboard)
+    elif action == "p":
+        profile = await db.player_profile(user_id)
+        await _safe_edit(
+            callback,
+            render.render_profile(profile, len(CARDS)),
+            render.profile_keyboard(user_id),
+        )
+    elif action in ("d", "i", "a") and len(parts) > 2:
+        handle = parts[2]
+        unit = await _my_unit(db, market, user_id, handle)
+        if unit is None:
+            await callback.answer("Карта не найдена", show_alert=True)
+            return
+        card_id = unit["card"].card_id
+        owned = await db.my_accessories(user_id)
+
+        if action == "a":
+            acc_id = int(parts[3]) if len(parts) > 3 else 0
+            acc = next((item for item in owned if item["id"] == acc_id), None)
+            if acc is None:
+                await callback.answer("Аксессуар не найден", show_alert=True)
+                return
+            if acc.get("card_id") == card_id:
+                await db.detach_accessory(user_id, acc_id)
+                await callback.answer(f"{acc['name']} снят")
+            else:
+                await db.attach_accessory(user_id, acc_id, card_id)
+                await callback.answer(f"{acc['name']} → {unit['card'].name}")
+            owned = await db.my_accessories(user_id)
+            unit = await _my_unit(db, market, user_id, handle) or unit
+            action = "i"
+
+        if action == "i":
+            text, keyboard = render.my_items(unit, owned)
+        else:
+            worn = [item for item in owned if item.get("card_id") == card_id]
+            text, keyboard = render.my_card(unit, worn)
+        await _safe_edit(callback, text, keyboard)
+    else:
+        await callback.answer()
+        return
+    await callback.answer()

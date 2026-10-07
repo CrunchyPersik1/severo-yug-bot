@@ -43,13 +43,13 @@ def test_items_in_each_category():
     assert len(AURAS) == 10
     assert len(BACKGROUNDS) == 10
     assert len(EFFECTS) == 10
-    assert len(ACCESSORIES) == 3, "аксессуары продаются в магазине"
+    assert len(ACCESSORIES) == 4, "аксессуары продаются в магазине"
     assert set(SLOTS) <= set(BY_SLOT)
 
 
 def test_all_item_names_are_unique():
     names = [item.name for item in AURAS + BACKGROUNDS + EFFECTS + ACCESSORIES]
-    assert len(names) == len(set(names)) == 33
+    assert len(names) == len(set(names)) == 34
 
 
 def test_aura_touches_several_stats_others_only_one():

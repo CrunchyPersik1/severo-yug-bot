@@ -13,6 +13,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import asyncpg
 
+from .items import ACCESSORIES as _ACCESSORIES
+from .market import sum_bonus as _sum_bonus
+
 log = logging.getLogger(__name__)
 
 _STRIP_PARAMS = {"sslmode", "pgbouncer", "connection_limit", "ssl", "application_name"}
@@ -600,6 +603,64 @@ class Database:
                 float(active_seconds),
             )
         return [b for b in (self._row_to_battle(row) for row in rows) if b is not None]
+
+    async def my_accessories(self, user_id: int) -> list[dict[str, Any]]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select id, item_id, card_id from accessories "
+                "where user_id = $1 order by item_id, id",
+                user_id,
+            )
+        out = []
+        for row in rows:
+            item = next(
+                (i for i in _ACCESSORIES if i.id == int(row["item_id"])), None
+            )
+            out.append(
+                {
+                    "id": int(row["id"]),
+                    "item_id": int(row["item_id"]),
+                    "card_id": row["card_id"],
+                    "name": item.name if item else str(row["item_id"]),
+                    "summary": item.summary if item else "",
+                    "bonus": dict(item.bonus) if item else {},
+                }
+            )
+        return out
+
+    async def attach_accessory(self, user_id: int, acc_id: int, card_id: str) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update accessories set card_id = $3 where id = $1 and user_id = $2",
+                int(acc_id),
+                user_id,
+                card_id,
+            )
+
+    async def detach_accessory(self, user_id: int, acc_id: int) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update accessories set card_id = null where id = $1 and user_id = $2",
+                int(acc_id),
+                user_id,
+            )
+
+    async def accessory_bonus(self, user_id: int, card_id: str) -> dict[str, int]:
+        """Сумма процентов всех аксессуаров, надетых на эту карту."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select item_id from accessories where user_id = $1 and card_id = $2",
+                user_id,
+                card_id,
+            )
+        bonus: dict[str, int] = {}
+        for row in rows:
+            item = next(
+                (i for i in _ACCESSORIES if i.id == int(row["item_id"])), None
+            )
+            if item is not None:
+                bonus = _sum_bonus(bonus, item.bonus)
+        return bonus
 
     async def find_active_team_battles(self, user_id: int) -> list[dict[str, Any]]:
         """Активные командные бои, где игрок участник — для команды «стоп»."""

@@ -1209,3 +1209,159 @@ def faq_price() -> tuple[str, InlineKeyboardMarkup]:
         [InlineKeyboardButton(text="◀️ В меню", callback_data="fq:menu")],
     ]
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# --------------------------------------------------------------------------- #
+# /my — коллекция по страницам
+# --------------------------------------------------------------------------- #
+
+MY_PAGE = 8
+MY_UNITS_PAGE = 6
+
+
+def my_home(
+    stats: dict[str, Any], total_cards: int, units: int, cases: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    text = "\n".join(
+        [
+            "🎒 <b>Коллекция</b>",
+            "",
+            f"💰 Баланс: <b>{stats['total']}</b> очк. · коллекция на {stats['points']}",
+            f"🃏 Карт: <b>{stats['unique_cards']}</b>/{total_cards} · "
+            f"копий: {stats['total_cards']}",
+            f"⚡ Улучшенных: <b>{units}</b> · 📦 Кейсов: <b>{cases}</b>",
+            f"🔪 Убийств: {stats['card_kills']}",
+        ]
+    )
+    rows = [
+        [InlineKeyboardButton(text="🃏 Карты", callback_data="my:c:0")],
+        [InlineKeyboardButton(text=f"⚡ Улучшенные ({units})", callback_data="my:u:0")],
+        [InlineKeyboardButton(text=f"📦 Кейсы ({cases})", callback_data="my:k")],
+        [InlineKeyboardButton(text="🏆 Профиль", callback_data="my:p")],
+    ]
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _my_nav(prefix: str, page: int, pages: int) -> list[InlineKeyboardButton]:
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"{prefix}:{page - 1}"))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="my:home"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"{prefix}:{page + 1}"))
+    return nav
+
+
+def my_cards(
+    cards: list[Card], counts: dict[str, int], page: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    pages = max(1, (len(cards) + MY_PAGE - 1) // MY_PAGE)
+    page = max(0, min(int(page), pages - 1))
+    chunk = cards[page * MY_PAGE : (page + 1) * MY_PAGE]
+    lines = [
+        "🃏 <b>Мои карты</b>",
+        f"Страница <b>{page + 1}</b> из {pages}. Жми на карту — там предметы.",
+        "",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    pair: list[InlineKeyboardButton] = []
+    for card in chunk:
+        count = counts.get(card.card_id, 1)
+        label = f"{card.rarity_emoji} {card.name} ⚔{card.atk}/❤{card.hp}"
+        if count > 1:
+            label += f" ×{count}"
+        pair.append(
+            InlineKeyboardButton(text=label, callback_data=f"my:d:#{card.card_id}")
+        )
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    rows.append(_my_nav("my:c", page, pages))
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def my_units(units: list[dict[str, Any]], page: int) -> tuple[str, InlineKeyboardMarkup]:
+    pages = max(1, (len(units) + MY_UNITS_PAGE - 1) // MY_UNITS_PAGE)
+    page = max(0, min(int(page), pages - 1))
+    chunk = units[page * MY_UNITS_PAGE : (page + 1) * MY_UNITS_PAGE]
+    lines = [
+        "⚡ <b>Улучшенные копии</b>",
+        f"Страница <b>{page + 1}</b> из {pages}.",
+        "",
+        "Перебить улучшение нельзя, зато можно менять аксессуары.",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    for unit in chunk:
+        card = unit["card"]
+        stats = unit["stats"]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{card.rarity_emoji} {card.name} ⚔{stats['atk']}/"
+                    f"❤{stats['hp']}/🛡{stats['def']}",
+                    callback_data=f"my:d:#{unit['inventory_id']}",
+                )
+            ]
+        )
+    rows.append(_my_nav("my:u", page, pages))
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def my_card(
+    unit: dict[str, Any], worn: list[dict[str, Any]]
+) -> tuple[str, InlineKeyboardMarkup]:
+    card = unit["card"]
+    stats = unit["stats"]
+    lines = [
+        card_title(card),
+        f"<code>{esc(unit['handle'])}</code>",
+        "",
+        f"⚔️ Атака: <b>{stats['atk']}</b>   ❤️ HP: <b>{stats['hp']}</b>   "
+        f"🛡 Защита: <b>{stats['def']}%</b>",
+        f"✨ {esc(card.ability.name)} — КД {card.ability.cooldown}",
+    ]
+    if unit.get("items"):
+        lines += ["", "Улучшения: " + " · ".join(unit["items"])]
+    if worn:
+        lines += ["", "🎒 Аксессуары: " + ", ".join(esc(a["name"]) for a in worn)]
+    rows = [
+        [InlineKeyboardButton(text="🎒 Предметы", callback_data=f"my:i:{unit['handle']}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="my:home")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def my_items(
+    unit: dict[str, Any], owned: list[dict[str, Any]]
+) -> tuple[str, InlineKeyboardMarkup]:
+    card = unit["card"]
+    lines = [
+        "🎒 <b>Предметы</b>",
+        f"Карта: <b>{esc(card.display_name)}</b>",
+        "",
+        "Жми, чтобы надеть или снять. Аксессуар работает только на ту карту, "
+        "на которую надет.",
+        "",
+    ]
+    if not owned:
+        lines.append("Аксессуаров пока нет — они продаются в магазине (/shop).")
+    rows: list[list[InlineKeyboardButton]] = []
+    for acc in owned:
+        worn_here = acc.get("card_id") == card.card_id
+        if acc.get("card_id") and not worn_here:
+            label = f"🔒 {acc['name']} — на {get_card(str(acc['card_id'])).name}"
+        else:
+            label = f"{'✅' if worn_here else '▫️'} {acc['name']} · {acc['summary']}"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=label, callback_data=f"my:a:{unit['handle']}:{acc['id']}"
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton(text="⬅️ К карте", callback_data=f"my:d:{unit['handle']}")]
+    )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)

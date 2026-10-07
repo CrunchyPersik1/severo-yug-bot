@@ -85,6 +85,15 @@ class FakeDB:
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
 
+    async def accessory_bonus(self, user_id: int, card_id: str) -> dict[str, int]:
+        return {}
+
+    async def touch_chat(self, chat_id: int, kind: str, title: str | None = None) -> None:
+        return None
+
+    async def my_accessories(self, user_id: int):
+        return []
+
     async def user_cases(self, user_id: int, include_listed: bool = False):
         return []
 
@@ -247,7 +256,16 @@ def test_collection_command():
         db.collection[111] = {"oleg": 2, "valeriya": 1}
         session = await feed("/my", db, FakeService())
         body = sent_texts(session)[0]
-        assert "Коллекция" in body and "Валерия" in body and "×2" in body
+        # /my теперь компактное меню, карты живут на своих страницах
+        assert "Коллекция" in body and "Карт:" in body
+        payload = next(p for n, p in session.calls if n == "SendMessage")
+        markup = payload.get("reply_markup") or {}
+        labels = [
+            button["text"]
+            for row in markup.get("inline_keyboard", [])
+            for button in row
+        ]
+        assert any("Карты" in label for label in labels), labels
 
     asyncio.run(scenario())
 

@@ -91,8 +91,9 @@ SLOT_ACCESSORY = "accessory"
 
 ACCESSORIES: tuple[Item, ...] = (
     Item(1, "Сердечко", {"atk": 12, "hp": 18}),        # особый: для Миши +20 урона
-    Item(2, "Портфель", {"def": 22, "hp": 8}),
-    Item(3, "Кленовый лист", {"atk": 18, "def": 6}),
+    Item(2, "Стринги", {"atk": 20, "hp": -4}),         # для Миси
+    Item(3, "Портфель", {"def": 22, "hp": 8}),
+    Item(4, "Кленовый лист", {"atk": 18, "def": 6}),
 )
 
 BY_SLOT: dict[str, tuple[Item, ...]] = {
