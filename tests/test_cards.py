@@ -44,11 +44,22 @@ def test_weights_sum_to_one():
     assert abs(sum(r.weight for r in RARITIES.values()) - 1.0) < 1e-9
 
 
-def test_balance_is_tight():
-    budgets = [card.budget for card in CARDS]
+def test_students_balance_is_tight():
+    budgets = [card.budget for card in CARDS if card.rarity != "teacher"]
     assert max(budgets) - min(budgets) <= 400, budgets
     assert all(card.hp >= 500 for card in CARDS)
     assert all(card.atk >= 16 for card in CARDS)
+
+
+def test_teachers_are_stronger_and_varied():
+    teachers = [card for card in CARDS if card.rarity == "teacher"]
+    budgets = [card.budget for card in teachers]
+    assert min(budgets) >= 1100, budgets
+    assert max(budgets) <= 1600, budgets
+    assert all(card.description for card in teachers), "у учителя должно быть описание"
+    assert len({card.ability.name for card in teachers}) == len(teachers), (
+        "у каждого учителя своя способность"
+    )
 
 
 def test_points_match_spec():

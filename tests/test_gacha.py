@@ -45,6 +45,14 @@ def test_secrets_are_rare_but_possible():
         assert abs(rolls[key] / total - rarity.weight) < 0.01, key
 
 
+def test_promo_only_cards_never_drop():
+    from app.cards import PROMO_ONLY_CARD_IDS
+
+    rng = random.Random(2027)
+    seen = {roll_card(rng).card_id for _ in range(100_000)}
+    assert not (seen & PROMO_ONLY_CARD_IDS)
+
+
 def test_rarest_card_appears_eventually():
     rng = random.Random(1234)
     seen = {roll_card(rng).card_id for _ in range(400_000)}

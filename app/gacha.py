@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from datetime import date, datetime, timedelta, timezone
 
-from .cards import CARDS_BY_RARITY, RARITIES, Card
+from .cards import CARDS_BY_RARITY, PROMO_ONLY_CARD_IDS, RARITIES, Card
 
 RESET_HOUR_UTC = 7  # 12:00 по ЕКБ
 
@@ -48,7 +48,12 @@ def roll_rarity(rng: random.Random | None = None) -> str:
 def roll_card(rng: random.Random | None = None) -> Card:
     rng = rng or random
     rarity = roll_rarity(rng)
-    return rng.choice(CARDS_BY_RARITY[rarity])
+    pool = [
+        card
+        for card in CARDS_BY_RARITY[rarity]
+        if card.card_id not in PROMO_ONLY_CARD_IDS
+    ]
+    return rng.choice(pool or CARDS_BY_RARITY[rarity])
 
 
 def rarity_weights_table() -> list[tuple[str, str, float, int]]:

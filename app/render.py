@@ -113,9 +113,11 @@ def render_drop(card: Card, count: int, is_new: bool) -> str:
         if is_new
         else f"🔁 Дубликат, теперь у тебя их <b>{count}</b>"
     )
+    desc = f"<i>{esc(card.description)}</i>\n" if card.description else ""
     return (
         f"{head}\n\n"
         f"{card_title(card)}\n"
+        f"{desc}"
         f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}\n"
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}\n\n"
         f"💰 <b>+{card.points}</b> очков на баланс\n"
@@ -414,8 +416,10 @@ def render_card_detail(
     stats = unit.get("stats") or {"atk": card.atk, "hp": card.hp, "def": 0}
     bonus = unit.get("bonus") or {}
     title = "⚡ улучшенная копия" if bonus else "обычная копия"
-    lines = [
-        card_title(card),
+    lines = [card_title(card)]
+    if card.description:
+        lines.append(f"<i>{esc(card.description)}</i>")
+    lines += [
         f"<code>{esc(unit['handle'])}</code> — {title}",
         "",
         f"⚔️ Атака: <b>{stats['atk']}</b> (база {card.atk})",
@@ -689,10 +693,10 @@ def render_case_open(card: Card, is_new: bool, count: int, cases_left: int) -> s
         if is_new
         else f"🔁 Дубликат, теперь у тебя их <b>{count}</b>"
     )
-    lines = [
-        "📦 <b>Кейс открыт</b>",
-        "",
-        card_title(card),
+    lines = ["📦 <b>Кейс открыт</b>", "", card_title(card)]
+    if card.description:
+        lines.append(f"<i>{esc(card.description)}</i>")
+    lines += [
         f"⚔️ Урон: <b>{card.atk}</b> · ❤️ HP: <b>{card.hp}</b> · 💰 {card.points}",
         f"✨ <b>{esc(card.ability.name)}</b> (КД {card.ability.cooldown}): {describe_ability(card)}",
         f"💰 <b>+{card.points}</b> очков на баланс",
@@ -1026,7 +1030,7 @@ def _ability_line(card: Card) -> str:
     if "damage" in effects:
         parts.append(f"урон {effects['damage']}")
     if effects.get("hits"):
-        parts.append(f"целей: {effects['hits']}")
+        parts.append(f"×{effects['hits']} удара")
     if "steal" in effects:
         parts.append(f"отжимает {effects['steal']} HP")
     if "heal" in effects:
@@ -1044,6 +1048,10 @@ def _ability_line(card: Card) -> str:
         parts.append("немота")
     if "weaken" in effects:
         parts.append("ослабление")
+    if "counter" in effects:
+        parts.append(f"контрудар {effects['counter']}")
+    if "dodge" in effects:
+        parts.append(f"уклонение ×{effects['dodge']}")
     if effects.get("cleanse"):
         parts.append("снимает дебаффы")
     if effects.get("self_stun"):
@@ -1116,6 +1124,10 @@ def faq_card(card: Card) -> tuple[str, InlineKeyboardMarkup]:
     lines = [
         f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> ({card.rarity_title})",
         f"<code>#{card.card_id}</code>",
+    ]
+    if card.description:
+        lines.append(f"<i>{esc(card.description)}</i>")
+    lines += [
         "",
         f"💰 <b>Рыночная цена: {_money(market_price(card))}</b>",
         f"     база {_money(card.points)} × редкость {rarity_coef(card):g}",
