@@ -214,6 +214,39 @@ class MarketRepo:
             )
         return dict(row) if row else None
 
+    async def find_player(self, raw: str) -> dict[str, Any] | None:
+        """Ищет игрока по @нику, нику (без @) или числовому id.
+
+        Имя должно быть однозначным: если под ним несколько игроков,
+        возвращаем None, чтобы не угадывать.
+        """
+        clean = (raw or "").strip().lstrip("@").strip()
+        if not clean:
+            return None
+        async with self.pool.acquire() as con:
+            if clean.isdigit():
+                row = await con.fetchrow(
+                    "select user_id, first_name, username from players where user_id = $1",
+                    int(clean),
+                )
+                if row is not None:
+                    return dict(row)
+            row = await con.fetchrow(
+                "select user_id, first_name, username from players "
+                "where lower(username) = lower($1)",
+                clean,
+            )
+            if row is not None:
+                return dict(row)
+            rows = await con.fetch(
+                "select user_id, first_name, username from players "
+                "where lower(first_name) = lower($1) order by user_id limit 2",
+                clean,
+            )
+        if len(rows) == 1:
+            return dict(rows[0])
+        return None
+
     async def balance(self, user_id: int) -> int:
         async with self.pool.acquire() as con:
             value = await con.fetchval(

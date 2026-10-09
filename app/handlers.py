@@ -1007,26 +1007,52 @@ async def _casino_parse_bet(
 
 
 async def _casino_stats(message: Message, db: Database, market: MarketRepo) -> None:
-    """Статистика казино: своя, по @нику или ответом на сообщение."""
+    """Статистика казино: своя, по @нику/нику/id или ответом на сообщение.
+
+    Явный аргумент важнее ответа: иначе при ответе на чужое сообщение
+    @ник молча игнорировался и показывался не тот игрок.
+    """
     user = message.from_user
     if user is None:
         return
-    target_id = user.id
-    target_name = user.first_name
-    reply = message.reply_to_message
-    if reply is not None and reply.from_user is not None and not reply.from_user.is_bot:
-        target_id = reply.from_user.id
-        target_name = reply.from_user.first_name
-    else:
-        for part in (message.text or "").split()[1:]:
-            if part.startswith("@"):
-                found = await market.find_by_username(part)
-                if found is None:
-                    await message.answer(f"Игрок {render.esc(part)} не найден.")
-                    return
-                target_id = int(found["user_id"])
-                target_name = found["first_name"]
-                break
+
+    args = [
+        part
+        for part in (message.text or "").split()[1:]
+        if part.lower() not in {"stats", "стата", "статистика", "итоги"}
+    ]
+
+    target_id: int | None = None
+    target_name: str | None = None
+
+    # упоминание игрока через выбор из списка (text_mention)
+    for entity in message.entities or []:
+        if entity.type == "text_mention" and entity.user is not None:
+            target_id = entity.user.id
+            target_name = entity.user.first_name
+            break
+
+    if target_id is None and args:
+        found = await market.find_player(args[0])
+        if found is None:
+            await message.answer(
+                f"Игрок {render.esc(args[0])} не найден. Укажи @ник "
+                "или ответь на его сообщение."
+            )
+            return
+        target_id = int(found["user_id"])
+        target_name = found["first_name"]
+
+    if target_id is None and message.reply_to_message is not None:
+        replied = message.reply_to_message.from_user
+        if replied is not None and not replied.is_bot:
+            target_id = replied.id
+            target_name = replied.first_name
+
+    if target_id is None:
+        target_id = user.id
+        target_name = user.first_name
+
     await db.ensure_player(target_id, None, target_name)
     stats = await db.casino_stats(target_id)
     await message.answer(

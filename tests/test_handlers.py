@@ -258,6 +258,12 @@ class FakeMarket:
             return {"user_id": 333, "first_name": "Друг", "username": "friend"}
         return None
 
+    async def find_player(self, raw: str):
+        clean = (raw or "").strip().lstrip("@").lower()
+        if clean in {"friend", "333"}:
+            return {"user_id": 333, "first_name": "Друг", "username": "friend"}
+        return None
+
     async def owned_unit(self, user_id: int, handle):
         return {"kind": "card", "card_id": "oleg", "inventory_id": None, "case_id": None}
 
@@ -619,6 +625,49 @@ def test_casino_stats_command():
         assert "Выиграно" in body and "Слито" in body
         assert "в плюсе" in body
         assert "картами" in body
+
+    asyncio.run(scenario())
+
+
+def test_casino_stats_by_explicit_argument():
+    async def scenario():
+        session = await feed(
+            "/casinostats @friend", FakeDB(), FakeService(), market=FakeMarket()
+        )
+        assert "Друг" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_casino_stats_argument_wins_over_reply():
+    async def scenario():
+        reply = {
+            "message_id": 5,
+            "from": {"id": 222, "is_bot": False, "first_name": "Соперник"},
+            "chat": {"id": -100123, "type": "supergroup", "title": "Группа"},
+            "date": 1700000000,
+            "text": "я тут",
+        }
+        session = await feed(
+            "/casinostats @friend",
+            FakeDB(),
+            FakeService(),
+            reply=reply,
+            market=FakeMarket(),
+        )
+        body = sent_texts(session)[0]
+        assert "Друг" in body and "Соперник" not in body
+
+    asyncio.run(scenario())
+
+
+def test_casino_stats_unknown_player_is_reported():
+    async def scenario():
+        session = await feed(
+            "/casinostats @nobody", FakeDB(), FakeService(), market=FakeMarket()
+        )
+        body = sent_texts(session)[0]
+        assert "не найден" in body
 
     asyncio.run(scenario())
 
