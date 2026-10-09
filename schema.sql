@@ -350,13 +350,22 @@ create table if not exists stocks (
     alert_price integer not null default 0,
     alerted_at  timestamptz,
     -- Цель админа: курс плавно едет к ней, потом цель сбрасывается.
-    target_price integer
+    target_price integer,
+    -- Внезапный памп: фаза 'up'/'down', вершина и цена возврата.
+    pump_phase text,
+    pump_peak  integer,
+    pump_home  integer,
+    pump_at    timestamptz
 );
 
 -- Миграции для баз, где stocks уже была создана без этих колонок.
 alter table stocks add column if not exists alert_price integer not null default 0;
 alter table stocks add column if not exists alerted_at  timestamptz;
 alter table stocks add column if not exists target_price integer;
+alter table stocks add column if not exists pump_phase text;
+alter table stocks add column if not exists pump_peak  integer;
+alter table stocks add column if not exists pump_home  integer;
+alter table stocks add column if not exists pump_at    timestamptz;
 
 -- История курса для графика (свечки-квадратики).
 create table if not exists stock_history (
@@ -376,3 +385,13 @@ create table if not exists stock_holdings (
     primary key (user_id, stock_id)
 );
 create index if not exists stock_holdings_user_idx on stock_holdings (user_id);
+
+-- Расписание внезапных пампов: одна строка, когда запускать следующий.
+create table if not exists stock_pumps (
+    id      integer primary key,
+    next_at timestamptz not null default now()
+);
+
+insert into stock_pumps (id, next_at)
+values (1, now() + interval '30 minutes')
+on conflict (id) do nothing;

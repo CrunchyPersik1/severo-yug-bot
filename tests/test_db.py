@@ -302,6 +302,60 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_stocks_pump_rises_and_returns():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app.stocks_repo import StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            async with db.pool.acquire() as con:
+                row = await con.fetchrow(
+                    "select id, price from stocks where slug = 'syug'"
+                )
+                sid = int(row["id"])
+                start = int(row["price"])
+                await con.execute(
+                    """
+                    update stocks
+                       set pump_phase = 'up', pump_peak = $2, pump_home = $3,
+                           target_price = null,
+                           updated_at = now() - interval '20 seconds'
+                     where id = $1
+                    """,
+                    sid,
+                    start * 3,
+                    start,
+                )
+            await repo.tick()
+            async with db.pool.acquire() as con:
+                mid = int(await con.fetchval("select price from stocks where id = $1", sid))
+            assert mid > start, "курс должен взлетать"
+
+            state = None
+            for _ in range(60):
+                async with db.pool.acquire() as con:
+                    await con.execute(
+                        "update stocks set updated_at = now() - interval '20 seconds' "
+                        "where id = $1",
+                        sid,
+                    )
+                await repo.tick()
+                async with db.pool.acquire() as con:
+                    state = await con.fetchrow(
+                        "select price, pump_phase from stocks where id = $1", sid
+                    )
+                if state["pump_phase"] is None:
+                    break
+            assert state is not None and state["pump_phase"] is None, "памп закончился"
+            assert int(state["price"]) == start, "курс вернулся к прежней цене"
+        finally:
+            await db.close()
+
+    run(scenario())
+
+
 def test_stocks_cap_on_buy_and_refund_of_excess():
     async def scenario():
         db = await fresh_db()

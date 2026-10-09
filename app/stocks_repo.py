@@ -8,7 +8,7 @@ from typing import Any
 
 import asyncpg
 
-from . import stocks
+from . import pumps, stocks
 from .db import Database
 
 log = logging.getLogger(__name__)
@@ -60,6 +60,13 @@ class StocksRepo:
                 await con.execute(
                     "update stocks set alert_price = base_price where alert_price <= 0"
                 )
+                # Расписание внезапных пампов: строка одна, заводим при первом
+                # запуске и дальше только двигаем время следующего.
+                await con.execute(
+                    "insert into stock_pumps (id, next_at) values (1, $1) "
+                    "on conflict (id) do nothing",
+                    datetime.now(timezone.utc) + pumps.next_delay(),
+                )
                 # Цена/история могли остаться от старой базы (переименования монет,
                 # смена базовой цены) и вылезти за коридор. Тогда график и проценты
                 # врут (вплоть до +1200% при стоящем курсе). Чистим: точки истории
@@ -95,6 +102,7 @@ class StocksRepo:
                         update stocks
                            set price = base_price, prev_price = base_price,
                                alert_price = base_price, target_price = null,
+                               pump_phase = null, pump_peak = null, pump_home = null,
                                updated_at = now()
                          where id = $1
                         """,
@@ -167,9 +175,58 @@ class StocksRepo:
         async with self.pool.acquire() as con:
             async with con.transaction():
                 rows = await con.fetch("select * from stocks for update")
+                await self._maybe_start_pump(con, rows, now)
+                # Перечитываем: могли только что поставить памп.
+                rows = await con.fetch("select * from stocks for update")
                 for row in rows:
                     await self._advance(con, row, now, alerts)
         return alerts
+
+    async def _maybe_start_pump(
+        self, con: asyncpg.Connection, rows: list, now: datetime
+    ) -> None:
+        """Раз в час запускает памп случайной монеты, если сейчас ничего не летит."""
+        if any(row["pump_phase"] for row in rows):
+            return
+        schedule = await con.fetchrow(
+            "select next_at from stock_pumps where id = 1 for update"
+        )
+        if schedule is None:
+            await con.execute(
+                "insert into stock_pumps (id, next_at) values (1, $1) "
+                "on conflict (id) do nothing",
+                now + pumps.next_delay(),
+            )
+            return
+        if now < schedule["next_at"]:
+            return
+        candidates = [
+            row
+            for row in rows
+            if pumps.has_room(
+                int(row["price"]), int(row["base_price"]), stocks.CEIL_MULT
+            )
+        ] or list(rows)
+        stock = pumps.pick(candidates)
+        if stock is None:
+            return
+        price = int(stock["price"])
+        ceiling = int(int(stock["base_price"]) * stocks.CEIL_MULT)
+        await con.execute(
+            """
+            update stocks
+               set pump_phase = 'up', pump_peak = $2, pump_home = $3,
+                   pump_at = now(), target_price = null
+             where id = $1
+            """,
+            int(stock["id"]),
+            pumps.peak_price(price, ceiling),
+            price,
+        )
+        await con.execute(
+            "update stock_pumps set next_at = $1 where id = 1",
+            now + pumps.next_delay(),
+        )
 
     async def _advance(
         self, con: asyncpg.Connection, row, now: datetime, alerts: list[dict[str, Any]]
@@ -184,21 +241,46 @@ class StocksRepo:
         price = int(row["price"])
         target = row["target_price"]
         target = int(target) if target is not None else None
+        pump_phase = row["pump_phase"]
+        pump_peak = int(row["pump_peak"]) if row["pump_peak"] is not None else 0
+        pump_home = int(row["pump_home"]) if row["pump_home"] is not None else 0
+        pump_done = False
         for _ in range(steps):
-            price = stocks.next_price(price, base, volatility, target=target)
+            if pump_phase == "up" and pump_peak:
+                price = pumps.step_up(price, pump_peak)
+                if price >= pump_peak:
+                    pump_phase = "down"
+            elif pump_phase == "down" and pump_home:
+                price = pumps.step_down(price, pump_home)
+                if price <= pump_home:
+                    price = pump_home
+                    pump_phase = None
+                    pump_done = True
+            else:
+                price = stocks.next_price(price, base, volatility, target=target)
             await con.execute(
                 "insert into stock_history (stock_id, price) values ($1, $2)",
                 int(row["id"]),
                 price,
             )
-        reached = target is not None and price == target
+        reached = target is not None and price == target and pump_phase is None
         await con.execute(
-            "update stocks set prev_price = price, price = $2, updated_at = now(), "
-            "target_price = case when $3 then null else target_price end "
-            "where id = $1",
+            """
+            update stocks
+               set prev_price = price, price = $2, updated_at = now(),
+                   target_price = case when $3 then null else target_price end,
+                   pump_phase = $4,
+                   pump_peak = case when $4 is null then null else pump_peak end,
+                   pump_home = case when $4 is null then null else pump_home end,
+                   alert_price = case when $5 then price else alert_price end,
+                   alerted_at = case when $5 then now() else alerted_at end
+             where id = $1
+            """,
             int(row["id"]),
             price,
             reached,
+            pump_phase,
+            pump_done,
         )
         await con.execute(
             """
@@ -302,6 +384,7 @@ class StocksRepo:
                         "change": round(stocks.change_percent(hist), 2),
                         "history": hist,
                         "spikes": spikes,
+                        "pump": bool(row["pump_phase"]),
                         "my_shares": shares,
                         "my_value": value,
                         "my_spent": spent,

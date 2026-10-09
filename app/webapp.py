@@ -561,6 +561,7 @@ main{padding:12px 14px}
 .deals{font-size:12px;color:var(--muted);margin-top:10px}
 .deals b{color:var(--ink)}
 .tag{font-size:11px;color:#c7c9ff;background:var(--accent-soft);border-radius:999px;padding:2px 8px;margin-left:6px}
+.tag.hot{color:#fecaca;background:#7f1d1d}
 .hint{font-size:12px;color:var(--muted);margin-top:12px;height:60px;display:flex;align-items:center}
 .spikes{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
 .btn:disabled{opacity:.45}
@@ -679,7 +680,8 @@ function spikesLine(spikes){
 // Строка списка: тапаешь — открывается график монеты.
 function row(s){
   var up = s.change >= 0;
-  var tag = s.my_shares > 0 ? '<span class="tag">'+s.my_shares+' шт.</span>' : "";
+  var tag = (s.pump ? '<span class="tag hot">🔥 памп!</span>' : "") +
+    (s.my_shares > 0 ? '<span class="tag">'+s.my_shares+' шт.</span>' : "");
   return '<div class="card row" data-open="'+s.slug+'">'+
     '<div class="top"><div><div class="name">'+s.emoji+' '+esc(s.name)+tag+'</div>'+
     '<div class="price"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span></div></div>'+
@@ -702,7 +704,7 @@ function detail(s){
   }
   return '<button class="back" data-back="1">← Все монеты</button>'+
     '<div class="card">'+
-      '<div class="name big">'+s.emoji+' '+esc(s.name)+'</div>'+
+      '<div class="name big">'+s.emoji+' '+esc(s.name)+(s.pump ? ' <span class="tag hot">🔥 памп!</span>' : '')+'</div>'+
       '<div class="price big"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span> <span class="hint-inline">за 15 мин</span></div>'+
       lineChart(hist, s.spikes)+
       '<div class="axis"><span>мин '+money(min)+'</span><span>макс '+money(max)+'</span></div>'+
