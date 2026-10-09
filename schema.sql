@@ -304,3 +304,29 @@ create table if not exists promo_uses (
     created_at timestamptz not null default now(),
     primary key (user_id, code)
 );
+
+-- ===================================================================== --
+-- Реферальные ссылки
+-- ===================================================================== --
+
+-- Одна активная ссылка на игрока. Живёт, пока не наберёт max_uses человек;
+-- новую можно создать только через 7 дней после прошлой.
+create table if not exists ref_links (
+    id         bigserial primary key,
+    code       text not null unique,
+    owner_id   bigint not null references players(user_id) on delete cascade,
+    created_at timestamptz not null default now(),
+    uses       integer not null default 0,
+    max_uses   integer not null default 25,
+    active     boolean not null default true
+);
+create index if not exists ref_links_owner_idx on ref_links (owner_id, created_at desc);
+
+-- Один человек может быть приглашён только один раз за всё время.
+create table if not exists referrals (
+    referred_id bigint primary key,
+    referrer_id bigint not null,
+    link_id     bigint references ref_links(id) on delete set null,
+    created_at  timestamptz not null default now()
+);
+create index if not exists referrals_referrer_idx on referrals (referrer_id);

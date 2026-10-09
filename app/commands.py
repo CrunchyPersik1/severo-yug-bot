@@ -27,6 +27,7 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="rating", description="Репутация торговца: /rating @игрок"),
     BotCommand(command="top", description="Топ по очкам коллекции"),
     BotCommand(command="profile", description="Профиль и карты: свой или /profile @игрок"),
+    BotCommand(command="ref", description="Реферальная ссылка: +1 попытка за друга"),
     BotCommand(command="stop", description="Остановить свой командный бой"),
     BotCommand(command="help", description="Справка"),
 ]

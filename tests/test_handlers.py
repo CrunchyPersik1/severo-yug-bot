@@ -117,6 +117,21 @@ class FakeDB:
     ) -> int:
         return int(default_limit) + int(amount)
 
+    async def latest_ref_link(self, user_id: int):
+        return None
+
+    async def insert_ref_link(self, user_id: int, code: str, max_uses: int = 25):
+        return {
+            "code": code,
+            "owner_id": user_id,
+            "uses": 0,
+            "max_uses": max_uses,
+            "active": True,
+        }
+
+    async def claim_referral(self, referred_id: int, code: str):
+        return {"owner_id": 777, "uses": 1, "max_uses": 25, "exhausted": False}
+
     async def player_profile(self, user_id: int):
         return {
             "user_id": user_id,
@@ -531,6 +546,29 @@ def test_mylots_handles_case_lots():
     async def scenario():
         session = await feed("/mylots", FakeDB(), FakeService(), market=FakeMarket())
         assert "Кейс" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_ref_creates_a_personal_link():
+    async def scenario():
+        session = await feed("/ref", FakeDB(), FakeService())
+        body = sent_texts(session)[0]
+        assert "t.me/" in body and "start=ref_" in body
+
+    asyncio.run(scenario())
+
+
+def test_start_with_referral_payload_rewards_the_inviter():
+    async def scenario():
+        db = FakeDB()
+        session = await feed("/start ref_abc", db, FakeService())
+        owners = [
+            payload.get("chat_id")
+            for name, payload in session.calls
+            if name == "SendMessage" and payload.get("chat_id") == 777
+        ]
+        assert owners, "пригласивший должен получить уведомление"
 
     asyncio.run(scenario())
 

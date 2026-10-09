@@ -13,11 +13,12 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
-from . import admin_actions, casino, promo, render, team_battle
+from . import admin_actions, casino, promo, referrals, render, team_battle
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
 from .promo import PromoError
+from .referrals import ReferralError
 from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
@@ -1539,13 +1540,36 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
 # --------------------------------------------------------------------------- #
 
 
+def _start_payload(message: Message) -> str:
+    """Аргумент deep-link: /start ref_abc -> 'ref_abc'."""
+    parts = (message.text or "").split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
 @router.message(CommandStart())
-async def cmd_start_menu(message: Message, bot: Bot) -> None:
+async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
+    user = message.from_user
+    payload = _start_payload(message)
+    if user is not None and payload:
+        await db.ensure_player(user.id, user.username, user.first_name)
+        note = None
+        try:
+            note = await referrals.redeem(db, bot, user.id, payload)
+        except Exception:  # noqa: BLE001 - меню должно показаться в любом случае
+            log.exception("Реферальный переход не обработался")
+        if note:
+            await message.answer(note)
+
     # Кнопки-мини-апп Telegram разрешает только в личке: в группе /start
     # должен отдать то же меню, но без web_app-кнопок.
     app_url = _base_url() if message.chat.type == "private" else ""
     text, keyboard = render.render_main_menu(await _bot_username(bot), app_url)
     await message.answer(text, reply_markup=keyboard)
+    # Заодно подсказка про рефералку — но только в личке, чтобы не сорить в группах.
+    if message.chat.type == "private":
+        await message.answer(
+            "🔗 Приведи друга и получи попытку «Северо-Юг»: /ref"
+        )
 
 
 @router.message(Command("promo", "промокод"))
@@ -1567,6 +1591,22 @@ async def cmd_promo(message: Message, db: Database) -> None:
         await message.answer(await promo.redeem(db, user.id, " ".join(parts[1:])))
     except PromoError as error:
         await message.answer(str(error))
+
+
+@router.message(Command("ref", "referral", "рефералка"))
+@router.message(NormalizedText("реф", "рефералка", "моя ссылка"))
+async def cmd_ref(message: Message, db: Database, bot: Bot) -> None:
+    """Личная реферальная ссылка: +1 попытка «Северо-Юг» за друга."""
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    try:
+        text = await referrals.status(db, user.id, await _bot_username(bot))
+    except ReferralError as error:
+        await message.answer(f"⚠️ {error}")
+        return
+    await message.answer(text)
 
 
 @router.callback_query(F.data.startswith("mn:"))

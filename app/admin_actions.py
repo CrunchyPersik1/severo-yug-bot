@@ -29,6 +29,7 @@ limits @ник 2 2            выдать ЛИЧНО игроку 2 выдач�
 points 5000                накинуть ВСЕМ по 5000 очков
 points @ник 5000           накинуть очков лично игроку (минус — списать)
 case 1                     выдать ВСЕМ по кейсу
+case @ник 5                выдать ОДНОМУ игроку 5 кейсов
 card daniel 1              выдать ВСЕМ по карте
 give @ник daniel 3         выдать ОДНОМУ игроку 3 карты
 take @ник daniel 1         забрать у ОДНОГО игрока карту
@@ -213,11 +214,30 @@ async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
 
 
 async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
-    count = _int_arg(args, 0, 1, "количество кейсов")
+    """case 5 — всем, case @ник 5 — лично игроку. Порядок аргументов не важен."""
+    if not args:
+        raise ValueError("формат: case 5 (всем) или case @ник 5 (одному)")
+    named = [arg for arg in args if not arg.lstrip("+-").isdigit()]
+    numbers = [int(arg) for arg in args if arg.lstrip("+-").isdigit()]
+    count = numbers[0] if numbers else 1
     if count < 1:
         raise ValueError("количество должно быть больше нуля")
     if count > 100:
         raise ValueError("больше 100 кейсов за раз — перебор")
+
+    if named:
+        player = await _resolve_player(con, named[0])
+        await con.execute(
+            """
+            insert into cases (user_id, source)
+            select $1, 'admin' from generate_series(1, $2)
+            """,
+            player["user_id"],
+            count,
+        )
+        who = player["first_name"] or player["username"] or player["user_id"]
+        return f"[ok] {who} получил {count} кейс(ов)"
+
     await con.execute(
         """
         insert into cases (user_id, source)

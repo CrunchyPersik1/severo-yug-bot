@@ -764,6 +764,83 @@ class Database:
             )
         return row is not None
 
+    # ------------------------------------------------------------------ #
+    # Реферальные ссылки
+    # ------------------------------------------------------------------ #
+
+    async def latest_ref_link(self, user_id: int) -> dict[str, Any] | None:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select * from ref_links where owner_id = $1 "
+                "order by created_at desc, id desc limit 1",
+                user_id,
+            )
+        return dict(row) if row else None
+
+    async def insert_ref_link(
+        self, user_id: int, code: str, max_uses: int = 25
+    ) -> dict[str, Any]:
+        """Создаёт ссылку. ValueError — такой код уже занят."""
+        async with self._p().acquire() as con:
+            try:
+                row = await con.fetchrow(
+                    """
+                    insert into ref_links (code, owner_id, max_uses)
+                    values ($1, $2, $3) returning *
+                    """,
+                    code,
+                    user_id,
+                    int(max_uses),
+                )
+            except asyncpg.UniqueViolationError as error:
+                raise ValueError("код ссылки уже занят") from error
+        assert row is not None
+        return dict(row)
+
+    async def claim_referral(
+        self, referred_id: int, code: str
+    ) -> dict[str, Any] | None:
+        """Фиксирует переход по ссылке. None — ссылка не работает или человек уже приглашён."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                already = await con.fetchval(
+                    "select 1 from referrals where referred_id = $1", referred_id
+                )
+                if already:
+                    return None
+                link = await con.fetchrow(
+                    "select * from ref_links where code = $1 for update", code
+                )
+                if link is None or not link["active"]:
+                    return None
+                if int(link["uses"]) >= int(link["max_uses"]):
+                    return None
+                if int(link["owner_id"]) == int(referred_id):
+                    return None
+                await con.execute(
+                    """
+                    insert into referrals (referred_id, referrer_id, link_id)
+                    values ($1, $2, $3)
+                    """,
+                    referred_id,
+                    int(link["owner_id"]),
+                    int(link["id"]),
+                )
+                uses = int(link["uses"]) + 1
+                active = uses < int(link["max_uses"])
+                await con.execute(
+                    "update ref_links set uses = $2, active = $3 where id = $1",
+                    int(link["id"]),
+                    uses,
+                    active,
+                )
+                return {
+                    "owner_id": int(link["owner_id"]),
+                    "uses": uses,
+                    "max_uses": int(link["max_uses"]),
+                    "exhausted": not active,
+                }
+
     async def my_accessories(self, user_id: int) -> list[dict[str, Any]]:
         async with self._p().acquire() as con:
             rows = await con.fetch(
