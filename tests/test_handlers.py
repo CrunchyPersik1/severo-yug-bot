@@ -456,7 +456,17 @@ def test_gift_actually_sends_the_card():
 
     asyncio.run(scenario())
 
-def build_callback(data: str, user_id: int = 111) -> dict:
+def build_callback(data: str, user_id: int = 111, thread_id: int | None = None) -> dict:
+    message: dict[str, Any] = {
+        "message_id": 77,
+        "date": 1700000000,
+        "chat": {"id": user_id, "type": "private"},
+        "from": {"id": 555, "is_bot": True, "first_name": "bot"},
+        "text": "профиль",
+    }
+    if thread_id is not None:
+        message["message_thread_id"] = thread_id
+        message["is_topic_message"] = True
     return {
         "update_id": 9,
         "callback_query": {
@@ -464,21 +474,23 @@ def build_callback(data: str, user_id: int = 111) -> dict:
             "from": {"id": user_id, "is_bot": False, "first_name": "Тест"},
             "chat_instance": "ci",
             "data": data,
-            "message": {
-                "message_id": 77,
-                "date": 1700000000,
-                "chat": {"id": user_id, "type": "private"},
-                "from": {"id": 555, "is_bot": True, "first_name": "bot"},
-                "text": "профиль",
-            },
+            "message": message,
         },
     }
 
 
-async def feed_callback(data: str, db: FakeDB, market: FakeMarket, user_id: int = 111):
+async def feed_callback(
+    data: str,
+    db: FakeDB,
+    market: FakeMarket,
+    user_id: int = 111,
+    thread_id: int | None = None,
+):
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
-    update = Update.model_validate(build_callback(data, user_id), context={"bot": bot})
+    update = Update.model_validate(
+        build_callback(data, user_id, thread_id), context={"bot": bot}
+    )
     await dispatcher().feed_update(bot, update, db=db, service=FakeService(), market=market)
     await bot.session.close()
     return session
@@ -634,9 +646,13 @@ def test_dice_callback_sends_the_real_emoji(monkeypatch):
         monkeypatch.setattr(handlers, "CasinoRepo", FakeCasinoRepo)
         # в тесте не ждём анимацию кубика
         monkeypatch.setattr(handlers.dice_casino, "DICE_PAUSE_SECONDS", 0)
-        session = await feed_callback("cg:dice:p:10000:d5", FakeDB(), FakeMarket())
+        session = await feed_callback(
+            "cg:dice:p:10000:d5", FakeDB(), FakeMarket(), thread_id=42
+        )
         names = [name for name, _ in session.calls]
         assert "SendDice" in names, names
+        dice_call = next(p for n, p in session.calls if n == "SendDice")
+        assert dice_call.get("message_thread_id") == 42, "кубик летит в тот же топик"
         assert played["value"] == 5, "результат берём из кубика"
         assert played["won"] is True and played["multiplier"] == 3
         assert any(name == "EditMessageText" for name in names)

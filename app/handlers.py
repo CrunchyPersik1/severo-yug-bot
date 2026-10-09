@@ -1125,9 +1125,14 @@ async def cb_dice(
         )
         return
 
+    # В форум-группе кубик надо слать в тот же топик, где играют, иначе он
+    # улетает в «General». message_thread_id у обычных сообщений = id топика.
+    thread_id = getattr(callback.message, "message_thread_id", None)
     try:
         dice = await bot.send_dice(
-            chat_id=callback.message.chat.id, emoji=dice_casino.emoji(game)
+            chat_id=callback.message.chat.id,
+            emoji=dice_casino.emoji(game),
+            message_thread_id=thread_id,
         )
         value = int(dice.dice.value)
     except Exception:  # noqa: BLE001
@@ -1565,6 +1570,7 @@ async def _card_page(
         try:
             await callback.bot.send_photo(
                 chat_id=callback.message.chat.id,
+                message_thread_id=getattr(callback.message, "message_thread_id", None),
                 photo=url,
                 caption=text,
                 reply_markup=keyboard,
