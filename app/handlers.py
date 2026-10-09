@@ -1006,6 +1006,42 @@ async def _casino_parse_bet(
     return "c:" + raw.lstrip("#"), f"{card.rarity_emoji} {render.esc(card.display_name)}"
 
 
+async def _casino_stats(message: Message, db: Database, market: MarketRepo) -> None:
+    """Статистика казино: своя, по @нику или ответом на сообщение."""
+    user = message.from_user
+    if user is None:
+        return
+    target_id = user.id
+    target_name = user.first_name
+    reply = message.reply_to_message
+    if reply is not None and reply.from_user is not None and not reply.from_user.is_bot:
+        target_id = reply.from_user.id
+        target_name = reply.from_user.first_name
+    else:
+        for part in (message.text or "").split()[1:]:
+            if part.startswith("@"):
+                found = await market.find_by_username(part)
+                if found is None:
+                    await message.answer(f"Игрок {render.esc(part)} не найден.")
+                    return
+                target_id = int(found["user_id"])
+                target_name = found["first_name"]
+                break
+    await db.ensure_player(target_id, None, target_name)
+    stats = await db.casino_stats(target_id)
+    await message.answer(
+        render.render_casino_stats(target_name or f"id{target_id}", stats)
+    )
+
+
+@router.message(Command("casinostats", "casinostat", "казиностата"))
+@router.message(NormalizedText("казиностата", "стата казино"))
+async def cmd_casino_stats(
+    message: Message, db: Database, market: MarketRepo
+) -> None:
+    await _casino_stats(message, db, market)
+
+
 @router.message(Command("casino", "казино"))
 @router.message(NormalizedText("казино"))
 async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None:
@@ -1015,6 +1051,9 @@ async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None
     await db.ensure_player(user.id, user.username, user.first_name)
     balance = await market.balance(user.id)
     parts = (message.text or "").split()[1:]
+    if parts and parts[0].lower() in {"stats", "стата", "статистика", "итоги"}:
+        await _casino_stats(message, db, market)
+        return
     if not parts:
         left = await db.casino_left(user.id, roulette_day_key(), casino.SPINS_PER_DAY)
         keyboard = InlineKeyboardMarkup(

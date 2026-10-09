@@ -258,6 +258,45 @@ def test_draw_gives_nothing():
     run(scenario())
 
 
+def test_casino_stats_counts_wins_and_losses():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            user = 900009
+            async with db.pool.acquire() as con:
+                await con.execute("delete from casino_log where user_id = $1", user)
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Лудоман")
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    """
+                    insert into casino_log
+                        (user_id, bet_kind, bet_value, color, rolled, won, outcome, amount)
+                    values
+                        ($1, 'points', '1000', 'red', 'red', true, 'win', 2000),
+                        ($1, 'points', '1000', 'red', 'black', false, 'lose', 333),
+                        ($1, 'card', 'daniel', 'green', 'green', true, 'max', 0),
+                        ($1, 'card', 'oleg', 'red', 'black', false, 'delete', 0)
+                    """,
+                    user,
+                )
+            stats = await db.casino_stats(user)
+            assert stats["point_bets"] == 2
+            assert stats["staked"] == 2000
+            assert stats["returned"] == 2333
+            assert stats["won_points"] == 1000
+            assert stats["lost_points"] == 667
+            assert stats["card_bets"] == 2
+            assert stats["card_wins"] == 1
+            assert stats["card_deleted"] == 1
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from casino_log where user_id = $1", user)
+            await db.close()
+
+    run(scenario())
+
+
 def test_purge_missing_cards_removes_old_entries():
     """Регрессия: удалённая из кода карта оставалась у игрока и ломала профиль."""
 

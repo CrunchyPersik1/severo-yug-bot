@@ -98,6 +98,18 @@ class FakeDB:
     async def claim_casino(self, user_id: int, day: Any, limit: int = 25) -> int | None:
         return int(limit) - 1
 
+    async def casino_stats(self, user_id: int) -> dict[str, int]:
+        return {
+            "point_bets": 4,
+            "staked": 40000,
+            "returned": 55000,
+            "won_points": 30000,
+            "lost_points": 15000,
+            "card_bets": 2,
+            "card_wins": 1,
+            "card_deleted": 1,
+        }
+
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
 
@@ -593,6 +605,30 @@ def test_mylots_handles_case_lots():
     async def scenario():
         session = await feed("/mylots", FakeDB(), FakeService(), market=FakeMarket())
         assert "Кейс" in sent_texts(session)[0]
+
+    asyncio.run(scenario())
+
+
+def test_casino_stats_command():
+    async def scenario():
+        session = await feed(
+            "/casinostats", FakeDB(), FakeService(), market=FakeMarket()
+        )
+        body = sent_texts(session)[0]
+        assert "Казино" in body
+        assert "Выиграно" in body and "Слито" in body
+        assert "в плюсе" in body
+        assert "картами" in body
+
+    asyncio.run(scenario())
+
+
+def test_casino_stats_via_alias():
+    async def scenario():
+        session = await feed(
+            "/casino stats", FakeDB(), FakeService(), market=FakeMarket()
+        )
+        assert "Выиграно" in sent_texts(session)[0]
 
     asyncio.run(scenario())
 

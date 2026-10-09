@@ -745,6 +745,39 @@ class Database:
         cap = max(int(row["casino_limit"]), limit)
         return max(0, cap - int(row["casino_uses"]))
 
+    async def casino_stats(self, user_id: int) -> dict[str, int]:
+        """Итоги казино игрока: сколько поставил, вернул, выиграл и слил.
+
+        Ставки картами считаются отдельно — у них нет очкового баланса.
+        bet_value для очковых ставок — число, поэтому фильтр по bet_kind
+        не даёт кастовать card_id.
+        """
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                select
+                    count(*) filter (where bet_kind = 'points') as point_bets,
+                    coalesce(sum(bet_value::bigint)
+                             filter (where bet_kind = 'points'), 0) as staked,
+                    coalesce(sum(amount)
+                             filter (where bet_kind = 'points'), 0) as returned,
+                    coalesce(sum(case when amount >= bet_value::bigint
+                                      then amount - bet_value::bigint else 0 end)
+                             filter (where bet_kind = 'points'), 0) as won_points,
+                    coalesce(sum(case when amount < bet_value::bigint
+                                      then bet_value::bigint - amount else 0 end)
+                             filter (where bet_kind = 'points'), 0) as lost_points,
+                    count(*) filter (where bet_kind = 'card') as card_bets,
+                    count(*) filter (where bet_kind = 'card' and won) as card_wins,
+                    count(*) filter (where bet_kind = 'card' and outcome = 'delete')
+                        as card_deleted
+                  from casino_log
+                 where user_id = $1
+                """,
+                user_id,
+            )
+        return {key: int(value or 0) for key, value in dict(row).items()}
+
     async def buy_casino_spin(
         self, user_id: int, day: Any, price: int, limit: int = 25
     ) -> int | None:

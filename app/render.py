@@ -747,6 +747,9 @@ def render_casino_help(balance: int, left: int = 0, cap: int = 25) -> str:
             "Проигрыш: очки возвращаются только на треть, карта либо уничтожается (20%), "
             "либо теряет статы (80%). Редкую карту можно выкупить за двойную цену.",
             "",
+            "📊 Свои итоги (и чужие): <code>/casinostats</code> или "
+            "<code>/casinostats @игрок</code>",
+            "",
             # пасхалка: код на очки
             "🍖 Промокод: <code>mishakotletka</code>",
         ]
@@ -932,6 +935,42 @@ def render_casino_bought(card: Card, price: int, balance: int, inventory_id: int
             f"Заплачено: <b>{price}</b> очков · осталось <b>{balance}</b>",
         ]
     )
+
+
+def render_casino_stats(name: str, stats: dict[str, int]) -> str:
+    """Сколько игрок поставил, вернул, выиграл и слил в казино."""
+    staked = int(stats.get("staked", 0))
+    returned = int(stats.get("returned", 0))
+    won = int(stats.get("won_points", 0))
+    lost = int(stats.get("lost_points", 0))
+    net = returned - staked
+
+    lines = [
+        f"🎰 <b>Казино</b> — {esc(name)}",
+        "",
+        f"Ставок очками: <b>{int(stats.get('point_bets', 0))}</b>",
+        f"Поставлено: <b>{_money(staked)}</b> · вернулось: <b>{_money(returned)}</b>",
+        f"🟢 Выиграно: <b>+{_money(won)}</b>",
+        f"🔴 Слито: <b>−{_money(lost)}</b>",
+    ]
+    if net > 0:
+        lines.append(f"📊 Итог: <b>+{_money(net)}</b> — в плюсе")
+    elif net < 0:
+        lines.append(f"📊 Итог: <b>−{_money(-net)}</b> — в минусе")
+    else:
+        lines.append("📊 Итог: <b>0</b> — в нуле")
+
+    card_bets = int(stats.get("card_bets", 0))
+    if card_bets:
+        lines += [
+            "",
+            f"🃏 Ставок картами: <b>{card_bets}</b> · "
+            f"улучшено: {int(stats.get('card_wins', 0))} · "
+            f"уничтожено: {int(stats.get('card_deleted', 0))}",
+        ]
+    if not int(stats.get("point_bets", 0)) and not card_bets:
+        lines += ["", "Пока пусто. Крути: /casino"]
+    return "\n".join(lines)
 
 # --------------------------------------------------------------------------- #
 # Командный PvP
