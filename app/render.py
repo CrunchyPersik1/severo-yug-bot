@@ -1505,25 +1505,33 @@ def my_home(
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _my_nav(prefix: str, page: int, pages: int) -> list[InlineKeyboardButton]:
+def _my_nav(
+    prefix: str, page: int, pages: int, middle: str = "my:home"
+) -> list[InlineKeyboardButton]:
     nav: list[InlineKeyboardButton] = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️", callback_data=f"{prefix}:{page - 1}"))
-    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data="my:home"))
+    nav.append(InlineKeyboardButton(text=f"{page + 1}/{pages}", callback_data=middle))
     if page < pages - 1:
         nav.append(InlineKeyboardButton(text="▶️", callback_data=f"{prefix}:{page + 1}"))
     return nav
 
 
 def my_cards(
-    cards: list[Card], counts: dict[str, int], page: int
+    cards: list[Card],
+    counts: dict[str, int],
+    page: int,
+    *,
+    prefix: str = "my",
+    header: str = "Мои карты",
+    middle: str = "my:home",
 ) -> tuple[str, InlineKeyboardMarkup]:
     pages = max(1, (len(cards) + MY_PAGE - 1) // MY_PAGE)
     page = max(0, min(int(page), pages - 1))
     chunk = cards[page * MY_PAGE : (page + 1) * MY_PAGE]
     lines = [
-        "🃏 <b>Мои карты</b>",
-        f"Страница <b>{page + 1}</b> из {pages}. Жми на карту — там предметы.",
+        f"🃏 <b>{header}</b>",
+        f"Страница <b>{page + 1}</b> из {pages}.",
         "",
     ]
     rows: list[list[InlineKeyboardButton]] = []
@@ -1534,14 +1542,16 @@ def my_cards(
         if count > 1:
             label += f" ×{count}"
         pair.append(
-            InlineKeyboardButton(text=label, callback_data=f"my:d:#{card.card_id}")
+            InlineKeyboardButton(
+                text=label, callback_data=f"{prefix}:d:#{card.card_id}"
+            )
         )
         if len(pair) == 2:
             rows.append(pair)
             pair = []
     if pair:
         rows.append(pair)
-    rows.append(_my_nav("my:c", page, pages))
+    rows.append(_my_nav(f"{prefix}:c", page, pages, middle))
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -553,10 +553,10 @@ def test_other_players_cards_and_stats_are_viewable():
         session = await feed_callback("pf:333:cards", db, market)
         edits = [p for n, p in session.calls if n == "EditMessageText"]
         assert edits, "сообщение должно перерисоваться"
-        assert "pf:333:card:#oleg" in str(edits[0]), "кнопки должны вести на карты игрока 333"
+        assert "pf:333:d:#oleg" in str(edits[0]), "кнопки должны вести на карты игрока 333"
 
         # статы конкретной чужой карты
-        session = await feed_callback("pf:333:card:#oleg", db, market)
+        session = await feed_callback("pf:333:d:#oleg", db, market)
         edits = [p for n, p in session.calls if n == "EditMessageText"]
         body = edits[0]["text"]
         assert "Олег" in body and "Атака" in body

@@ -421,18 +421,40 @@ async def cb_profile(
         await callback.answer()
         return
 
-    if action == "cards":
-        if is_owner:
-            # Свои карты — в новом постраничном меню, старое не тянем.
-            counts = await db.get_collection(target_id)
-            text, keyboard = render.my_cards(
-                cards_sorted_for_user(list(counts)), counts, 0
-            )
-            await _safe_edit(callback, text, keyboard)
-            await callback.answer()
+    if action == "cards" and is_owner:
+        # Свои карты — в новом постраничном меню, старое не тянем.
+        counts = await db.get_collection(target_id)
+        text, keyboard = render.my_cards(
+            cards_sorted_for_user(list(counts)), counts, 0
+        )
+        await _safe_edit(callback, text, keyboard)
+        await callback.answer()
+        return
+
+    if action in ("cards", "c"):
+        # Чужие карты — тоже новое постраничное меню, только для просмотра.
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        counts = await db.get_collection(target_id)
+        text, keyboard = render.my_cards(
+            cards_sorted_for_user(list(counts)),
+            counts,
+            page,
+            prefix=f"pf:{target_id}",
+            header="Карты игрока",
+            middle=f"pf:{target_id}:back",
+        )
+        await _safe_edit(callback, text, keyboard)
+        await callback.answer()
+        return
+
+    if action == "d" and handle:
+        _, units = await collection_data(db, market, target_id)
+        unit = next((item for item in units if item["handle"] == handle), None)
+        if unit is None:
+            await callback.answer("Карта не найдена", show_alert=True)
             return
-        text, units = await collection_data(db, market, target_id)
-        await _safe_edit(callback, text, render.collection_keyboard(target_id, units))
+        text, keyboard = render.render_card_detail(unit, target_id, False)
+        await _safe_edit(callback, text, keyboard)
         await callback.answer()
         return
 
