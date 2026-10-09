@@ -562,6 +562,7 @@ main{padding:12px 14px}
 .tag{font-size:11px;color:#c7c9ff;background:var(--accent-soft);border-radius:999px;padding:2px 8px;margin-left:6px}
 .hint{font-size:12px;color:var(--muted);margin-top:12px;height:60px;display:flex;align-items:center}
 .spikes{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
+.btn:disabled{opacity:.45}
 .mine{margin-top:9px;font-size:12px;color:var(--muted)}
 .up{color:var(--up)} .down{color:var(--down)}
 .act{display:flex;gap:8px;margin-top:11px}
@@ -590,6 +591,7 @@ main{padding:12px 14px}
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
 let state = {stocks: [], portfolio: {}, balance: 0, selected: null};
+let maxPerStock = 100;
 
 function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
@@ -703,9 +705,12 @@ function detail(s){
       '<div class="axis"><span>мин '+money(min)+'</span><span>макс '+money(max)+'</span></div>'+
       spikesLine(s.spikes)+
       '<div class="deals">купить <b>'+money(s.buy_price)+'</b> · продать <b>'+money(s.sell_price)+'</b></div>'+
+      '<div class="deals">'+(s.room > 0
+          ? 'Лимит '+maxPerStock+' шт. на монету · можно докупить ещё '+s.room
+          : 'Лимит '+maxPerStock+' шт. достигнут')+'</div>'+
       mine+
       '<div class="act"><input class="qty" type="number" min="1" value="1" data-qty="'+s.slug+'">'+
-      '<button class="btn buy" data-buy="'+s.slug+'">Купить</button>'+
+      '<button class="btn buy" data-buy="'+s.slug+'"'+(s.room > 0 ? "" : " disabled")+'>Купить</button>'+
       '<button class="btn sell" data-sell="'+s.slug+'">Продать</button></div>'+
     '</div>';
 }
@@ -747,6 +752,7 @@ async function load(){
     var d = await r.json();
     if(d.error){ toast(d.error,"bad"); return; }
     state.stocks = d.stocks; state.portfolio = d.portfolio; state.balance = d.me.balance;
+    if(d.limits && d.limits.max_per_stock) maxPerStock = d.limits.max_per_stock;
     render();
   }catch(e){ toast("Не смог загрузить биржу","bad"); }
 }

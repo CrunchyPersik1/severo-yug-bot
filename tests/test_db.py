@@ -302,6 +302,60 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_stocks_cap_on_buy_and_refund_of_excess():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app.stocks_repo import StocksError, StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            user = 900012
+            async with db.pool.acquire() as con:
+                await con.execute("delete from stock_holdings where user_id = $1", user)
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Кит")
+            await db.add_points(user, 10_000_000)
+
+            await repo.buy(user, "syug", 100)
+            with pytest.raises(StocksError):
+                await repo.buy(user, "syug", 1)
+
+            # Искусственно раздуваем холдинг: seed должен срезать излишек.
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "update stock_holdings set shares = 150, spent = 150000 "
+                    "where user_id = $1",
+                    user,
+                )
+                before = int(
+                    await con.fetchval(
+                        "select bonus_points from players where user_id = $1", user
+                    )
+                )
+            await repo.seed()
+            async with db.pool.acquire() as con:
+                row = await con.fetchrow(
+                    "select shares, spent from stock_holdings where user_id = $1",
+                    user,
+                )
+                after = int(
+                    await con.fetchval(
+                        "select bonus_points from players where user_id = $1", user
+                    )
+                )
+            assert int(row["shares"]) == 100, "излишек забрали"
+            assert int(row["spent"]) == 100000, "потраченное уменьшили пропорционально"
+            assert after == before + 50000, "за излишек вернули деньги"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from stock_holdings where user_id = 900012")
+                await con.execute("delete from players where user_id = 900012")
+            await db.close()
+
+    run(scenario())
+
+
 def test_stocks_target_moves_smoothly_and_clears():
     async def scenario():
         db = await fresh_db()

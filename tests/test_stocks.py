@@ -44,6 +44,10 @@ def test_next_price_moves_to_target_smoothly():
     assert stocks.next_price(1000, 1000, 0.0) == 1000
 
 
+def test_max_per_stock_is_one_hundred():
+    assert stocks.MAX_PER_STOCK == 100
+
+
 def test_find_spikes():
     spikes = stocks.find_spikes([100, 100, 110, 110, 90, 91])
     assert [s["i"] for s in spikes] == [2, 4]

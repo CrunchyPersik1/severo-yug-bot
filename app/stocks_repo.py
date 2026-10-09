@@ -60,6 +60,9 @@ class StocksRepo:
                 await con.execute(
                     "update stocks set alert_price = base_price where alert_price <= 0"
                 )
+                # Если кто-то успел набрать больше лимита — забираем излишек и
+                # возвращаем потраченные на него очки.
+                await self._enforce_cap(con, stocks.MAX_PER_STOCK)
                 # Компании, которых больше нет в каталоге: закрываем и
                 # возвращаем держателям очки по текущему курсу.
                 retired = await con.fetch(
@@ -78,6 +81,44 @@ class StocksRepo:
                         int(row["price"]),
                     )
                     await con.execute("delete from stocks where id = $1", int(row["id"]))
+
+    async def _enforce_cap(
+        self, con: asyncpg.Connection, cap: int
+    ) -> None:
+        """Срезает излишек сверх лимита и возвращает за него потраченные очки."""
+        await con.execute(
+            """
+            with over as (
+                select h.user_id,
+                       (h.shares - $1) as excess,
+                       h.shares,
+                       h.spent
+                  from stock_holdings h
+                 where h.shares > $1
+            ),
+            refund as (
+                select user_id,
+                       coalesce(sum(round(spent::numeric * excess / shares)::bigint), 0)
+                           as amount
+                  from over
+                 group by user_id
+            )
+            update players p
+               set bonus_points = bonus_points + r.amount
+              from refund r
+             where p.user_id = r.user_id and r.amount > 0
+            """,
+            int(cap),
+        )
+        await con.execute(
+            """
+            update stock_holdings
+               set shares = $1,
+                   spent = greatest(0, round(spent::numeric * $1 / shares)::bigint)
+             where shares > $1
+            """,
+            int(cap),
+        )
 
     async def tick(self) -> list[dict[str, Any]]:
         """Двигает курсы и возвращает монеты, о росте которых стоит сообщить."""
@@ -225,6 +266,7 @@ class StocksRepo:
                         "my_value": value,
                         "my_spent": spent,
                         "my_pnl": value - spent,
+                        "room": max(0, stocks.MAX_PER_STOCK - shares),
                     }
                 )
         return {
@@ -235,6 +277,7 @@ class StocksRepo:
                 "spent": total_spent,
                 "pnl": total_value - total_spent,
             },
+            "limits": {"max_per_stock": stocks.MAX_PER_STOCK},
         }
 
     # ------------------------------------------------------------------ #
@@ -245,8 +288,6 @@ class StocksRepo:
         shares = int(shares)
         if shares < 1:
             raise StocksError("Сколько акций покупаем?")
-        if shares > stocks.MAX_SHARES:
-            raise StocksError("Слишком много акций за одну сделку.")
         async with self.pool.acquire() as con:
             async with con.transaction():
                 stock = await con.fetchrow(
@@ -254,6 +295,24 @@ class StocksRepo:
                 )
                 if stock is None:
                     raise StocksError("Такой акции нет на бирже.")
+                holding = await con.fetchrow(
+                    "select shares from stock_holdings "
+                    "where user_id = $1 and stock_id = $2",
+                    user_id,
+                    int(stock["id"]),
+                )
+                have = int(holding["shares"]) if holding else 0
+                room = stocks.MAX_PER_STOCK - have
+                if room <= 0:
+                    raise StocksError(
+                        f"На одну монету можно держать максимум "
+                        f"{stocks.MAX_PER_STOCK}."
+                    )
+                if shares > room:
+                    raise StocksError(
+                        f"На одну монету максимум {stocks.MAX_PER_STOCK}. "
+                        f"У тебя {have}, можно докупить ещё {room}."
+                    )
                 price = stocks.buy_price(int(stock["price"]))
                 cost = price * shares
                 row = await con.fetchrow(
