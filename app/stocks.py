@@ -78,8 +78,12 @@ def next_price(
     Иначе — обычный симметричный случайный шаг в коридоре.
     """
     price = int(price)
+    low = int(int(base) * FLOOR_MULT)
+    high = int(int(base) * CEIL_MULT)
     if target is not None and int(target) > 0:
-        target = int(target)
+        # Цель тоже держим в коридоре: иначе курс улетал за границы, а график
+        # и проценты потом врали.
+        target = max(low, min(high, int(target)))
         if price == target:
             return target
         step = round((target - price) * TARGET_PULL)
@@ -90,13 +94,11 @@ def next_price(
         new = price + step
         if (target - price) * (target - new) <= 0:
             return target
-        return new
+        return int(max(low, min(high, new)))
 
     rng = rng or random
     change = rng.uniform(-float(volatility), float(volatility))
     value = price * (1.0 + change)
-    low = int(base) * FLOOR_MULT
-    high = int(base) * CEIL_MULT
     return int(max(low, min(high, round(value))))
 
 

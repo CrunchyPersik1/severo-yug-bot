@@ -466,7 +466,8 @@ async def api_stocks(request: Request) -> JSONResponse:
     # Курс двигает фоновый воркер; здесь только читаем текущее состояние.
     data = await repo.overview(int(user["id"]))
     data["me"]["name"] = user.get("first_name") or "игрок"
-    return JSONResponse(data)
+    # Живые данные: WebView не должен отдавать закешированный курс.
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
 async def _stock_trade(request: Request, kind: str) -> JSONResponse:
@@ -565,6 +566,7 @@ main{padding:12px 14px}
 .btn:disabled{opacity:.45}
 .mine{margin-top:9px;font-size:12px;color:var(--muted)}
 .up{color:var(--up)} .down{color:var(--down)}
+.hint-inline{font-size:11px;color:var(--muted)}
 .act{display:flex;gap:8px;margin-top:11px}
 .qty{width:74px;background:#0d0f16;border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:10px;font-size:14px;text-align:center}
@@ -695,12 +697,13 @@ function detail(s){
   var mine = "";
   if(s.my_shares > 0){
     var pnl = s.my_pnl >= 0 ? '<span class="up">+'+money(s.my_pnl)+'</span>' : '<span class="down">'+money(s.my_pnl)+'</span>';
-    mine = '<div class="mine">У тебя: <b>'+s.my_shares+'</b> шт. · '+money(s.my_value)+' · '+pnl+'</div>';
+    var pct = s.my_spent > 0 ? ' ('+(s.my_pnl/s.my_spent*100).toFixed(1)+'%)' : "";
+    mine = '<div class="mine">У тебя: <b>'+s.my_shares+'</b> шт. · '+money(s.my_value)+' · '+pnl+pct+'</div>';
   }
   return '<button class="back" data-back="1">← Все монеты</button>'+
     '<div class="card">'+
       '<div class="name big">'+s.emoji+' '+esc(s.name)+'</div>'+
-      '<div class="price big"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span></div>'+
+      '<div class="price big"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span> <span class="hint-inline">за 15 мин</span></div>'+
       lineChart(hist, s.spikes)+
       '<div class="axis"><span>мин '+money(min)+'</span><span>макс '+money(max)+'</span></div>'+
       spikesLine(s.spikes)+

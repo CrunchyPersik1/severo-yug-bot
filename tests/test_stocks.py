@@ -44,6 +44,20 @@ def test_next_price_moves_to_target_smoothly():
     assert stocks.next_price(1000, 1000, 0.0) == 1000
 
 
+def test_target_stays_inside_the_corridor():
+    # Цель ниже пола — курс прижимается к полу, а не улетает в ноль.
+    price = 1000
+    for _ in range(60):
+        price = stocks.next_price(price, 1000, 0.0, target=10)
+    assert price == int(1000 * stocks.FLOOR_MULT)
+
+    # Цель выше потолка — курс прижимается к потолку.
+    price = 1000
+    for _ in range(80):
+        price = stocks.next_price(price, 1000, 0.0, target=100_000)
+    assert price == int(1000 * stocks.CEIL_MULT)
+
+
 def test_max_per_stock_is_one_hundred():
     assert stocks.MAX_PER_STOCK == 100
 

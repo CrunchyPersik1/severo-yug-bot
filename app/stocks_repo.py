@@ -60,6 +60,46 @@ class StocksRepo:
                 await con.execute(
                     "update stocks set alert_price = base_price where alert_price <= 0"
                 )
+                # Цена/история могли остаться от старой базы (переименования монет,
+                # смена базовой цены) и вылезти за коридор. Тогда график и проценты
+                # врут (вплоть до +1200% при стоящем курсе). Чистим: точки истории
+                # вне коридора удаляем, а саму цену возвращаем к базе.
+                dirty = await con.fetch(
+                    """
+                    select distinct h.stock_id as id
+                      from stock_history h
+                      join stocks s on s.id = h.stock_id
+                     where h.price::numeric > s.base_price * $1
+                        or h.price::numeric < s.base_price * $2
+                    """,
+                    float(stocks.CEIL_MULT),
+                    float(stocks.FLOOR_MULT),
+                )
+                for row in dirty:
+                    await con.execute(
+                        "delete from stock_history where stock_id = $1",
+                        int(row["id"]),
+                    )
+                broken = await con.fetch(
+                    """
+                    select id from stocks
+                     where price::numeric > base_price * $1
+                        or price::numeric < base_price * $2
+                    """,
+                    float(stocks.CEIL_MULT),
+                    float(stocks.FLOOR_MULT),
+                )
+                for row in broken:
+                    await con.execute(
+                        """
+                        update stocks
+                           set price = base_price, prev_price = base_price,
+                               alert_price = base_price, target_price = null,
+                               updated_at = now()
+                         where id = $1
+                        """,
+                        int(row["id"]),
+                    )
                 # Если кто-то успел набрать больше лимита — забираем излишек и
                 # возвращаем потраченные на него очки.
                 await self._enforce_cap(con, stocks.MAX_PER_STOCK)
