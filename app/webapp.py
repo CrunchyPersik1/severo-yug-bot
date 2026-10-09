@@ -561,6 +561,7 @@ main{padding:12px 14px}
 .deals b{color:var(--ink)}
 .tag{font-size:11px;color:#c7c9ff;background:var(--accent-soft);border-radius:999px;padding:2px 8px;margin-left:6px}
 .hint{font-size:12px;color:var(--muted);margin-top:12px;height:60px;display:flex;align-items:center}
+.spikes{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
 .mine{margin-top:9px;font-size:12px;color:var(--muted)}
 .up{color:var(--up)} .down{color:var(--down)}
 .act{display:flex;gap:8px;margin-top:11px}
@@ -611,7 +612,7 @@ function bars(hist){
 }
 
 // Настоящий график курса: линия по точкам, масштаб по минимуму и максимуму.
-function lineChart(hist){
+function lineChart(hist, spikes){
   if(!hist || hist.length < 2) return '<div class="hint">Мало данных — подожди пару шагов курса…</div>';
   var W = 320, H = 150, pad = 4;
   var min = Math.min.apply(null, hist), max = Math.max.apply(null, hist);
@@ -630,13 +631,45 @@ function lineChart(hist){
     var gy = (pad + g*(H-2*pad)/4).toFixed(1);
     grid += '<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="#232838" stroke-width="1"/>';
   }
+  // Отмечаем резкие скачки: колечко вокруг точки, зелёное вверх / красное вниз.
+  var marks = "";
+  (spikes || []).forEach(function(sp){
+    var si = Number(sp.i);
+    if(!(si >= 0 && si < n)) return;
+    var sc = Number(sp.change) >= 0 ? "#22c55e" : "#ef4444";
+    marks += '<circle cx="'+px(si).toFixed(1)+'" cy="'+py(hist[si]).toFixed(1)+'" r="3.4" '+
+      'fill="#0f1117" stroke="'+sc+'" stroke-width="2"/>';
+  });
   return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
     grid +
     '<polygon points="'+area+'" fill="'+color+'" opacity="0.13"/>'+
     '<polyline points="'+line+'" fill="none" stroke="'+color+'" stroke-width="2.5" '+
       'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'+
+    marks +
     '<circle cx="'+px(n-1).toFixed(1)+'" cy="'+py(hist[n-1]).toFixed(1)+'" r="3" fill="'+color+'"/>'+
   '</svg>';
+}
+
+function agoText(sec){
+  sec = Number(sec) || 0;
+  if(sec < 60) return "только что";
+  if(sec < 3600) return Math.floor(sec/60)+" мин назад";
+  return Math.floor(sec/3600)+" ч назад";
+}
+
+function spikesLine(spikes){
+  if(!spikes || !spikes.length){
+    return '<div class="spikes">Резких скачков за это время не было.</div>';
+  }
+  var parts = [];
+  var list = spikes.slice(-4).reverse();
+  for(var i=0;i<list.length;i++){
+    var sp = list[i];
+    var up = Number(sp.change) >= 0;
+    parts.push('<span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+
+      Number(sp.change).toFixed(1)+'%</span> '+agoText(sp.ago));
+  }
+  return '<div class="spikes">Скачки: '+parts.join(" · ")+'</div>';
 }
 
 // Строка списка: тапаешь — открывается график монеты.
@@ -666,8 +699,9 @@ function detail(s){
     '<div class="card">'+
       '<div class="name big">'+s.emoji+' '+esc(s.name)+'</div>'+
       '<div class="price big"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span></div>'+
-      lineChart(hist)+
+      lineChart(hist, s.spikes)+
       '<div class="axis"><span>мин '+money(min)+'</span><span>макс '+money(max)+'</span></div>'+
+      spikesLine(s.spikes)+
       '<div class="deals">купить <b>'+money(s.buy_price)+'</b> · продать <b>'+money(s.sell_price)+'</b></div>'+
       mine+
       '<div class="act"><input class="qty" type="number" min="1" value="1" data-qty="'+s.slug+'">'+

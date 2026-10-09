@@ -161,15 +161,18 @@ class StocksRepo:
                 }
             )
 
-    async def _history(
+    async def _history_rows(
         self, con: asyncpg.Connection, stock_id: int, limit: int = HISTORY_POINTS
-    ) -> list[int]:
+    ) -> list[dict[str, Any]]:
         rows = await con.fetch(
-            "select price from stock_history where stock_id = $1 order by id desc limit $2",
+            "select price, at from stock_history where stock_id = $1 "
+            "order by id desc limit $2",
             int(stock_id),
             int(limit),
         )
-        return [int(r["price"]) for r in reversed(rows)]
+        return [
+            {"price": int(r["price"]), "at": r["at"]} for r in reversed(rows)
+        ]
 
     # ------------------------------------------------------------------ #
     # Снимок для мини-аппки
@@ -193,9 +196,15 @@ class StocksRepo:
             items = []
             total_value = 0
             total_spent = 0
+            now = datetime.now(timezone.utc)
             for row in rows:
                 sid = int(row["id"])
-                hist = await self._history(con, sid)
+                points = await self._history_rows(con, sid)
+                hist = [point["price"] for point in points]
+                spikes = stocks.find_spikes(hist)
+                for spike in spikes:
+                    at = points[int(spike["i"])]["at"]
+                    spike["ago"] = max(0, int((now - at).total_seconds()))
                 price = int(row["price"])
                 shares, spent = hold.get(sid, (0, 0))
                 value = stocks.sell_price(price) * shares
@@ -211,6 +220,7 @@ class StocksRepo:
                         "sell_price": stocks.sell_price(price),
                         "change": round(stocks.change_percent(hist), 2),
                         "history": hist,
+                        "spikes": spikes,
                         "my_shares": shares,
                         "my_value": value,
                         "my_spent": spent,

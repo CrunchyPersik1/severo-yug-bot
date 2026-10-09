@@ -12,12 +12,14 @@ from . import casino, dice_casino, team_battle
 from .battle import ability_targets, can_use_ability
 from .cards import (
     CARDS,
+    CARDS_BY_ID,
     RARITIES,
     RARITY_ORDER,
     Card,
     cards_sorted_for_user,
     get_card,
 )
+from . import titles
 from .cases import CASE_RARITY_ORDER, CASE_RARITY_WEIGHTS
 from .team_battle import TEAM_BLUE, TEAM_RED
 from .items import (
@@ -360,22 +362,70 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
     # Баланс — это и есть очки игрока: карты начисляют их при выпадении,
     # PvP и рынок перекладывают между игроками.
     bonus_text = " (в минусе)" if bonus < 0 else ""
-    return "\n".join(
-        [
-            f"👤 <b>{esc(name)}</b>",
-            f"🏅 Место в PvP-рейтинге: <b>#{profile['rank']}</b>",
-            "",
-            f"⚔️ Побед: <b>{profile['wins']}</b> · поражений: {profile['losses']} · "
-            f"ничьих: {profile['draws']} ({winrate})",
-            f"🔪 Убито чужих карт: <b>{profile['kills']}</b>",
-            f"🗡 Мои карты убили: <b>{profile['card_kills']}</b> раз",
-            "",
-            f"💰 Баланс: <b>{profile['total']}</b> очк.{bonus_text}",
-            f"🃏 Коллекция: {profile['unique_cards']}/{total_cards} карт "
-            f"(всего {profile['total_cards']}, стоимость {profile['card_points']})",
-            "",
-            "«пвп» ответом на сообщение — вызвать на бой.",
-        ]
+    title = titles.title_for(profile)
+    points, _current, nxt = titles.progress(profile)
+
+    lines = [
+        f"👤 <b>{esc(name)}</b>",
+        f"🏅 Титул: <b>{title}</b> · вклад {points}",
+        f"🏆 Место в PvP-рейтинге: <b>#{profile['rank']}</b>",
+        "",
+        f"⚔️ Побед: <b>{profile['wins']}</b> · поражений: {profile['losses']} · "
+        f"ничьих: {profile['draws']} ({winrate})",
+        f"🔪 Убито чужих карт: <b>{profile['kills']}</b>",
+        f"🗡 Мои карты убили: <b>{profile['card_kills']}</b> раз",
+        "",
+        f"💰 Баланс: <b>{profile['total']}</b> очк.{bonus_text}",
+        f"🃏 Коллекция: {profile['unique_cards']}/{total_cards} карт "
+        f"(всего {profile['total_cards']}, стоимость {profile['card_points']})",
+        f"⚡ Улучшенных копий: <b>{profile.get('upgraded', 0)}</b>",
+        "",
+        _favorite_line(profile),
+        "",
+        "📊 <b>Чем занимался</b>",
+        f"🎴 Выпадений: <b>{profile.get('drops', 0)}</b> · "
+        f"🎲 ставок в казино: <b>{profile.get('casino_bets', 0)}</b>",
+        f"🛒 Покупок: <b>{profile.get('shop_buys', 0)}</b> · "
+        f"🏪 сделок на рынке: <b>{profile.get('market_deals', 0)}</b>",
+        f"🎁 Подарков: <b>{profile.get('gifts_sent', 0)}</b> · "
+        f"🔗 друзей приглашено: <b>{profile.get('invited', 0)}</b>",
+    ]
+    if nxt:
+        lines += ["", f"До титула выше: ещё {nxt - points} очк. вклада."]
+    else:
+        lines += ["", "Максимальный титул — выше некуда!"]
+    lines += ["", "«пвп» ответом на сообщение — вызвать на бой."]
+    return "\n".join(lines)
+
+
+def _plural(count: int, one: str, few: str, many: str) -> str:
+    number = abs(int(count)) % 100
+    if 11 <= number <= 14:
+        return many
+    number %= 10
+    if number == 1:
+        return one
+    if 2 <= number <= 4:
+        return few
+    return many
+
+
+def _favorite_line(profile: dict[str, Any]) -> str:
+    card_id = profile.get("favorite_card_id")
+    card = CARDS_BY_ID.get(card_id) if card_id else None
+    if card is None:
+        return "❤️ Любимая карта: пока нет — выбей первую «Северо-Юг»."
+    kills = int(profile.get("favorite_kills") or 0)
+    copies = int(profile.get("favorite_copies") or 0)
+    details = []
+    if kills:
+        details.append(f"{kills} {_plural(kills, 'убийство', 'убийства', 'убийств')}")
+    if copies > 1:
+        details.append(f"{copies} {_plural(copies, 'копия', 'копии', 'копий')}")
+    tail = " — " + ", ".join(details) if details else ""
+    return (
+        f"❤️ Любимая карта: {card.rarity_emoji} <b>{esc(card.display_name)}</b>"
+        f"{tail}"
     )
 
 

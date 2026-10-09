@@ -368,7 +368,9 @@ async def resolve_profile_target(
 
 @router.message(Command("profile", "me", "профиль"))
 @router.message(NormalizedText("профиль", "мой профиль"))
-async def cmd_profile(message: Message, db: Database, market: MarketRepo) -> None:
+async def cmd_profile(
+    message: Message, db: Database, market: MarketRepo, bot: Bot
+) -> None:
     user = message.from_user
     if user is None:
         return
@@ -383,15 +385,18 @@ async def cmd_profile(message: Message, db: Database, market: MarketRepo) -> Non
     if profile is None:
         await message.answer("Профиль пока пуст. Напиши «Северо-Юг».")
         return
-    await message.answer(
+    await _send_profile(
+        message,
+        bot,
+        target_id,
         render.render_profile(profile, len(CARDS)),
-        reply_markup=render.profile_keyboard(target_id, is_owner=target_id == user.id),
+        render.profile_keyboard(target_id, is_owner=target_id == user.id),
     )
 
 
 @router.callback_query(F.data.startswith("pf:"))
 async def cb_profile(
-    callback: CallbackQuery, db: Database, market: MarketRepo
+    callback: CallbackQuery, db: Database, market: MarketRepo, bot: Bot
 ) -> None:
     assert callback.data is not None
     parts = callback.data.split(":", 3)
@@ -405,8 +410,10 @@ async def cb_profile(
         if profile is None:
             await callback.answer("Профиль не найден", show_alert=True)
             return
-        await _safe_edit(
+        await _edit_profile(
             callback,
+            bot,
+            target_id,
             render.render_profile(profile, len(CARDS)),
             render.profile_keyboard(target_id, is_owner),
         )
@@ -1687,11 +1694,60 @@ async def _card_page(
             except Exception:  # noqa: BLE001
                 pass
             return
+async def _profile_photo(bot: Bot, user_id: int) -> str | None:
+    """Аватарка игрока, если Телеграм её отдаёт."""
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+    except Exception:  # noqa: BLE001
+        return None
+    if photos is None or not getattr(photos, "photos", None):
+        return None
+    return photos.photos[0][-1].file_id
+
+
+async def _send_profile(
+    message: Message, bot: Bot, user_id: int, text: str, keyboard
+) -> None:
+    """Профиль: с аватаркой, если она есть, иначе текстом."""
+    photo = await _profile_photo(bot, user_id) if len(text) <= 1000 else None
+    if photo:
+        try:
+            await message.answer_photo(photo, caption=text, reply_markup=keyboard)
+            return
+        except Exception:  # noqa: BLE001
+            log.warning("Аватарка профиля не отправилась")
+    await message.answer(text, reply_markup=keyboard)
+
+
+async def _edit_profile(
+    callback: CallbackQuery, bot: Bot, user_id: int, text: str, keyboard
+) -> None:
+    """Профиль по кнопке: фото шлём новым сообщением, старое убираем."""
+    photo = await _profile_photo(bot, user_id) if len(text) <= 1000 else None
+    if photo and callback.message is not None:
+        try:
+            await callback.bot.send_photo(
+                chat_id=callback.message.chat.id,
+                message_thread_id=getattr(callback.message, "message_thread_id", None),
+                photo=photo,
+                caption=text,
+                reply_markup=keyboard,
+            )
+        except Exception:  # noqa: BLE001
+            log.warning("Аватарка профиля не отправилась")
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:  # noqa: BLE001
+                pass
+            return
     await _safe_edit(callback, text, keyboard)
 
 
 @router.callback_query(F.data.startswith("my:"))
-async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> None:
+async def cb_my(
+    callback: CallbackQuery, db: Database, market: MarketRepo, bot: Bot
+) -> None:
     assert callback.data is not None
     user_id = callback.from_user.id
     parts = callback.data.split(":", 3)
@@ -1733,8 +1789,10 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
         await _safe_edit(callback, "\n".join(lines), keyboard)
     elif action == "p":
         profile = await db.player_profile(user_id)
-        await _safe_edit(
+        await _edit_profile(
             callback,
+            bot,
+            user_id,
             render.render_profile(profile, len(CARDS)),
             render.profile_keyboard(user_id, is_owner=True),
         )

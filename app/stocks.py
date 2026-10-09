@@ -33,6 +33,9 @@ ALERT_THRESHOLD = 0.10
 # Но не чаще, чем раз в 15 минут на монету — чтобы не спамить.
 ALERT_COOLDOWN_MINUTES = 15
 
+# Скачок курса за один шаг: с этого момента ставим отметку на графике.
+SPIKE_THRESHOLD = 0.05
+
 STOCKS: tuple[dict[str, object], ...] = (
     {"slug": "syug", "name": "SeveroCoin", "emoji": "🎴", "base": 1000, "vol": 0.030},
     {"slug": "uchitel", "name": "ДэнКоин", "emoji": "🪙", "base": 2500, "vol": 0.022},
@@ -112,6 +115,21 @@ def alert_due(
     ):
         return False
     return True
+
+
+def find_spikes(
+    history: list[int], threshold: float = SPIKE_THRESHOLD
+) -> list[dict[str, float]]:
+    """Шаги, где курс резко скакнул: индекс в истории и изменение в процентах."""
+    spikes: list[dict[str, float]] = []
+    for index in range(1, len(history)):
+        prev = history[index - 1]
+        if prev <= 0:
+            continue
+        change = (history[index] - prev) / prev
+        if abs(change) >= threshold:
+            spikes.append({"i": index, "change": round(change * 100, 1)})
+    return spikes
 
 
 def change_percent(history: list[int]) -> float:

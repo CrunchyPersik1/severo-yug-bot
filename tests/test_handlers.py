@@ -615,6 +615,43 @@ def test_mylots_handles_case_lots():
     asyncio.run(scenario())
 
 
+def test_profile_shows_title_favorite_and_activity():
+    from app.render import render_profile
+
+    profile = {
+        "user_id": 1,
+        "first_name": "Тест",
+        "username": None,
+        "wins": 3,
+        "losses": 1,
+        "draws": 0,
+        "kills": 5,
+        "bonus_points": 100,
+        "card_points": 500,
+        "unique_cards": 4,
+        "total_cards": 6,
+        "card_kills": 2,
+        "rank": 1,
+        "total": 100,
+        "upgraded": 1,
+        "drops": 7,
+        "casino_bets": 3,
+        "shop_buys": 1,
+        "market_deals": 2,
+        "gifts_sent": 1,
+        "invited": 1,
+        "promos": 1,
+        "favorite_card_id": "oleg",
+        "favorite_kills": 2,
+        "favorite_copies": 3,
+    }
+    text = render_profile(profile, 50)
+    assert "Титул" in text
+    assert "Любимая карта" in text and "Олег" in text
+    assert "Чем занимался" in text
+    assert "казино" in text
+
+
 def test_faq_drops_lists_every_rarity():
     from app.render import faq_drops
 

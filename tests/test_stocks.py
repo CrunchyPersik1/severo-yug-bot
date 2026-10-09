@@ -44,6 +44,13 @@ def test_next_price_moves_to_target_smoothly():
     assert stocks.next_price(1000, 1000, 0.0) == 1000
 
 
+def test_find_spikes():
+    spikes = stocks.find_spikes([100, 100, 110, 110, 90, 91])
+    assert [s["i"] for s in spikes] == [2, 4]
+    assert spikes[0]["change"] == 10.0
+    assert spikes[1]["change"] == -18.2
+
+
 def test_alert_due_threshold():
     # рост меньше 10% — молчим
     assert not stocks.alert_due(1099, 1000, None)

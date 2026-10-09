@@ -477,7 +477,7 @@ class Database:
         return {"alive": int(row["alive"]), "total": int(row["total"])}
 
     async def player_profile(self, user_id: int) -> dict[str, Any] | None:
-        """Полный профиль игрока + место в PvP-рейтинге."""
+        """Полный профиль: статистика, активность и любимая карта."""
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
@@ -489,7 +489,24 @@ class Database:
                        coalesce(sum(col.kills), 0) as card_kills,
                        coalesce((select sum(c2.points) from inventory i
                                   join cards c2 on c2.card_id = i.card_id
-                                 where i.user_id = p.user_id), 0) as inv_points
+                                 where i.user_id = p.user_id), 0) as inv_points,
+                       (select count(*) from inventory i2
+                         where i2.user_id = p.user_id) as upgraded,
+                       (select count(*) from drops d
+                         where d.user_id = p.user_id) as drops,
+                       (select count(*) from casino_log cl
+                         where cl.user_id = p.user_id) as casino_bets,
+                       (select count(*) from shop_log sl
+                         where sl.user_id = p.user_id) as shop_buys,
+                       (select count(*) from history h
+                         where h.buyer_id = p.user_id or h.seller_id = p.user_id)
+                         as market_deals,
+                       (select count(*) from gifts g
+                         where g.sender_id = p.user_id) as gifts_sent,
+                       (select count(*) from referrals r
+                         where r.referrer_id = p.user_id) as invited,
+                       (select count(*) from promo_uses pu
+                         where pu.user_id = p.user_id) as promos
                   from players p
                   left join collection col on col.user_id = p.user_id
                   left join cards c on c.card_id = col.card_id
@@ -503,10 +520,40 @@ class Database:
             rank = await con.fetchval(
                 "select count(*) + 1 from players where wins > $1", int(row["wins"])
             )
+            favorite = await con.fetchrow(
+                """
+                select card_id, sum(kills) as kills, sum(copies) as copies
+                  from (
+                        select card_id, kills, collection.count::int as copies
+                          from collection where user_id = $1
+                        union all
+                        select card_id, 0 as kills, 1 as copies
+                          from inventory where user_id = $1
+                       ) t
+                 group by card_id
+                 order by kills desc, copies desc, card_id
+                 limit 1
+                """,
+                user_id,
+            )
         profile = dict(row)
         profile["card_points"] = int(profile["card_points"]) + int(profile["inv_points"])
         profile["rank"] = int(rank or 1)
         profile["total"] = max(0, int(profile["bonus_points"]))
+        profile["upgraded"] = int(profile["upgraded"] or 0)
+        for key in (
+            "drops",
+            "casino_bets",
+            "shop_buys",
+            "market_deals",
+            "gifts_sent",
+            "invited",
+            "promos",
+        ):
+            profile[key] = int(profile.get(key) or 0)
+        profile["favorite_card_id"] = favorite["card_id"] if favorite else None
+        profile["favorite_kills"] = int(favorite["kills"] or 0) if favorite else 0
+        profile["favorite_copies"] = int(favorite["copies"] or 0) if favorite else 0
         return profile
 
     async def rating(self, limit: int = 10) -> list[dict[str, Any]]:
