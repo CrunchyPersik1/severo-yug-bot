@@ -18,7 +18,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import TelegramMethod
-from aiogram.types import Chat, Message, Update, User
+from aiogram.types import Chat, Dice, Message, Update, User
 
 from app.cards import get_card
 from app.handlers import router
@@ -49,6 +49,13 @@ class FakeSession(BaseSession):
                 message_id=999,
                 date=datetime.now(timezone.utc),
                 chat=Chat(id=getattr(method, "chat_id", 1), type="private"),
+            )
+        if type(method).__name__ == "SendDice":
+            return Message(
+                message_id=1000,
+                date=datetime.now(timezone.utc),
+                chat=Chat(id=getattr(method, "chat_id", 1), type="private"),
+                dice=Dice(emoji=getattr(method, "emoji", None) or "🎲", value=5),
             )
         if type(method).__name__ == "GetMe":
             return User(id=555, is_bot=True, first_name="bot", username="severo_yug_bot")
@@ -87,6 +94,9 @@ class FakeDB:
             return None
         self.claimed[user_id] = True
         return 0
+
+    async def claim_casino(self, user_id: int, day: Any, limit: int = 25) -> int | None:
+        return int(limit) - 1
 
     async def get_collection(self, user_id: int) -> dict[str, int]:
         return dict(self.collection.get(user_id, {}))
@@ -586,6 +596,50 @@ def test_casino_dice_shows_choices():
         markup = str(payload.get("reply_markup"))
         assert "cg:dice:p:10000:even" in markup
         assert "cg:dice:p:10000:d6" in markup
+
+    asyncio.run(scenario())
+
+
+def test_dice_callback_sends_the_real_emoji(monkeypatch):
+    """Колбэк костей обязан отправить анимированный 🎲 и считать по нему."""
+    async def scenario():
+        import app.handlers as handlers
+
+        played: dict[str, Any] = {}
+
+        class FakeCasinoRepo:
+            def __init__(self, db: Any, market: Any) -> None:
+                pass
+
+            async def play_points(self, user_id, bet, won, multiplier, game, choice, rolled_value):
+                played.update(
+                    bet=bet, won=won, multiplier=multiplier, value=int(rolled_value)
+                )
+                return {
+                    "kind": "points",
+                    "bet": bet,
+                    "won": won,
+                    "multiplier": multiplier,
+                    "payout": bet * multiplier,
+                    "delta": bet * (multiplier - 1),
+                    "balance": 1_000_000,
+                    "game": game,
+                    "choice": choice,
+                    "rolled": int(rolled_value),
+                }
+
+            async def play_card(self, *args: Any, **kwargs: Any):
+                raise AssertionError("карта тут не ставится")
+
+        monkeypatch.setattr(handlers, "CasinoRepo", FakeCasinoRepo)
+        # в тесте не ждём анимацию кубика
+        monkeypatch.setattr(handlers.dice_casino, "DICE_PAUSE_SECONDS", 0)
+        session = await feed_callback("cg:dice:p:10000:d5", FakeDB(), FakeMarket())
+        names = [name for name, _ in session.calls]
+        assert "SendDice" in names, names
+        assert played["value"] == 5, "результат берём из кубика"
+        assert played["won"] is True and played["multiplier"] == 3
+        assert any(name == "EditMessageText" for name in names)
 
     asyncio.run(scenario())
 

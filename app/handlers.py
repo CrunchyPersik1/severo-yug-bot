@@ -1135,6 +1135,11 @@ async def cb_dice(
         await callback.answer("Кубик не долетел, попробуй ещё", show_alert=True)
         return
 
+    # Даём анимации Телеграма проиграться: число уже есть, но игрок должен
+    # увидеть, как падает кубик, а не мгновенный текст.
+    if dice_casino.DICE_PAUSE_SECONDS:
+        await asyncio.sleep(dice_casino.DICE_PAUSE_SECONDS)
+
     won = dice_casino.is_win(game, choice, value)
     mult = dice_casino.multiplier(game, choice)
     repo = CasinoRepo(db, market)
