@@ -24,12 +24,11 @@ CEIL_MULT = 6.0
 MAX_SHARES = 100_000
 
 STOCKS: tuple[dict[str, object], ...] = (
-    {"slug": "syug", "name": "Северо-Юг", "emoji": "🎴", "base": 1000, "vol": 0.030},
-    {"slug": "uchitel", "name": "Учителя Inc.", "emoji": "🟤", "base": 2500, "vol": 0.022},
-    {"slug": "misha", "name": "Миша Corp", "emoji": "🥔", "base": 1500, "vol": 0.040},
-    {"slug": "ludoman", "name": "Лудоман Казино", "emoji": "🎰", "base": 800, "vol": 0.050},
-    {"slug": "kartofan", "name": "Картофан и Ко", "emoji": "🍟", "base": 600, "vol": 0.035},
-    {"slug": "zavuch", "name": "Завуч Групп", "emoji": "📋", "base": 3000, "vol": 0.020},
+    {"slug": "syug", "name": "SeveroCoin", "emoji": "🎴", "base": 1000, "vol": 0.030},
+    {"slug": "uchitel", "name": "ДэнКоин", "emoji": "🪙", "base": 2500, "vol": 0.022},
+    {"slug": "misha", "name": "Миша Inc.", "emoji": "🥔", "base": 1500, "vol": 0.040},
+    {"slug": "ludoman", "name": "MusorDelta_Coin", "emoji": "🗑️", "base": 800, "vol": 0.050},
+    {"slug": "kartofan", "name": "Карточный_Coin", "emoji": "🃏", "base": 600, "vol": 0.035},
 )
 
 

@@ -27,6 +27,16 @@ def test_change_percent():
     assert stocks.change_percent([]) == 0.0
 
 
+def test_new_coin_names():
+    names = {str(stock["slug"]): str(stock["name"]) for stock in stocks.STOCKS}
+    assert names["syug"] == "SeveroCoin"
+    assert names["uchitel"] == "ДэнКоин"
+    assert names["misha"] == "Миша Inc."
+    assert names["ludoman"] == "MusorDelta_Coin"
+    assert names["kartofan"] == "Карточный_Coin"
+    assert "zavuch" not in names, "Завуч Групп больше не торгуется"
+
+
 def test_by_slug():
     assert stocks.by_slug("syug") is not None
     assert stocks.by_slug("SYUG") is not None

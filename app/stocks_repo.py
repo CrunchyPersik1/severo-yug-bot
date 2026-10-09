@@ -34,25 +34,45 @@ class StocksRepo:
     # ------------------------------------------------------------------ #
 
     async def seed(self) -> None:
+        known = [str(stock["slug"]) for stock in stocks.STOCKS]
         async with self.pool.acquire() as con:
-            for stock in stocks.STOCKS:
-                await con.execute(
-                    """
-                    insert into stocks
-                        (slug, name, emoji, base_price, price, prev_price, volatility)
-                    values ($1, $2, $3, $4, $4, $4, $5)
-                    on conflict (slug) do update set
-                        name = excluded.name,
-                        emoji = excluded.emoji,
-                        base_price = excluded.base_price,
-                        volatility = excluded.volatility
-                    """,
-                    stock["slug"],
-                    stock["name"],
-                    stock["emoji"],
-                    int(stock["base"]),
-                    float(stock["vol"]),
+            async with con.transaction():
+                for stock in stocks.STOCKS:
+                    await con.execute(
+                        """
+                        insert into stocks
+                            (slug, name, emoji, base_price, price, prev_price, volatility)
+                        values ($1, $2, $3, $4, $4, $4, $5)
+                        on conflict (slug) do update set
+                            name = excluded.name,
+                            emoji = excluded.emoji,
+                            base_price = excluded.base_price,
+                            volatility = excluded.volatility
+                        """,
+                        stock["slug"],
+                        stock["name"],
+                        stock["emoji"],
+                        int(stock["base"]),
+                        float(stock["vol"]),
+                    )
+                # Компании, которых больше нет в каталоге: закрываем и
+                # возвращаем держателям очки по текущему курсу.
+                retired = await con.fetch(
+                    "select id, price from stocks where not (slug = any($1::text[]))",
+                    known,
                 )
+                for row in retired:
+                    await con.execute(
+                        """
+                        update players p
+                           set bonus_points = bonus_points + h.shares * $2
+                          from stock_holdings h
+                         where h.stock_id = $1 and h.user_id = p.user_id
+                        """,
+                        int(row["id"]),
+                        int(row["price"]),
+                    )
+                    await con.execute("delete from stocks where id = $1", int(row["id"]))
 
     async def tick(self) -> None:
         """Двигает курсы на прошедшие шаги (один шаг за TICK_SECONDS)."""
