@@ -33,16 +33,14 @@ class Rarity:
 
 
 RARITIES: dict[str, Rarity] = {
-    "rare": Rarity("rare", "Редкий", 0.400, "⚪"),
-    "superrare": Rarity("superrare", "Сверхредкий", 0.290, "🔵"),
-    "epic": Rarity("epic", "Эпический", 0.197, "🟣"),
-    "mythic": Rarity("mythic", "Мифический", 0.080, "🔴"),
-    "legendary": Rarity("legendary", "Легендарный", 0.020, "🟡"),
-    "secret": Rarity("secret", "Секретный", 0.007, "⚫"),
-    "ultra": Rarity("ultra", "Ультралегендарный", 0.003, "🌈"),
-    # Сезонное событие: падают так же редко, как ульта, но продаются
-    # в магазине за очень большие деньги.
-    "teacher": Rarity("teacher", "Учителя", 0.003, "🟤"),
+    "rare": Rarity("rare", "Редкий", 0.4200, "⚪"),
+    "superrare": Rarity("superrare", "Сверхредкий", 0.3025, "🔵"),
+    "epic": Rarity("epic", "Эпический", 0.1800, "🟣"),
+    "mythic": Rarity("mythic", "Мифический", 0.0700, "🔴"),
+    "legendary": Rarity("legendary", "Легендарный", 0.0150, "🟡"),
+    "secret": Rarity("secret", "Секретный", 0.0100, "⚫"),
+    "ultra": Rarity("ultra", "Ультралегендарный", 0.0005, "🌈"),
+    "teacher": Rarity("teacher", "Учителя", 0.0020, "🟤"),
 }
 
 RARITY_ORDER: tuple[str, ...] = (

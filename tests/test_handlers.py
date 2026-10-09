@@ -631,7 +631,7 @@ def test_faq_drops_lists_every_rarity():
         "Учителя",
     ):
         assert name in text, name
-    assert "40.00%" in text
+    assert "42.00%" in text
     assert "Кейс" in text
     callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
     assert "fq:menu" in callbacks
