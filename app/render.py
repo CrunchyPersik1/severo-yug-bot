@@ -10,7 +10,15 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
 from . import casino, dice_casino, team_battle
 from .battle import ability_targets, can_use_ability
-from .cards import CARDS, Card, cards_sorted_for_user, get_card
+from .cards import (
+    CARDS,
+    RARITIES,
+    RARITY_ORDER,
+    Card,
+    cards_sorted_for_user,
+    get_card,
+)
+from .cases import CASE_RARITY_ORDER, CASE_RARITY_WEIGHTS
 from .team_battle import TEAM_BLUE, TEAM_RED
 from .items import (
     AURAS,
@@ -1228,12 +1236,45 @@ def faq_menu() -> tuple[str, InlineKeyboardMarkup]:
     lines = [
         "📖 <b>FAQ</b>",
         "",
-        "Самое частое: цены, статы, способности и множители улучшений.",
+        "Самое частое: цены, статы, способности, шансы выпадения и множители.",
     ]
     rows = [
         [InlineKeyboardButton(text="🃏 Персонажи и цены", callback_data="fq:cards:0")],
+        [InlineKeyboardButton(text="🎲 Шансы выпадения", callback_data="fq:drop")],
         [InlineKeyboardButton(text="🎨 Ауры, фоны, эффекты", callback_data="fq:items:aura")],
         [InlineKeyboardButton(text="🧮 Как считается цена", callback_data="fq:price")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def faq_drops() -> tuple[str, InlineKeyboardMarkup]:
+    """Проценты выпадения по редкостям: и «Северо-Юг», и кейс."""
+    lines = [
+        "🎲 <b>Шансы выпадения</b>",
+        "",
+        "🎴 <b>Крутка «Северо-Юг»</b> (и рулетка-карта):",
+    ]
+    for key in RARITY_ORDER:
+        rarity = RARITIES[key]
+        chance = rarity.weight * 100
+        tail = f" · ≈1 из {round(100 / chance)}" if chance < 10 else ""
+        lines.append(f"   {rarity.emoji} {rarity.name} — <b>{chance:.2f}%</b>{tail}")
+
+    lines += ["", "📦 <b>Кейс</b> (ниже эпической не выпадает):"]
+    for key in CASE_RARITY_ORDER:
+        rarity = RARITIES[key]
+        chance = CASE_RARITY_WEIGHTS[key] * 100
+        tail = f" · ≈1 из {round(100 / chance)}" if chance < 10 else ""
+        lines.append(f"   {rarity.emoji} {rarity.name} — <b>{chance:.0f}%</b>{tail}")
+
+    lines += [
+        "",
+        "Внутри редкости все карты равновероятны.",
+        "«Эльмира Ракидовна» выпадает только за промокод, в этих шансах её нет.",
+    ]
+    rows = [
+        [InlineKeyboardButton(text="🃏 Персонажи и цены", callback_data="fq:cards:0")],
+        [InlineKeyboardButton(text="◀️ В меню", callback_data="fq:menu")],
     ]
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
 

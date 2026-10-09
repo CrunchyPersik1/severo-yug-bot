@@ -1509,6 +1509,8 @@ async def cb_faq(callback: CallbackQuery) -> None:
         await _card_page(callback, card, text, keyboard)
         await callback.answer()
         return
+    elif kind == "drop":
+        text, keyboard = render.faq_drops()
     elif kind == "items":
         text, keyboard = render.faq_items(parts[2] if len(parts) > 2 else "aura")
     elif kind == "price":

@@ -615,6 +615,28 @@ def test_mylots_handles_case_lots():
     asyncio.run(scenario())
 
 
+def test_faq_drops_lists_every_rarity():
+    from app.render import faq_drops
+
+    text, keyboard = faq_drops()
+    assert "Шансы выпадения" in text
+    for name in (
+        "Редкий",
+        "Сверхредкий",
+        "Эпический",
+        "Мифический",
+        "Легендарный",
+        "Секретный",
+        "Ультралегендарный",
+        "Учителя",
+    ):
+        assert name in text, name
+    assert "40.00%" in text
+    assert "Кейс" in text
+    callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+    assert "fq:menu" in callbacks
+
+
 def test_casino_stats_command():
     async def scenario():
         session = await feed(
