@@ -23,6 +23,11 @@ CEIL_MULT = 6.0
 
 MAX_SHARES = 100_000
 
+# Плавный подход к цели, которую задаёт админ: за шаг проходим долю разрыва,
+# но не больше TARGET_MAX_STEP от текущей цены (без телепорта).
+TARGET_PULL = 0.6
+TARGET_MAX_STEP = 0.25
+
 # Оповещение о росте: срабатывает, когда курс поднялся на 10% от прошлой отметки.
 ALERT_THRESHOLD = 0.10
 # Но не чаще, чем раз в 15 минут на монету — чтобы не спамить.
@@ -56,12 +61,36 @@ def sell_price(price: int) -> int:
 
 
 def next_price(
-    price: int, base: int, volatility: float, rng: random.Random | None = None
+    price: int,
+    base: int,
+    volatility: float,
+    rng: random.Random | None = None,
+    target: int | None = None,
 ) -> int:
-    """Один шаг курса: симметричный случайный, в пределах коридора."""
+    """Один шаг курса.
+
+    Если задана цель (её ставит админ), плавно идём к ней: за шаг проходим
+    долю разрыва, но не больше TARGET_MAX_STEP — быстро, но без прыжка.
+    Иначе — обычный симметричный случайный шаг в коридоре.
+    """
+    price = int(price)
+    if target is not None and int(target) > 0:
+        target = int(target)
+        if price == target:
+            return target
+        step = round((target - price) * TARGET_PULL)
+        limit = max(1, round(price * TARGET_MAX_STEP))
+        step = max(-limit, min(limit, step))
+        if step == 0:
+            step = 1 if target > price else -1
+        new = price + step
+        if (target - price) * (target - new) <= 0:
+            return target
+        return new
+
     rng = rng or random
     change = rng.uniform(-float(volatility), float(volatility))
-    value = int(price) * (1.0 + change)
+    value = price * (1.0 + change)
     low = int(base) * FLOOR_MULT
     high = int(base) * CEIL_MULT
     return int(max(low, min(high, round(value))))

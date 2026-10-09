@@ -33,9 +33,13 @@ case @ник 5                выдать ОДНОМУ игроку 5 кейс�
 card daniel 1              выдать ВСЕМ по карте
 give @ник daniel 3         выдать ОДНОМУ игроку 3 карты
 take @ник daniel 1         забрать у ОДНОГО игрока карту
+stock                      показать курсы биржи
+stock syug 1500            задать курс монеты (плавно доедет за пару шагов)
+stock syug +10%            поднять (или -10% опустить) курс на процент
 
 Игрока можно указывать как @username, так и числовым id.
-give начисляет очки за карту, take списывает их же."""
+give начисляет очки за карту, take списывает их же.
+Биржа: монеты — syug, uchitel, misha, ludoman, kartofan."""
 
 
 async def _resolve_player(con: asyncpg.Connection, target: str) -> dict[str, Any]:
@@ -440,6 +444,80 @@ async def act_take(con: asyncpg.Connection, args: list[str]) -> str:
     )
 
 
+async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
+    """Курс биржи: показать или задать цель, к которой цена плавно доедет.
+
+    stock                 — все монеты
+    stock syug            — одна монета
+    stock syug 1500       — цель 1500
+    stock syug +10%       — цель = текущая × 1.1 (можно -10%)
+    """
+    if not args:
+        rows = await con.fetch(
+            "select slug, name, price, target_price from stocks order by id"
+        )
+        if not rows:
+            raise ValueError("Биржа ещё не создана — таблица stocks пуста.")
+        lines = ["Курсы биржи:"]
+        for row in rows:
+            target = (
+                f"  → цель {int(row['target_price'])}" if row["target_price"] else ""
+            )
+            lines.append(
+                f"  {row['slug']:<9} {row['name']}: {int(row['price'])}{target}"
+            )
+        lines += ["", "Задать: stock <монета> <цена>  (или +10% / -10%)"]
+        return "\n".join(lines)
+
+    query = (args[0] or "").lstrip("#").strip().lower()
+    row = await con.fetchrow("select * from stocks where slug = $1", query)
+    if row is None:
+        rows = await con.fetch(
+            "select * from stocks where lower(name) = lower($1)", args[0].strip()
+        )
+        if len(rows) == 1:
+            row = rows[0]
+    if row is None:
+        known = await con.fetch("select slug from stocks order by id")
+        raise ValueError(
+            "Нет такой монеты. Есть: " + ", ".join(str(r["slug"]) for r in known)
+        )
+
+    if len(args) < 2:
+        target = (
+            f", цель {int(row['target_price'])}" if row["target_price"] else ""
+        )
+        return (
+            f"{row['name']} ({row['slug']}): сейчас {int(row['price'])}{target}. "
+            f"Задать: stock {row['slug']} 1500"
+        )
+
+    raw = (args[1] or "").strip().replace(" ", "")
+    if raw.endswith("%"):
+        try:
+            percent = float(raw[:-1]) / 100.0
+        except ValueError as error:
+            raise ValueError("Процент должен быть числом: +10% или -5%") from error
+        target = max(1, round(int(row["price"]) * (1 + percent)))
+    else:
+        try:
+            target = int(raw)
+        except ValueError as error:
+            raise ValueError("Цена должна быть числом, например: stock syug 1500") from error
+        if target < 1:
+            raise ValueError("Цена должна быть больше нуля")
+
+    await con.execute(
+        "update stocks set target_price = $2 where id = $1",
+        int(row["id"]),
+        int(target),
+    )
+    return (
+        f"[ok] {row['name']}: {int(row['price'])} → {target}. "
+        "Курс поедет к цели за пару шагов по 15 секунд."
+    )
+
+
 COMMANDS = {
     "limits": act_limits,
     "points": act_points,
@@ -449,6 +527,8 @@ COMMANDS = {
     "player": act_player,
     "give": act_give,
     "take": act_take,
+    "stock": act_stock,
+    "курс": act_stock,
 }
 
 

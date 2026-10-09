@@ -1,6 +1,8 @@
-"""Админ-выдача кейсов: всем и лично игроку."""
+"""Админ-команды: кейсы и курс биржи."""
 
 import asyncio
+
+import pytest
 
 from app import admin_actions
 
@@ -29,6 +31,49 @@ class FakeCon:
 
 def run(coro):
     return asyncio.run(coro)
+
+
+class StockCon:
+    def __init__(self, price: int = 1000) -> None:
+        self.row = {
+            "id": 1,
+            "slug": "syug",
+            "name": "SeveroCoin",
+            "price": price,
+            "target_price": None,
+        }
+        self.executed: list[tuple] = []
+
+    async def fetchrow(self, query: str, *args):
+        return self.row
+
+    async def fetch(self, query: str, *args):
+        return []
+
+    async def execute(self, query: str, *args):
+        self.executed.append((query, args))
+
+
+def test_admin_sets_stock_target_price():
+    con = StockCon(price=1000)
+    text = run(admin_actions.act_stock(con, ["syug", "1500"]))
+    assert "1500" in text
+    assert con.executed[0][1] == (1, 1500)
+
+
+def test_admin_sets_stock_target_by_percent():
+    up = StockCon(price=1000)
+    run(admin_actions.act_stock(up, ["syug", "+10%"]))
+    assert up.executed[0][1] == (1, 1100)
+
+    down = StockCon(price=1000)
+    run(admin_actions.act_stock(down, ["syug", "-25%"]))
+    assert down.executed[0][1] == (1, 750)
+
+
+def test_admin_stock_empty_and_unknown():
+    with pytest.raises(ValueError):
+        run(admin_actions.act_stock(StockCon(), []))
 
 
 def test_case_for_everyone():

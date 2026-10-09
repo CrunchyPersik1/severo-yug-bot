@@ -101,18 +101,23 @@ class StocksRepo:
             return
         steps = min(steps, stocks.MAX_CATCHUP_TICKS)
         price = int(row["price"])
+        target = row["target_price"]
+        target = int(target) if target is not None else None
         for _ in range(steps):
-            price = stocks.next_price(price, base, volatility)
+            price = stocks.next_price(price, base, volatility, target=target)
             await con.execute(
                 "insert into stock_history (stock_id, price) values ($1, $2)",
                 int(row["id"]),
                 price,
             )
+        reached = target is not None and price == target
         await con.execute(
-            "update stocks set prev_price = price, price = $2, updated_at = now() "
+            "update stocks set prev_price = price, price = $2, updated_at = now(), "
+            "target_price = case when $3 then null else target_price end "
             "where id = $1",
             int(row["id"]),
             price,
+            reached,
         )
         await con.execute(
             """

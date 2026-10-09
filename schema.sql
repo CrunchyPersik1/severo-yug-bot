@@ -347,12 +347,15 @@ create table if not exists stocks (
     updated_at timestamptz not null default now(),
     -- Последняя отметка, от которой считаем рост для оповещения (+10%).
     alert_price integer not null default 0,
-    alerted_at  timestamptz
+    alerted_at  timestamptz,
+    -- Цель админа: курс плавно едет к ней, потом цель сбрасывается.
+    target_price integer
 );
 
--- Миграции для баз, где stocks уже была создана без оповещений.
+-- Миграции для баз, где stocks уже была создана без этих колонок.
 alter table stocks add column if not exists alert_price integer not null default 0;
 alter table stocks add column if not exists alerted_at  timestamptz;
+alter table stocks add column if not exists target_price integer;
 
 -- История курса для графика (свечки-квадратики).
 create table if not exists stock_history (

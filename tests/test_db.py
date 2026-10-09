@@ -302,6 +302,56 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_stocks_target_moves_smoothly_and_clears():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app.stocks_repo import StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    """
+                    update stocks
+                       set volatility = 0, price = 1000, alert_price = 1000,
+                           target_price = 2000,
+                           updated_at = now() - interval '20 seconds'
+                     where slug = 'syug'
+                    """
+                )
+            await repo.tick()
+            async with db.pool.acquire() as con:
+                row = await con.fetchrow(
+                    "select price, target_price from stocks where slug = 'syug'"
+                )
+            assert 1000 < int(row["price"]) <= 1250, "один шаг — без телепорта"
+            assert row["target_price"] == 2000, "цель ещё не достигнута"
+
+            for _ in range(30):
+                async with db.pool.acquire() as con:
+                    await con.execute(
+                        "update stocks set updated_at = now() - interval '20 seconds' "
+                        "where slug = 'syug'"
+                    )
+                await repo.tick()
+            async with db.pool.acquire() as con:
+                row = await con.fetchrow(
+                    "select price, target_price from stocks where slug = 'syug'"
+                )
+            assert int(row["price"]) == 2000, "курс доехал до цели"
+            assert row["target_price"] is None, "цель сброшена"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "update stocks set volatility = 0.03, target_price = null "
+                    "where slug = 'syug'"
+                )
+            await db.close()
+
+    run(scenario())
+
+
 def test_stocks_tick_reports_growth():
     async def scenario():
         db = await fresh_db()

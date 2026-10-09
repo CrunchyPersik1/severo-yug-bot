@@ -27,6 +27,23 @@ def test_change_percent():
     assert stocks.change_percent([]) == 0.0
 
 
+def test_next_price_moves_to_target_smoothly():
+    # первый шаг вверх — не больше 25% (без телепорта)
+    price = stocks.next_price(1000, 1000, 0.0, target=1500)
+    assert 1000 < price <= 1250
+    # доезжает до цели
+    for _ in range(60):
+        price = stocks.next_price(price, 1000, 0.0, target=1500)
+    assert price == 1500
+    # и вниз тоже
+    price = 1500
+    for _ in range(60):
+        price = stocks.next_price(price, 1500, 0.0, target=900)
+    assert price == 900
+    # без цели — обычный шаг (волатильность 0 = стоит)
+    assert stocks.next_price(1000, 1000, 0.0) == 1000
+
+
 def test_alert_due_threshold():
     # рост меньше 10% — молчим
     assert not stocks.alert_due(1099, 1000, None)
