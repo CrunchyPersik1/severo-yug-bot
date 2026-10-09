@@ -459,6 +459,12 @@ class Database:
             )
         return [int(row["chat_id"]) for row in rows]
 
+    async def all_player_ids(self) -> list[int]:
+        """Все игроки — для личных оповещений (биржа и т.п.)."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch("select user_id from players")
+        return [int(row["user_id"]) for row in rows]
+
     async def chat_count(self) -> dict[str, int]:
         async with self._p().acquire() as con:
             row = await con.fetchrow(

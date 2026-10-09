@@ -302,6 +302,57 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_stocks_tick_reports_growth():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app.stocks_repo import StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            # Готовим рост: отметка = старый курс, новый курс на 20% выше,
+            # волатильность 0 (шаг не меняет цену), тик «просрочен».
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    """
+                    update stocks
+                       set volatility = 0,
+                           alert_price = price,
+                           alerted_at = null,
+                           updated_at = now() - interval '1 minute'
+                     where slug = 'syug'
+                    """
+                )
+                await con.execute(
+                    """
+                    update stocks
+                       set price = alert_price * 1.2,
+                           updated_at = now() - interval '1 minute'
+                     where slug = 'syug'
+                    """
+                )
+            alerts = await repo.tick()
+            slugs = {a["slug"] for a in alerts}
+            assert "syug" in slugs, alerts
+            alert = next(a for a in alerts if a["slug"] == "syug")
+            assert alert["change"] >= 10
+            # повторный тик сразу после оповещения молчит (кулдаун)
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "update stocks set updated_at = now() - interval '1 minute' "
+                    "where slug = 'syug'"
+                )
+            assert all(a["slug"] != "syug" for a in await repo.tick())
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "update stocks set volatility = 0.03 where slug = 'syug'"
+                )
+            await db.close()
+
+    run(scenario())
+
+
 def test_casino_stats_counts_wins_and_losses():
     async def scenario():
         db = await fresh_db()

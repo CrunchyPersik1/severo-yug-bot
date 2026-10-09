@@ -344,8 +344,15 @@ create table if not exists stocks (
     price      integer not null,
     prev_price integer not null default 0,
     volatility numeric(6,4) not null default 0.03,
-    updated_at timestamptz not null default now()
+    updated_at timestamptz not null default now(),
+    -- Последняя отметка, от которой считаем рост для оповещения (+10%).
+    alert_price integer not null default 0,
+    alerted_at  timestamptz
 );
+
+-- Миграции для баз, где stocks уже была создана без оповещений.
+alter table stocks add column if not exists alert_price integer not null default 0;
+alter table stocks add column if not exists alerted_at  timestamptz;
 
 -- История курса для графика (свечки-квадратики).
 create table if not exists stock_history (

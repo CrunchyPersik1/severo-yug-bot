@@ -23,6 +23,7 @@ from app.db import Database
 from app.handlers import router
 from app.market_repo import MarketRepo
 from app.shop import ShopRepo
+from app import stocks_alerts
 from app.stocks_repo import StocksRepo
 from app.team_service import TeamBattleService
 from app.webapp import router as webapp_router
@@ -64,7 +65,11 @@ async def setup_commands(bot: Bot) -> None:
 
 
 async def _ticker(
-    service: BattleService, team: TeamBattleService, stocks: StocksRepo
+    bot: Bot,
+    db: Database,
+    service: BattleService,
+    team: TeamBattleService,
+    stocks: StocksRepo,
 ) -> None:
     while True:
         await asyncio.sleep(15)
@@ -72,9 +77,13 @@ async def _ticker(
             await service.tick()
         with contextlib.suppress(Exception):
             await team.tick()
-        # Живой курс биржи: один шаг каждые 15 секунд.
+        # Живой курс биржи: один шаг каждые 15 секунд + оповещения о росте.
+        alerts: list[dict] = []
         with contextlib.suppress(Exception):
-            await stocks.tick()
+            alerts = await stocks.tick()
+        if alerts:
+            with contextlib.suppress(Exception):
+                await stocks_alerts.broadcast(bot, db, alerts)
 
 
 @asynccontextmanager
@@ -155,7 +164,7 @@ async def lifespan(app: FastAPI):
             )
             log.info("Кнопка мини-аппки: %s/app", base)
 
-    task = asyncio.create_task(_ticker(service, team, stocks))
+    task = asyncio.create_task(_ticker(bot, db, service, team, stocks))
     log.info("Бот запущен: %d карт", len(CARDS))
     try:
         yield

@@ -13,8 +13,8 @@ from .db import Database
 
 log = logging.getLogger(__name__)
 
-HISTORY_POINTS = 24   # сколько свечей показываем на графике
-HISTORY_KEEP = 240    # сколько храним в базе
+HISTORY_POINTS = 60   # сколько точек курса показываем на графике
+HISTORY_KEEP = 400    # сколько храним в базе
 
 
 class StocksError(Exception):
@@ -41,8 +41,9 @@ class StocksRepo:
                     await con.execute(
                         """
                         insert into stocks
-                            (slug, name, emoji, base_price, price, prev_price, volatility)
-                        values ($1, $2, $3, $4, $4, $4, $5)
+                            (slug, name, emoji, base_price, price, prev_price,
+                             volatility, alert_price)
+                        values ($1, $2, $3, $4, $4, $4, $5, $4)
                         on conflict (slug) do update set
                             name = excluded.name,
                             emoji = excluded.emoji,
@@ -55,6 +56,10 @@ class StocksRepo:
                         int(stock["base"]),
                         float(stock["vol"]),
                     )
+                # У старых записей отметки оповещения не было — ставим по базе.
+                await con.execute(
+                    "update stocks set alert_price = base_price where alert_price <= 0"
+                )
                 # Компании, которых больше нет в каталоге: закрываем и
                 # возвращаем держателям очки по текущему курсу.
                 retired = await con.fetch(
@@ -74,16 +79,20 @@ class StocksRepo:
                     )
                     await con.execute("delete from stocks where id = $1", int(row["id"]))
 
-    async def tick(self) -> None:
-        """Двигает курсы на прошедшие шаги (один шаг за TICK_SECONDS)."""
+    async def tick(self) -> list[dict[str, Any]]:
+        """Двигает курсы и возвращает монеты, о росте которых стоит сообщить."""
         now = datetime.now(timezone.utc)
+        alerts: list[dict[str, Any]] = []
         async with self.pool.acquire() as con:
             async with con.transaction():
                 rows = await con.fetch("select * from stocks for update")
                 for row in rows:
-                    await self._advance(con, row, now)
+                    await self._advance(con, row, now, alerts)
+        return alerts
 
-    async def _advance(self, con: asyncpg.Connection, row, now: datetime) -> None:
+    async def _advance(
+        self, con: asyncpg.Connection, row, now: datetime, alerts: list[dict[str, Any]]
+    ) -> None:
         volatility = float(row["volatility"])
         base = int(row["base_price"])
         elapsed = (now - row["updated_at"]).total_seconds()
@@ -119,6 +128,33 @@ class StocksRepo:
             int(row["id"]),
             HISTORY_KEEP,
         )
+
+        # Оповещение о росте: отметка поднимается вместе с курсом, поэтому за
+        # один памп монета может «выстрелить» несколько раз, но не чаще
+        # кулдауна — спама нет.
+        alert_price = int(row["alert_price"] or 0)
+        alerted_at = row["alerted_at"]
+        since = (now - alerted_at).total_seconds() if alerted_at is not None else None
+        if stocks.alert_due(price, alert_price, since):
+            await con.execute(
+                "update stocks set alert_price = $2, alerted_at = now() where id = $1",
+                int(row["id"]),
+                price,
+            )
+            alerts.append(
+                {
+                    "slug": row["slug"],
+                    "name": row["name"],
+                    "emoji": row["emoji"],
+                    "price": price,
+                    "from": alert_price,
+                    "change": (
+                        round((price - alert_price) / alert_price * 100, 1)
+                        if alert_price
+                        else 0.0
+                    ),
+                }
+            )
 
     async def _history(
         self, con: asyncpg.Connection, stock_id: int, limit: int = HISTORY_POINTS

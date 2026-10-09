@@ -23,6 +23,11 @@ CEIL_MULT = 6.0
 
 MAX_SHARES = 100_000
 
+# Оповещение о росте: срабатывает, когда курс поднялся на 10% от прошлой отметки.
+ALERT_THRESHOLD = 0.10
+# Но не чаще, чем раз в 15 минут на монету — чтобы не спамить.
+ALERT_COOLDOWN_MINUTES = 15
+
 STOCKS: tuple[dict[str, object], ...] = (
     {"slug": "syug", "name": "SeveroCoin", "emoji": "🎴", "base": 1000, "vol": 0.030},
     {"slug": "uchitel", "name": "ДэнКоин", "emoji": "🪙", "base": 2500, "vol": 0.022},
@@ -60,6 +65,24 @@ def next_price(
     low = int(base) * FLOOR_MULT
     high = int(base) * CEIL_MULT
     return int(max(low, min(high, round(value))))
+
+
+def alert_due(
+    price: int,
+    alert_price: int,
+    seconds_since_alert: float | None = None,
+) -> bool:
+    """Пора ли сообщать о росте. Отметка поднимается вместе с курсом."""
+    if alert_price <= 0:
+        return False
+    if price < alert_price * (1 + ALERT_THRESHOLD):
+        return False
+    if (
+        seconds_since_alert is not None
+        and seconds_since_alert < ALERT_COOLDOWN_MINUTES * 60
+    ):
+        return False
+    return True
 
 
 def change_percent(history: list[int]) -> float:
