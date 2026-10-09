@@ -139,6 +139,39 @@ class Database:
                 cards,
             )
 
+    async def purge_missing_cards(self, known_ids: list[str]) -> None:
+        """Убирает из базы карты, которых больше нет в коде.
+
+        Раньше удалённая из каталога карта (например, «Стринги») оставалась
+        у игроков в collection/inventory, и просмотр профиля падал на get_card().
+        """
+        if not known_ids:
+            return
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "delete from market where card_id is not null "
+                    "and not (card_id = any($1::text[]))",
+                    known_ids,
+                )
+                await con.execute(
+                    "delete from inventory where not (card_id = any($1::text[]))",
+                    known_ids,
+                )
+                await con.execute(
+                    "delete from collection where not (card_id = any($1::text[]))",
+                    known_ids,
+                )
+                await con.execute(
+                    "delete from casino_lost where not (card_id = any($1::text[]))",
+                    known_ids,
+                )
+                removed = await con.execute(
+                    "delete from cards where not (card_id = any($1::text[]))",
+                    known_ids,
+                )
+        log.info("Устаревшие карты вычищены: %s", removed)
+
     # ------------------------------------------------------------------ #
     # Игроки и коллекция
     # ------------------------------------------------------------------ #

@@ -256,3 +256,43 @@ def test_draw_gives_nothing():
             await db.close()
 
     run(scenario())
+
+
+def test_purge_missing_cards_removes_old_entries():
+    """Регрессия: удалённая из кода карта оставалась у игрока и ломала профиль."""
+
+    async def scenario():
+        db = await fresh_db()
+        try:
+            user = 900008
+            async with db.pool.acquire() as con:
+                await con.execute("delete from players where user_id = $1", user)
+                await con.execute(
+                    """
+                    insert into cards (card_id, name, rarity, points, hp, atk,
+                                       ability_name, ability_cd, ability)
+                    values ('ghost', 'Призрак', 'rare', 1, 1, 1, 'x', 1, '{}'::jsonb)
+                    on conflict (card_id) do nothing
+                    """
+                )
+            await db.ensure_player(user, None, "Призрак")
+            await db.add_card(user, "ghost")
+
+            await db.purge_missing_cards(["oleg"])
+
+            async with db.pool.acquire() as con:
+                left = await con.fetchval(
+                    "select count(*) from collection where user_id = $1", user
+                )
+                ghost = await con.fetchval(
+                    "select count(*) from cards where card_id = 'ghost'"
+                )
+            assert left == 0, "запись у игрока должна исчезнуть"
+            assert ghost == 0, "карта-призрак должна исчезнуть из cards"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from collection where card_id = 'ghost'")
+                await con.execute("delete from cards where card_id = 'ghost'")
+            await db.close()
+
+    run(scenario())

@@ -38,6 +38,57 @@ class CasinoRepo:
     # Очки
     # ------------------------------------------------------------------ #
 
+    async def _settle_points(
+        self,
+        con: asyncpg.Connection,
+        user_id: int,
+        bet: int,
+        payout: int,
+        *,
+        color: str,
+        rolled: str,
+        won: bool,
+        outcome: str,
+    ) -> int:
+        row = await con.fetchrow(
+            """
+            update players set bonus_points = bonus_points - $2
+             where user_id = $1 and bonus_points >= $2
+            returning bonus_points
+            """,
+            user_id,
+            int(bet),
+        )
+        if row is None:
+            balance = await con.fetchval(
+                "select coalesce(bonus_points, 0) from players where user_id = $1",
+                user_id,
+            )
+            raise CasinoError(
+                f"Не хватает очков: ставишь {int(bet)}, у тебя {int(balance or 0)}."
+            )
+        balance = await con.fetchval(
+            "update players set bonus_points = bonus_points + $2 where user_id = $1 "
+            "returning bonus_points",
+            user_id,
+            int(payout),
+        )
+        await con.execute(
+            """
+            insert into casino_log (user_id, bet_kind, bet_value, color, rolled,
+                                    won, outcome, amount)
+            values ($1, 'points', $2, $3, $4, $5, $6, $7)
+            """,
+            user_id,
+            str(int(bet)),
+            color,
+            rolled,
+            won,
+            outcome,
+            int(payout),
+        )
+        return int(balance)
+
     async def bet_points(self, user_id: int, bet: int, color: str) -> dict[str, Any]:
         bet = int(bet)
         if bet < casino.MIN_BET:
@@ -50,42 +101,15 @@ class CasinoRepo:
 
         async with self.pool.acquire() as con:
             async with con.transaction():
-                row = await con.fetchrow(
-                    """
-                    update players set bonus_points = bonus_points - $2
-                     where user_id = $1 and bonus_points >= $2
-                    returning bonus_points
-                    """,
+                balance = await self._settle_points(
+                    con,
                     user_id,
                     bet,
-                )
-                if row is None:
-                    balance = await con.fetchval(
-                        "select coalesce(bonus_points, 0) from players where user_id = $1",
-                        user_id,
-                    )
-                    raise CasinoError(
-                        f"Не хватает очков: ставишь {bet}, у тебя {int(balance or 0)}."
-                    )
-                balance = await con.fetchval(
-                    "update players set bonus_points = bonus_points + $2 where user_id = $1 "
-                    "returning bonus_points",
-                    user_id,
                     payout,
-                )
-                await con.execute(
-                    """
-                    insert into casino_log (user_id, bet_kind, bet_value, color, rolled,
-                                            won, outcome, amount)
-                    values ($1, 'points', $2, $3, $4, $5, $6, $7)
-                    """,
-                    user_id,
-                    str(bet),
-                    color,
-                    rolled,
-                    won,
-                    "win" if won else "lose",
-                    payout,
+                    color=color,
+                    rolled=rolled,
+                    won=won,
+                    outcome="win" if won else "lose",
                 )
         return {
             "kind": "points",
@@ -96,6 +120,49 @@ class CasinoRepo:
             "payout": payout,
             "delta": payout - bet,
             "balance": int(balance),
+        }
+
+    async def play_points(
+        self,
+        user_id: int,
+        bet: int,
+        won: bool,
+        multiplier: int,
+        game: str,
+        choice: str,
+        rolled_value: int,
+    ) -> dict[str, Any]:
+        """Быстрая игра очками: выигрыш = ставка × множитель, проигрыш — треть."""
+        bet = int(bet)
+        if bet < casino.MIN_BET:
+            raise CasinoError(f"Минимальная ставка — {casino.MIN_BET} очков.")
+        if bet > casino.MAX_BET:
+            raise CasinoError(f"Максимальная ставка — {casino.MAX_BET} очков.")
+        payout = bet * int(multiplier) if won else casino.points_lose(bet)
+
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                balance = await self._settle_points(
+                    con,
+                    user_id,
+                    bet,
+                    payout,
+                    color=f"{game}:{choice}",
+                    rolled=str(int(rolled_value)),
+                    won=won,
+                    outcome="win" if won else "lose",
+                )
+        return {
+            "kind": "points",
+            "bet": bet,
+            "won": won,
+            "multiplier": int(multiplier),
+            "payout": payout,
+            "delta": payout - bet,
+            "balance": int(balance),
+            "game": game,
+            "choice": choice,
+            "rolled": int(rolled_value),
         }
 
     # ------------------------------------------------------------------ #
@@ -150,48 +217,72 @@ class CasinoRepo:
         )
         return final
 
+    async def _finish_card(
+        self,
+        con: asyncpg.Connection,
+        user_id: int,
+        unit: dict[str, Any],
+        card,
+        won: bool,
+        max_bonus: bool,
+    ) -> dict[str, Any]:
+        """Общий итог ставки картой: победа улучшает, проигрыш калечит/удаляет."""
+        inventory_id = await self._as_instance(con, user_id, unit)
+        outcome = "win" if won else "lose"
+        fate = None
+        offer_id = None
+        bonus_after: dict[str, int] = {}
+
+        if won:
+            if max_bonus:
+                delta = {stat: casino.MAX_BONUS[stat] for stat in casino.STATS}
+                bonus_after = await self._add_casino_bonus(
+                    con, inventory_id, delta, absolute=True
+                )
+                outcome = "max"
+            else:
+                delta = casino.random_win_bonus()
+                bonus_after = await self._add_casino_bonus(con, inventory_id, delta)
+        else:
+            fate = casino.card_fate()
+            if fate == "delete":
+                # снимок и предложение выкупа делаем ДО удаления строки
+                bonus_after = await self._snapshot_before_delete(
+                    con, user_id, inventory_id, card
+                )
+                offer_id = await self._make_offer(con, user_id, inventory_id, card)
+                await con.execute("delete from inventory where id = $1", int(inventory_id))
+                outcome = "delete"
+            else:
+                delta = casino.random_lose_bonus()
+                bonus_after = await self._add_casino_bonus(con, inventory_id, delta)
+                outcome = "worsen"
+
+        return {
+            "outcome": outcome,
+            "fate": fate,
+            "inventory_id": inventory_id if fate != "delete" else None,
+            "bonus": bonus_after,
+            "offer_id": offer_id,
+        }
+
     async def bet_card(self, user_id: int, unit: dict[str, Any], color: str) -> dict[str, Any]:
         if unit.get("kind") == "case" or not unit.get("card_id"):
             raise CasinoError("Кейс нельзя поставить в казино.")
         card = get_card(unit["card_id"])
         rolled = casino.roll_color()
         won = casino.is_win(color, rolled)
-        outcome = "win" if won else "lose"
-        fate = None
-        offer_id = None
-        bonus_after: dict[str, int] = {}
 
         async with self.pool.acquire() as con:
             async with con.transaction():
-                inventory_id = await self._as_instance(con, user_id, unit)
-
-                if won:
-                    if color == casino.COLOR_GREEN:
-                        delta = {stat: casino.MAX_BONUS[stat] for stat in casino.STATS}
-                        bonus_after = await self._add_casino_bonus(
-                            con, inventory_id, delta, absolute=True
-                        )
-                        outcome = "max"
-                    else:
-                        delta = casino.random_win_bonus()
-                        bonus_after = await self._add_casino_bonus(con, inventory_id, delta)
-                else:
-                    fate = casino.card_fate()
-                    if fate == "delete":
-                        # снимок и предложение выкупа делаем ДО удаления строки
-                        bonus_after = await self._snapshot_before_delete(
-                            con, user_id, inventory_id, card
-                        )
-                        offer_id = await self._make_offer(con, user_id, inventory_id, card)
-                        await con.execute(
-                            "delete from inventory where id = $1", int(inventory_id)
-                        )
-                        outcome = "delete"
-                    else:
-                        delta = casino.random_lose_bonus()
-                        bonus_after = await self._add_casino_bonus(con, inventory_id, delta)
-                        outcome = "worsen"
-
+                done = await self._finish_card(
+                    con,
+                    user_id,
+                    unit,
+                    card,
+                    won,
+                    max_bonus=won and color == casino.COLOR_GREEN,
+                )
                 await con.execute(
                     """
                     insert into casino_log (user_id, bet_kind, bet_value, color, rolled,
@@ -203,7 +294,7 @@ class CasinoRepo:
                     color,
                     rolled,
                     won,
-                    outcome,
+                    done["outcome"],
                     0,
                 )
 
@@ -213,11 +304,58 @@ class CasinoRepo:
             "color": color,
             "rolled": rolled,
             "won": won,
-            "outcome": outcome,
-            "fate": fate,
-            "inventory_id": inventory_id if fate != "delete" else None,
-            "bonus": bonus_after,
-            "offer_id": offer_id,
+            **done,
+        }
+
+    async def play_card(
+        self,
+        user_id: int,
+        unit: dict[str, Any],
+        won: bool,
+        multiplier: int,
+        game: str,
+        choice: str,
+        rolled_value: int,
+    ) -> dict[str, Any]:
+        """Быстрая игра картой. За угаданную цифру (×3) карта улучшается до максимума."""
+        if unit.get("kind") == "case" or not unit.get("card_id"):
+            raise CasinoError("Кейс нельзя поставить в казино.")
+        card = get_card(unit["card_id"])
+
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                done = await self._finish_card(
+                    con,
+                    user_id,
+                    unit,
+                    card,
+                    won,
+                    max_bonus=won and int(multiplier) >= 3,
+                )
+                await con.execute(
+                    """
+                    insert into casino_log (user_id, bet_kind, bet_value, color, rolled,
+                                            won, outcome, amount)
+                    values ($1, 'card', $2, $3, $4, $5, $6, $7)
+                    """,
+                    user_id,
+                    card.card_id,
+                    f"{game}:{choice}",
+                    str(int(rolled_value)),
+                    won,
+                    done["outcome"],
+                    0,
+                )
+
+        return {
+            "kind": "card",
+            "card": card,
+            "won": won,
+            "multiplier": int(multiplier),
+            "game": game,
+            "choice": choice,
+            "rolled": int(rolled_value),
+            **done,
         }
 
     async def _snapshot_before_delete(

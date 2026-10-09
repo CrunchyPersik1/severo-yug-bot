@@ -8,7 +8,7 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
-from . import casino, team_battle
+from . import casino, dice_casino, team_battle
 from .battle import ability_targets, can_use_ability
 from .cards import CARDS, Card, cards_sorted_for_user, get_card
 from .team_battle import TEAM_BLUE, TEAM_RED
@@ -371,16 +371,15 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
     )
 
 
-def profile_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🃏 Мои карты", callback_data=f"pf:{user_id}:cards"
-                )
-            ]
-        ]
-    )
+def profile_keyboard(user_id: int, is_owner: bool = False) -> InlineKeyboardMarkup:
+    """У владельца — кнопка ведёт в новое меню /my, у чужих — на их карты."""
+    if is_owner:
+        button = InlineKeyboardButton(text="🃏 Мои карты", callback_data="my:c:0")
+    else:
+        button = InlineKeyboardButton(
+            text="🃏 Карты игрока", callback_data=f"pf:{user_id}:cards"
+        )
+    return InlineKeyboardMarkup(inline_keyboard=[[button]])
 
 
 def collection_keyboard(user_id: int, units: list[dict[str, Any]]) -> InlineKeyboardMarkup:
@@ -448,15 +447,13 @@ def render_card_detail(
     else:
         lines.append("")
         lines.append("<i>Это чужая карта — только просмотр.</i>")
+    back_text = "⬅️ К моим картам" if is_owner else "⬅️ К картам игрока"
+    back_callback = "my:c:0" if is_owner else f"pf:{user_id}:cards"
     return (
         "\n".join(lines),
         InlineKeyboardMarkup(
             inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="⬅️ К моим картам", callback_data=f"pf:{user_id}:cards"
-                    )
-                ]
+                [InlineKeyboardButton(text=back_text, callback_data=back_callback)]
             ]
         ),
     )
@@ -742,6 +739,11 @@ def render_casino_help(balance: int, left: int = 0, cap: int = 25) -> str:
             "Ставка очками: <code>/casino 1000</code>",
             "Ставка картой: <code>/casino #oleg</code> или <code>/casino #12</code>",
             "",
+            "🎲 <b>Быстрые игры</b> (плюс к тем же 25 круткам):",
+            "<code>/casino кости 10000</code> — чёт/нечёт ×2, угадаешь цифру ×3",
+            "<code>/casino футбол 10000</code> и <code>/casino баскет 10000</code> — "
+            "попадёт/не попадёт ×2",
+            "",
             "Проигрыш: очки возвращаются только на треть, карта либо уничтожается (20%), "
             "либо теряет статы (80%). Редкую карту можно выкупить за двойную цену.",
             "",
@@ -803,6 +805,112 @@ def render_casino_result(
         ]
 
     rows: list[list[InlineKeyboardButton]] = []
+    if result.get("offer_id"):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="💸 Выкупить карту", callback_data=f"csb:{result['offer_id']}"
+                )
+            ]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_dice_choices(
+    game: str, bet_label: str, token: str
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Экран выбора для костей/футбола/баскета."""
+    lines = [
+        f"{dice_casino.emoji(game)} <b>{dice_casino.title(game)}</b>",
+        "",
+        f"Ставка: {bet_label}",
+        "",
+        "Твой выбор:",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    if game == dice_casino.GAME_DICE:
+        lines.append("Чёт/нечёт — ×2, точная цифра — ×3.")
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Чёт ×2", callback_data=f"cg:{game}:{token}:{dice_casino.CHOICE_EVEN}"
+                ),
+                InlineKeyboardButton(
+                    text="Нечёт ×2", callback_data=f"cg:{game}:{token}:{dice_casino.CHOICE_ODD}"
+                ),
+            ]
+        )
+        digits = [
+            InlineKeyboardButton(
+                text=f"{n} ×3", callback_data=f"cg:{game}:{token}:d{n}"
+            )
+            for n in dice_casino.digit_choices()
+        ]
+        rows.append(digits[:3])
+        rows.append(digits[3:])
+    else:
+        lines.append("Угадай, попадёт или нет — ×2.")
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Попадёт ×2", callback_data=f"cg:{game}:{token}:{dice_casino.CHOICE_HIT}"
+                ),
+                InlineKeyboardButton(
+                    text="Не попадёт ×2",
+                    callback_data=f"cg:{game}:{token}:{dice_casino.CHOICE_MISS}",
+                ),
+            ]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_dice_result(
+    result: dict[str, Any], balance: int
+) -> tuple[str, InlineKeyboardMarkup]:
+    """Итог быстрой игры: что выпало и что стало со ставкой."""
+    game = result["game"]
+    lines = [
+        f"{dice_casino.emoji(game)} <b>{dice_casino.title(game)}</b> — "
+        f"выпало <b>{result['rolled']}</b>",
+        f"Твой выбор: {dice_casino.choice_label(game, result['choice'])} "
+        f"(×{result['multiplier']})",
+        "",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if result["kind"] == "points":
+        if result["won"]:
+            lines += [
+                f"🎉 <b>Победа!</b> {result['bet']} → <b>{result['payout']}</b> очков.",
+                f"Чистыми: <b>+{result['delta']}</b>",
+            ]
+        else:
+            lines += [
+                f"💀 <b>Проигрыш.</b> Из {result['bet']} вернулась только треть: "
+                f"<b>{result['payout']}</b>.",
+                f"Чистыми: <b>{result['delta']}</b>",
+            ]
+        lines.append(f"💳 Баланс: <b>{balance}</b>")
+        return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=[])
+
+    card = result["card"]
+    if result["won"]:
+        head = (
+            "🌟 <b>ДЖЕКПОТ!</b> Карта улучшена до максимума:"
+            if result["outcome"] == "max"
+            else "🎉 <b>Победа!</b> Карта улучшена:"
+        )
+        lines += [head, f"   {casino.describe_bonus(result['bonus'])}"]
+    elif result["outcome"] == "delete":
+        lines += [
+            "💀 <b>Проигрыш. Карта уничтожена.</b>",
+            f"{card.rarity_emoji} <b>{esc(card.display_name)}</b> ({card.rarity_title})",
+        ]
+    else:
+        lines += [
+            "💀 <b>Проигрыш.</b> Карта потеряла часть статов:",
+            f"   {casino.describe_bonus(result['bonus'])}",
+        ]
     if result.get("offer_id"):
         rows.append(
             [

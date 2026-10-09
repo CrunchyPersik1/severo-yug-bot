@@ -10,6 +10,7 @@ aiogram запрещает привязывать один Router к неско�
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -63,6 +64,10 @@ class FakeDB:
         self.claimed: dict[int, bool] = {}
         self.balance: dict[int, int] = {}
         self.names: dict[int, str] = {}
+        # рефералка: живое состояние, чтобы прогнать полный сценарий
+        self.ref_links: dict[str, dict[str, Any]] = {}
+        self.referrals: dict[int, int] = {}
+        self.drop_grants: list[tuple[int, int]] = []
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -115,22 +120,42 @@ class FakeDB:
     async def grant_drop_limit(
         self, user_id: int, day: Any, amount: int, default_limit: int = 1
     ) -> int:
+        self.drop_grants.append((user_id, int(amount)))
         return int(default_limit) + int(amount)
 
     async def latest_ref_link(self, user_id: int):
-        return None
+        links = [l for l in self.ref_links.values() if l["owner_id"] == user_id]
+        return max(links, key=lambda l: l["created_at"]) if links else None
 
     async def insert_ref_link(self, user_id: int, code: str, max_uses: int = 25):
-        return {
+        link = {
             "code": code,
             "owner_id": user_id,
             "uses": 0,
-            "max_uses": max_uses,
+            "max_uses": int(max_uses),
             "active": True,
+            "created_at": datetime.now(timezone.utc),
         }
+        self.ref_links[code] = link
+        return dict(link)
 
     async def claim_referral(self, referred_id: int, code: str):
-        return {"owner_id": 777, "uses": 1, "max_uses": 25, "exhausted": False}
+        if referred_id in self.referrals:
+            return None
+        link = self.ref_links.get(code)
+        if link is None or not link["active"] or link["uses"] >= link["max_uses"]:
+            return None
+        if int(link["owner_id"]) == int(referred_id):
+            return None
+        self.referrals[referred_id] = int(link["owner_id"])
+        link["uses"] += 1
+        link["active"] = link["uses"] < link["max_uses"]
+        return {
+            "owner_id": int(link["owner_id"]),
+            "uses": link["uses"],
+            "max_uses": int(link["max_uses"]),
+            "exhausted": not link["active"],
+        }
 
     async def player_profile(self, user_id: int):
         return {
@@ -173,7 +198,7 @@ class FakeMarket:
         return []
 
     async def balance(self, user_id: int) -> int:
-        return 0
+        return 1_000_000
 
     async def buy_lot(self, lot_id: int, buyer_id: int):
         return {
@@ -550,6 +575,21 @@ def test_mylots_handles_case_lots():
     asyncio.run(scenario())
 
 
+def test_casino_dice_shows_choices():
+    async def scenario():
+        session = await feed(
+            "/casino кости 10000", FakeDB(), FakeService(), market=FakeMarket()
+        )
+        body = sent_texts(session)[0]
+        assert "Кости" in body
+        payload = next(p for n, p in session.calls if n == "SendMessage")
+        markup = str(payload.get("reply_markup"))
+        assert "cg:dice:p:10000:even" in markup
+        assert "cg:dice:p:10000:d6" in markup
+
+    asyncio.run(scenario())
+
+
 def test_ref_creates_a_personal_link():
     async def scenario():
         session = await feed("/ref", FakeDB(), FakeService())
@@ -559,16 +599,56 @@ def test_ref_creates_a_personal_link():
     asyncio.run(scenario())
 
 
-def test_start_with_referral_payload_rewards_the_inviter():
+def test_referral_flow_end_to_end():
+    """Полная симуляция: /ref -> друг открывает ссылку -> инвайтеру +1 попытка."""
     async def scenario():
         db = FakeDB()
-        session = await feed("/start ref_abc", db, FakeService())
-        owners = [
-            payload.get("chat_id")
-            for name, payload in session.calls
-            if name == "SendMessage" and payload.get("chat_id") == 777
+        session = await feed("/ref", db, FakeService(), user_id=1)
+        body = sent_texts(session)[0]
+        found = re.search(r"start=(ref_[A-Za-z0-9_]+)", body)
+        assert found, body
+        payload = found.group(1)
+        assert db.ref_links, "ссылка сохранена"
+
+        before = len(db.drop_grants)
+        session2 = await feed(f"/start {payload}", db, FakeService(), user_id=2)
+        assert db.referrals == {2: 1}, "друг привязан к пригласившему"
+        assert len(db.drop_grants) == before + 1
+        assert db.drop_grants[-1] == (1, 1), "награда ушла пригласившему"
+        notified = [
+            p.get("chat_id")
+            for n, p in session2.calls
+            if n == "SendMessage" and p.get("chat_id") == 1
         ]
-        assert owners, "пригласивший должен получить уведомление"
+        assert notified, "пригласивший получил уведомление"
+
+        # повторный переход от того же друга награду не даёт
+        await feed(f"/start {payload}", db, FakeService(), user_id=2)
+        assert len(db.drop_grants) == before + 1
+
+    asyncio.run(scenario())
+
+
+def test_ref_reuses_the_weekly_link():
+    async def scenario():
+        db = FakeDB()
+        await feed("/ref", db, FakeService(), user_id=1)
+        await feed("/ref", db, FakeService(), user_id=1)
+        assert len(db.ref_links) == 1, "вторую ссылку за неделю не создаём"
+
+    asyncio.run(scenario())
+
+
+def test_referral_link_stops_at_25_people():
+    async def scenario():
+        db = FakeDB()
+        await feed("/ref", db, FakeService(), user_id=1)
+        code = next(iter(db.ref_links))
+        for friend in range(2, 29):  # 27 друзей при лимите 25
+            await feed(f"/start ref_{code}", db, FakeService(), user_id=friend)
+        assert db.ref_links[code]["uses"] == 25
+        assert len(db.referrals) == 25
+        assert db.ref_links[code]["active"] is False
 
     asyncio.run(scenario())
 

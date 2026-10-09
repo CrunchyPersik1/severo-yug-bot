@@ -13,7 +13,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
-from . import admin_actions, casino, promo, referrals, render, team_battle
+from . import admin_actions, casino, dice_casino, promo, referrals, render, team_battle
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
@@ -22,7 +22,7 @@ from .referrals import ReferralError
 from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
-from .cards import CARDS, cards_sorted_for_user, get_card, image_url
+from .cards import CARDS, CARDS_BY_ID, cards_sorted_for_user, get_card, image_url
 from .cases import roll_case_card
 from .db import Database
 from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
@@ -280,6 +280,9 @@ async def collection_data(
 
     instances = []
     for row in await market.user_inventory(user_id):
+        if row["card_id"] not in CARDS_BY_ID:
+            # карта удалена из каталога, а у игрока запись осталась — пропускаем
+            continue
         card = get_card(row["card_id"])
         instances.append(
             {
@@ -382,7 +385,7 @@ async def cmd_profile(message: Message, db: Database, market: MarketRepo) -> Non
         return
     await message.answer(
         render.render_profile(profile, len(CARDS)),
-        reply_markup=render.profile_keyboard(target_id),
+        reply_markup=render.profile_keyboard(target_id, is_owner=target_id == user.id),
     )
 
 
@@ -405,12 +408,21 @@ async def cb_profile(
         await _safe_edit(
             callback,
             render.render_profile(profile, len(CARDS)),
-            render.profile_keyboard(target_id),
+            render.profile_keyboard(target_id, is_owner),
         )
         await callback.answer()
         return
 
     if action == "cards":
+        if is_owner:
+            # Свои карты — в новом постраничном меню, старое не тянем.
+            counts = await db.get_collection(target_id)
+            text, keyboard = render.my_cards(
+                cards_sorted_for_user(list(counts)), counts, 0
+            )
+            await _safe_edit(callback, text, keyboard)
+            await callback.answer()
+            return
         text, units = await collection_data(db, market, target_id)
         await _safe_edit(callback, text, render.collection_keyboard(target_id, units))
         await callback.answer()
@@ -546,11 +558,17 @@ async def _market_view(market: MarketRepo, user_id: int, page: int):
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, keyboard) -> None:
+    message = callback.message
     try:
-        await callback.message.edit_text(text, reply_markup=keyboard)
+        # Карточки с артом уходят отдельным фото: у него правится подпись,
+        # а не текст (иначе кнопка «Назад» в /faq и /my не работала).
+        if getattr(message, "photo", None):
+            await message.edit_caption(caption=text, reply_markup=keyboard)
+        else:
+            await message.edit_text(text, reply_markup=keyboard)
     except TelegramBadRequest as error:
         if "not modified" not in str(error).lower():
-            log.warning("Не удалось обновить сообщение рынка: %s", error)
+            log.warning("Не удалось обновить сообщение: %s", error)
 
 
 @router.message(Command("market", "рынок"))
@@ -960,6 +978,34 @@ async def cmd_rating(message: Message, db: Database, market: MarketRepo) -> None
 # --------------------------------------------------------------------------- #
 
 
+async def _casino_parse_bet(
+    raw: str, balance: int, market: MarketRepo, user_id: int
+) -> tuple[str | None, str]:
+    """Разбирает ставку очками или картой. (token, подпись) либо (None, ошибка)."""
+    if raw.lstrip("-").isdigit():
+        amount = int(raw)
+        if amount < casino.MIN_BET or amount > casino.MAX_BET:
+            return None, f"⚠️ Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков."
+        if balance < amount:
+            return None, f"⚠️ Не хватает очков: ставишь {amount}, у тебя {balance}."
+        return f"p:{amount}", f"💰 {amount} очков"
+
+    parsed = parse_handle(raw)
+    if parsed is None:
+        return None, "Не понял ставку. Смотри /casino"
+    try:
+        unit = await market.owned_unit(user_id, parsed)
+    except MarketError as error:
+        return None, f"⚠️ {error}"
+    if unit.get("kind") == "case":
+        return None, (
+            "⚠️ Кейс нельзя поставить в казино — его открывают (/case) "
+            "или продают на рынке."
+        )
+    card = get_card(unit["card_id"])
+    return "c:" + raw.lstrip("#"), f"{card.rarity_emoji} {render.esc(card.display_name)}"
+
+
 @router.message(Command("casino", "казино"))
 @router.message(NormalizedText("казино"))
 async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None:
@@ -987,40 +1033,125 @@ async def cmd_casino(message: Message, db: Database, market: MarketRepo) -> None
         )
         return
 
-    raw = parts[0]
-    if raw.lstrip("-").isdigit():
-        amount = int(raw)
-        if amount < casino.MIN_BET or amount > casino.MAX_BET:
+    # /casino кости 10000 и /casino 10000 кости — оба порядка работают.
+    game = dice_casino.normalize_game(parts[0])
+    bet_raw = parts[1] if len(parts) > 1 else None
+    if game is None and len(parts) > 1:
+        maybe = dice_casino.normalize_game(parts[1])
+        if maybe is not None:
+            game, bet_raw = maybe, parts[0]
+
+    if game is not None:
+        if bet_raw is None:
             await message.answer(
-                f"⚠️ Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков."
+                f"{dice_casino.emoji(game)} <b>{dice_casino.title(game)}</b>\n\n"
+                f"Формат: <code>/casino {parts[0]} 1000</code> "
+                "или <code>/casino кости #oleg</code>"
             )
             return
-        if balance < amount:
-            await message.answer(f"⚠️ Не хватает очков: ставишь {amount}, у тебя {balance}.")
+        token, label = await _casino_parse_bet(bet_raw, balance, market, user.id)
+        if token is None:
+            await message.answer(label)
             return
-        text, keyboard = render.render_casino_colors(f"💰 {amount} очков", f"p:{amount}")
+        text, keyboard = render.render_dice_choices(game, label, token)
+        await message.answer(text, reply_markup=keyboard)
+        return
+
+    token, label = await _casino_parse_bet(parts[0], balance, market, user.id)
+    if token is None:
+        await message.answer(label)
+        return
+    text, keyboard = render.render_casino_colors(label, token)
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("cg:"))
+async def cb_dice(
+    callback: CallbackQuery, db: Database, market: MarketRepo, bot: Bot
+) -> None:
+    """Быстрая игра: кидаем анимированный кубик и считаем результат."""
+    assert callback.data is not None
+    parts = callback.data.split(":")
+    if len(parts) < 4:
+        await callback.answer("Не понял ставку", show_alert=True)
+        return
+    game = parts[1]
+    choice = parts[-1]
+    token = ":".join(parts[2:-1])
+    if game not in dice_casino.GAMES or not dice_casino.is_choice_valid(game, choice):
+        await callback.answer("Не понял выбор", show_alert=True)
+        return
+
+    user_id = callback.from_user.id
+    unit: dict | None = None
+    bet_points: int | None = None
+    if token.startswith("p:"):
+        try:
+            bet_points = int(token[2:])
+        except ValueError:
+            await callback.answer("Не понял ставку", show_alert=True)
+            return
+        if not casino.MIN_BET <= bet_points <= casino.MAX_BET:
+            await callback.answer(
+                f"⚠️ Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков.",
+                show_alert=True,
+            )
+            return
+        balance = await market.balance(user_id)
+        if balance < bet_points:
+            await callback.answer(
+                f"⚠️ Не хватает очков: ставишь {bet_points}, у тебя {balance}.",
+                show_alert=True,
+            )
+            return
     else:
-        parsed = parse_handle(raw)
+        parsed = parse_handle(token[2:])
         if parsed is None:
-            await message.answer("Не понял ставку. Смотри /casino")
+            await callback.answer("Не понял, какую карту ставим.", show_alert=True)
             return
         try:
-            unit = await market.owned_unit(user.id, parsed)
+            unit = await market.owned_unit(user_id, parsed)
         except MarketError as error:
-            await message.answer(f"⚠️ {error}")
+            await callback.answer(str(error), show_alert=True)
             return
         if unit.get("kind") == "case":
-            await message.answer(
-                "⚠️ Кейс нельзя поставить в казино — его открывают (/case) "
-                "или продают на рынке."
-            )
+            await callback.answer("⚠️ Кейс нельзя поставить в казино.", show_alert=True)
             return
-        card = get_card(unit["card_id"])
-        token = "c:" + raw.lstrip("#")
-        text, keyboard = render.render_casino_colors(
-            f"{card.rarity_emoji} {render.esc(card.display_name)}", token
+
+    left = await db.claim_casino(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    if left is None:
+        await callback.answer(
+            "🎰 Крутки на сегодня кончились. Докупка — 2 000 очков.", show_alert=True
         )
-    await message.answer(text, reply_markup=keyboard)
+        return
+
+    try:
+        dice = await bot.send_dice(
+            chat_id=callback.message.chat.id, emoji=dice_casino.emoji(game)
+        )
+        value = int(dice.dice.value)
+    except Exception:  # noqa: BLE001
+        log.exception("Не удалось кинуть кубик")
+        await callback.answer("Кубик не долетел, попробуй ещё", show_alert=True)
+        return
+
+    won = dice_casino.is_win(game, choice, value)
+    mult = dice_casino.multiplier(game, choice)
+    repo = CasinoRepo(db, market)
+    try:
+        if bet_points is not None:
+            result = await repo.play_points(user_id, bet_points, won, mult, game, choice, value)
+        else:
+            assert unit is not None
+            result = await repo.play_card(user_id, unit, won, mult, game, choice, value)
+    except (CasinoError, MarketError) as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+
+    balance = await market.balance(user_id)
+    text, keyboard = render.render_dice_result(result, balance)
+    await _safe_edit(callback, text, keyboard)
+    await callback.answer("Победа!" if won else "Проигрыш")
 
 
 @router.callback_query(F.data.startswith("cs:"))
@@ -1490,7 +1621,7 @@ async def cb_my(callback: CallbackQuery, db: Database, market: MarketRepo) -> No
         await _safe_edit(
             callback,
             render.render_profile(profile, len(CARDS)),
-            render.profile_keyboard(user_id),
+            render.profile_keyboard(user_id, is_owner=True),
         )
     elif action in ("d", "i", "a") and len(parts) > 2:
         handle = parts[2]
