@@ -73,6 +73,7 @@ create index if not exists battles_opponent_idx on battles (opponent_id, status)
 -- миграции для баз, созданных до появления PvP-наград
 alter table players    add column if not exists kills        integer not null default 0;
 alter table players    add column if not exists bonus_points integer not null default 0;
+alter table players    add column if not exists favorite_card text;
 alter table collection add column if not exists kills        integer not null default 0;
 -- ===================================================================== --
 -- Рынок, инвентарь и улучшения

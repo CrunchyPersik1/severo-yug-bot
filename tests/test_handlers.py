@@ -474,7 +474,9 @@ def test_gift_actually_sends_the_card():
 
     asyncio.run(scenario())
 
-def build_callback(data: str, user_id: int = 111, thread_id: int | None = None) -> dict:
+def build_callback(
+    data: str, user_id: int = 111, thread_id: int | None = None, photo: bool = False
+) -> dict:
     message: dict[str, Any] = {
         "message_id": 77,
         "date": 1700000000,
@@ -482,6 +484,11 @@ def build_callback(data: str, user_id: int = 111, thread_id: int | None = None) 
         "from": {"id": 555, "is_bot": True, "first_name": "bot"},
         "text": "профиль",
     }
+    if photo:
+        message.pop("text", None)
+        message["photo"] = [
+            {"file_id": "p1", "file_unique_id": "u1", "width": 100, "height": 100}
+        ]
     if thread_id is not None:
         message["message_thread_id"] = thread_id
         message["is_topic_message"] = True
@@ -503,11 +510,12 @@ async def feed_callback(
     market: FakeMarket,
     user_id: int = 111,
     thread_id: int | None = None,
+    photo: bool = False,
 ):
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
     update = Update.model_validate(
-        build_callback(data, user_id, thread_id), context={"bot": bot}
+        build_callback(data, user_id, thread_id, photo), context={"bot": bot}
     )
     await dispatcher().feed_update(bot, update, db=db, service=FakeService(), market=market)
     await bot.session.close()
@@ -650,6 +658,17 @@ def test_profile_shows_title_favorite_and_activity():
     assert "Любимая карта" in text and "Олег" in text
     assert "Чем занимался" in text
     assert "казино" in text
+
+
+def test_back_from_an_art_card_sends_text_not_a_caption():
+    """Регрессия: из карточки с артом «Назад» оставлял чужую картинку."""
+    async def scenario():
+        session = await feed_callback("my:home", FakeDB(), FakeMarket(), photo=True)
+        names = [name for name, _ in session.calls]
+        assert "DeleteMessage" in names, "старое фото должно убираться"
+        assert "SendMessage" in names, "новый экран должен приходить текстом"
+
+    asyncio.run(scenario())
 
 
 def test_faq_drops_lists_every_rarity():

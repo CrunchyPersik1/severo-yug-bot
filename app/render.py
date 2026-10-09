@@ -1591,6 +1591,11 @@ def my_card(
     if worn:
         lines += ["", "🎒 Аксессуары: " + ", ".join(esc(a["name"]) for a in worn)]
     rows = [
+        [
+            InlineKeyboardButton(
+                text="❤️ Сделать любимой", callback_data=f"my:v:{unit['handle']}"
+            )
+        ],
         [InlineKeyboardButton(text="🎒 Предметы", callback_data=f"my:i:{unit['handle']}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="my:home")],
     ]

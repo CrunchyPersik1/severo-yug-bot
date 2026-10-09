@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 from datetime import datetime, timezone
@@ -566,13 +567,24 @@ async def _market_view(market: MarketRepo, user_id: int, page: int):
 
 async def _safe_edit(callback: CallbackQuery, text: str, keyboard) -> None:
     message = callback.message
+    if message is None:
+        return
+    # Фото нельзя превратить в текст: если предыдущий экран был с артом,
+    # убираем его и шлём новое сообщение. Иначе старая картинка оставалась
+    # и «карточка» открывалась под чужим артом (например, Гузель).
+    if getattr(message, "photo", None):
+        with contextlib.suppress(Exception):
+            await message.delete()
+        with contextlib.suppress(Exception):
+            await callback.bot.send_message(
+                chat_id=message.chat.id,
+                message_thread_id=getattr(message, "message_thread_id", None),
+                text=text,
+                reply_markup=keyboard,
+            )
+        return
     try:
-        # Карточки с артом уходят отдельным фото: у него правится подпись,
-        # а не текст (иначе кнопка «Назад» в /faq и /my не работала).
-        if getattr(message, "photo", None):
-            await message.edit_caption(caption=text, reply_markup=keyboard)
-        else:
-            await message.edit_text(text, reply_markup=keyboard)
+        await message.edit_text(text, reply_markup=keyboard)
     except TelegramBadRequest as error:
         if "not modified" not in str(error).lower():
             log.warning("Не удалось обновить сообщение: %s", error)
@@ -1654,6 +1666,51 @@ async def cmd_stocks(message: Message) -> None:
     )
 
 
+@router.message(Command("fav", "favorite"))
+@router.message(NormalizedText("любимая", "любимая карта", "фаворит"))
+async def cmd_favorite(message: Message, db: Database, market: MarketRepo) -> None:
+    """Любимая карта: показать или выбрать вручную."""
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    parts = (message.text or "").split()[1:]
+    if not parts:
+        profile = await db.player_profile(user.id)
+        fav_id = profile.get("favorite_card_id") if profile else None
+        card = CARDS_BY_ID.get(fav_id) if fav_id else None
+        if card is not None:
+            await message.answer(
+                f"❤️ Любимая карта: {card.rarity_emoji} "
+                f"<b>{render.esc(card.display_name)}</b>\n\n"
+                "Поменять: <code>/fav #oleg</code> или <code>/fav #12</code>."
+            )
+        else:
+            await message.answer(
+                "❤️ Любимая карта пока не выбрана.\n"
+                "Укажи: <code>/fav #oleg</code> или <code>/fav #12</code>."
+            )
+        return
+    parsed = parse_handle(parts[0])
+    if parsed is None:
+        await message.answer("Формат: <code>/fav #oleg</code> или <code>/fav #12</code>")
+        return
+    try:
+        unit = await market.owned_unit(user.id, parsed)
+    except MarketError as error:
+        await message.answer(f"⚠️ {error}")
+        return
+    if unit.get("kind") == "case":
+        await message.answer("Кейс не может быть любимой картой.")
+        return
+    card = get_card(unit["card_id"])
+    await db.set_favorite_card(user.id, card.card_id)
+    await message.answer(
+        f"❤️ Любимая карта: {card.rarity_emoji} <b>{render.esc(card.display_name)}</b>\n"
+        "Она теперь показывается в профиле — /profile"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # /my — коллекция по страницам
 # --------------------------------------------------------------------------- #
@@ -1708,40 +1765,41 @@ async def _profile_photo(bot: Bot, user_id: int) -> str | None:
 async def _send_profile(
     message: Message, bot: Bot, user_id: int, text: str, keyboard
 ) -> None:
-    """Профиль: с аватаркой, если она есть, иначе текстом."""
-    photo = await _profile_photo(bot, user_id) if len(text) <= 1000 else None
+    """Профиль: аватарка — отдельным сообщением, текст и кнопки — своим.
+
+    Так кнопка «Мои карты» не лежит поверх фото.
+    """
+    photo = await _profile_photo(bot, user_id)
     if photo:
-        try:
-            await message.answer_photo(photo, caption=text, reply_markup=keyboard)
-            return
-        except Exception:  # noqa: BLE001
-            log.warning("Аватарка профиля не отправилась")
+        with contextlib.suppress(Exception):
+            await message.answer_photo(photo)
     await message.answer(text, reply_markup=keyboard)
 
 
 async def _edit_profile(
     callback: CallbackQuery, bot: Bot, user_id: int, text: str, keyboard
 ) -> None:
-    """Профиль по кнопке: фото шлём новым сообщением, старое убираем."""
-    photo = await _profile_photo(bot, user_id) if len(text) <= 1000 else None
-    if photo and callback.message is not None:
-        try:
+    """Профиль по кнопке: старый экран убираем, аватарку шлём отдельно."""
+    message = callback.message
+    if message is None:
+        return
+    photo = await _profile_photo(bot, user_id)
+    with contextlib.suppress(Exception):
+        await message.delete()
+    if photo:
+        with contextlib.suppress(Exception):
             await callback.bot.send_photo(
-                chat_id=callback.message.chat.id,
-                message_thread_id=getattr(callback.message, "message_thread_id", None),
+                chat_id=message.chat.id,
+                message_thread_id=getattr(message, "message_thread_id", None),
                 photo=photo,
-                caption=text,
-                reply_markup=keyboard,
             )
-        except Exception:  # noqa: BLE001
-            log.warning("Аватарка профиля не отправилась")
-        else:
-            try:
-                await callback.message.delete()
-            except Exception:  # noqa: BLE001
-                pass
-            return
-    await _safe_edit(callback, text, keyboard)
+    with contextlib.suppress(Exception):
+        await callback.bot.send_message(
+            chat_id=message.chat.id,
+            message_thread_id=getattr(message, "message_thread_id", None),
+            text=text,
+            reply_markup=keyboard,
+        )
 
 
 @router.callback_query(F.data.startswith("my:"))
@@ -1831,6 +1889,20 @@ async def cb_my(
         text, keyboard = render.my_card(unit, worn)
         await _card_page(callback, unit["card"], text, keyboard)
         await callback.answer()
+        return
+    elif action == "v" and len(parts) > 2:
+        handle = parts[2]
+        unit = await _my_unit(db, market, user_id, handle)
+        if unit is None:
+            await callback.answer("Карта не найдена", show_alert=True)
+            return
+        card = unit["card"]
+        await db.set_favorite_card(user_id, card.card_id)
+        owned = await db.my_accessories(user_id)
+        worn = [item for item in owned if item.get("card_id") == card.card_id]
+        text, keyboard = render.my_card(unit, worn)
+        await _safe_edit(callback, text, keyboard)
+        await callback.answer(f"❤️ Любимая: {card.name}")
         return
     else:
         await callback.answer()

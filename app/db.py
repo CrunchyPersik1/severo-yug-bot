@@ -483,6 +483,7 @@ class Database:
                 """
                 select p.user_id, p.username, p.first_name,
                        p.wins, p.losses, p.draws, p.kills, p.bonus_points,
+                       p.favorite_card,
                        coalesce(sum(c.points), 0) as card_points,
                        count(col.card_id) as unique_cards,
                        coalesce(sum(col.count), 0) as total_cards,
@@ -536,6 +537,25 @@ class Database:
                 """,
                 user_id,
             )
+            # Ручной выбор важнее автоматического.
+            chosen = row["favorite_card"] or (favorite["card_id"] if favorite else None)
+            card_stats = None
+            if chosen:
+                card_stats = await con.fetchrow(
+                    """
+                    select
+                        coalesce((select c0.kills from collection c0
+                                   where c0.user_id = $1 and c0.card_id = $2), 0)
+                            as kills,
+                        coalesce((select c1.count from collection c1
+                                   where c1.user_id = $1 and c1.card_id = $2), 0)
+                        + coalesce((select count(*) from inventory i
+                                     where i.user_id = $1 and i.card_id = $2), 0)
+                            as copies
+                    """,
+                    user_id,
+                    chosen,
+                )
         profile = dict(row)
         profile["card_points"] = int(profile["card_points"]) + int(profile["inv_points"])
         profile["rank"] = int(rank or 1)
@@ -551,10 +571,21 @@ class Database:
             "promos",
         ):
             profile[key] = int(profile.get(key) or 0)
-        profile["favorite_card_id"] = favorite["card_id"] if favorite else None
-        profile["favorite_kills"] = int(favorite["kills"] or 0) if favorite else 0
-        profile["favorite_copies"] = int(favorite["copies"] or 0) if favorite else 0
+        profile["favorite_card_id"] = chosen
+        profile["favorite_manual"] = bool(row["favorite_card"])
+        profile["favorite_kills"] = int(card_stats["kills"] or 0) if card_stats else 0
+        profile["favorite_copies"] = int(card_stats["copies"] or 0) if card_stats else 0
         return profile
+
+    async def set_favorite_card(self, user_id: int, card_id: str) -> None:
+        """Ручной выбор любимой карты (перебивает автоматическую)."""
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update players set favorite_card = $2, updated_at = now() "
+                "where user_id = $1",
+                user_id,
+                card_id,
+            )
 
     async def rating(self, limit: int = 10) -> list[dict[str, Any]]:
         """Рейтинг PvP по числу выигранных боёв."""
