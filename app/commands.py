@@ -18,6 +18,7 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="market", description="Рынок: лоты с кнопкой «Купить»"),
     BotCommand(command="casino", description="Казино: ставка очками или картой"),
     BotCommand(command="casinostats", description="Казино: сколько выиграл и слил"),
+    BotCommand(command="stocks", description="Биржа: акции, курсы, портфель"),
     BotCommand(command="faq", description="FAQ: цены карт, статы, абилки и множители"),
     BotCommand(command="sell", description="Выставить лот: /sell #id цена"),
     BotCommand(command="mylots", description="Свои лоты на рынке"),

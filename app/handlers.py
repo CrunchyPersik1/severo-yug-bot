@@ -1608,6 +1608,43 @@ async def cmd_shop(message: Message) -> None:
     )
 
 
+@router.message(Command("stocks", "exchange"))
+@router.message(NormalizedText("биржа", "акции", "биржа акций"))
+async def cmd_stocks(message: Message) -> None:
+    """Биржа — отдельной мини-аппкой, как магазин."""
+    user = message.from_user
+    if user is None:
+        return
+    base = _base_url()
+    if not base:
+        await message.answer("⚠️ Биржа не настроена: нет PUBLIC_URL.")
+        return
+    if message.chat.type != "private":
+        await message.answer(
+            "📈 Биржа открывается только в личке со мной — напиши мне туда."
+        )
+        return
+
+    from aiogram.types import WebAppInfo
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📈 Открыть биржу", web_app=WebAppInfo(url=f"{base}/stocks")
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "📈 <b>Биржа «Северо-Юг»</b>\n\n"
+        "Курсы двигаются каждые 15 секунд: 🟩 вверх, 🟥 вниз.\n"
+        "Покупай дешевле — продавай дороже. Быстрым трейдом не нафармишь: "
+        "комиссия на вход и на выход.",
+        reply_markup=keyboard,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # /my — коллекция по страницам
 # --------------------------------------------------------------------------- #

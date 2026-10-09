@@ -258,6 +258,50 @@ def test_draw_gives_nothing():
     run(scenario())
 
 
+def test_stocks_buy_sell_and_no_arbitrage():
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app import stocks as stocks_mod
+            from app.stocks_repo import StocksError, StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            user = 900010
+            async with db.pool.acquire() as con:
+                await con.execute("delete from stock_holdings where user_id = $1", user)
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Трейдер")
+            await db.add_points(user, 1_000_000)
+
+            await repo.tick()
+            before = (await repo.overview(user))["me"]["balance"]
+
+            bought = await repo.buy(user, "syug", 10)
+            assert bought["shares"] == 10
+            # больше, чем есть, продать нельзя
+            with pytest.raises(StocksError):
+                await repo.sell(user, "syug", 99)
+
+            sold = await repo.sell(user, "syug", 10)
+            assert sold["shares"] == 10
+
+            after = (await repo.overview(user))["me"]["balance"]
+            # покупка и продажа по одному курсу съедают комиссию
+            assert after < before, "круговой трейд не должен приносить очки"
+
+            overview = await repo.overview(user)
+            assert len(overview["stocks"]) == len(stocks_mod.STOCKS)
+            assert overview["portfolio"]["value"] == 0
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from stock_holdings where user_id = 900010")
+                await con.execute("delete from players where user_id = 900010")
+            await db.close()
+
+    run(scenario())
+
+
 def test_casino_stats_counts_wins_and_losses():
     async def scenario():
         db = await fresh_db()

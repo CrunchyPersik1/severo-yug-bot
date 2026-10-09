@@ -23,6 +23,7 @@ from app.db import Database
 from app.handlers import router
 from app.market_repo import MarketRepo
 from app.shop import ShopRepo
+from app.stocks_repo import StocksRepo
 from app.team_service import TeamBattleService
 from app.webapp import router as webapp_router
 
@@ -62,13 +63,18 @@ async def setup_commands(bot: Bot) -> None:
     log.info("Меню команд обновлено: %d шт.", len(COMMANDS))
 
 
-async def _ticker(service: BattleService, team: TeamBattleService) -> None:
+async def _ticker(
+    service: BattleService, team: TeamBattleService, stocks: StocksRepo
+) -> None:
     while True:
         await asyncio.sleep(15)
         with contextlib.suppress(Exception):
             await service.tick()
         with contextlib.suppress(Exception):
             await team.tick()
+        # Живой курс биржи: один шаг каждые 15 секунд.
+        with contextlib.suppress(Exception):
+            await stocks.tick()
 
 
 @asynccontextmanager
@@ -102,13 +108,18 @@ async def lifespan(app: FastAPI):
     service = BattleService(bot, db, market)
     team = TeamBattleService(bot, db, market)
     shop = ShopRepo(db, market)
+    stocks = StocksRepo(db)
+    await stocks.seed()
 
     # мини-аппка магазина читает это из app.state
     app.state.settings = settings
     app.state.db = db
     app.state.market = market
     app.state.shop = shop
-    runtime.update(db=db, bot=bot, dp=dp, service=service, market=market, team=team)
+    app.state.stocks = stocks
+    runtime.update(
+        db=db, bot=bot, dp=dp, service=service, market=market, team=team, stocks=stocks
+    )
 
     me = await bot.get_me()
     log.info("Бот: @%s (%s)", me.username, me.id)
@@ -144,7 +155,7 @@ async def lifespan(app: FastAPI):
             )
             log.info("Кнопка мини-аппки: %s/app", base)
 
-    task = asyncio.create_task(_ticker(service, team))
+    task = asyncio.create_task(_ticker(service, team, stocks))
     log.info("Бот запущен: %d карт", len(CARDS))
     try:
         yield

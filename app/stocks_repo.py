@@ -1,0 +1,278 @@
+"""Биржа: курс, покупка и продажа акций. Всё в транзакциях."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+import asyncpg
+
+from . import stocks
+from .db import Database
+
+log = logging.getLogger(__name__)
+
+HISTORY_POINTS = 24   # сколько свечей показываем на графике
+HISTORY_KEEP = 240    # сколько храним в базе
+
+
+class StocksError(Exception):
+    """Ошибку можно показать игроку."""
+
+
+class StocksRepo:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    @property
+    def pool(self) -> asyncpg.Pool:
+        return self.db._p()
+
+    # ------------------------------------------------------------------ #
+    # Курс
+    # ------------------------------------------------------------------ #
+
+    async def seed(self) -> None:
+        async with self.pool.acquire() as con:
+            for stock in stocks.STOCKS:
+                await con.execute(
+                    """
+                    insert into stocks
+                        (slug, name, emoji, base_price, price, prev_price, volatility)
+                    values ($1, $2, $3, $4, $4, $4, $5)
+                    on conflict (slug) do update set
+                        name = excluded.name,
+                        emoji = excluded.emoji,
+                        base_price = excluded.base_price,
+                        volatility = excluded.volatility
+                    """,
+                    stock["slug"],
+                    stock["name"],
+                    stock["emoji"],
+                    int(stock["base"]),
+                    float(stock["vol"]),
+                )
+
+    async def tick(self) -> None:
+        """Двигает курсы на прошедшие шаги (один шаг за TICK_SECONDS)."""
+        now = datetime.now(timezone.utc)
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                rows = await con.fetch("select * from stocks for update")
+                for row in rows:
+                    await self._advance(con, row, now)
+
+    async def _advance(self, con: asyncpg.Connection, row, now: datetime) -> None:
+        volatility = float(row["volatility"])
+        base = int(row["base_price"])
+        elapsed = (now - row["updated_at"]).total_seconds()
+        steps = int(elapsed // stocks.TICK_SECONDS)
+        if steps <= 0:
+            return
+        steps = min(steps, stocks.MAX_CATCHUP_TICKS)
+        price = int(row["price"])
+        for _ in range(steps):
+            price = stocks.next_price(price, base, volatility)
+            await con.execute(
+                "insert into stock_history (stock_id, price) values ($1, $2)",
+                int(row["id"]),
+                price,
+            )
+        await con.execute(
+            "update stocks set prev_price = price, price = $2, updated_at = now() "
+            "where id = $1",
+            int(row["id"]),
+            price,
+        )
+        await con.execute(
+            """
+            delete from stock_history
+             where stock_id = $1
+               and id not in (
+                   select id from stock_history
+                    where stock_id = $1
+                    order by id desc
+                    limit $2
+               )
+            """,
+            int(row["id"]),
+            HISTORY_KEEP,
+        )
+
+    async def _history(
+        self, con: asyncpg.Connection, stock_id: int, limit: int = HISTORY_POINTS
+    ) -> list[int]:
+        rows = await con.fetch(
+            "select price from stock_history where stock_id = $1 order by id desc limit $2",
+            int(stock_id),
+            int(limit),
+        )
+        return [int(r["price"]) for r in reversed(rows)]
+
+    # ------------------------------------------------------------------ #
+    # Снимок для мини-аппки
+    # ------------------------------------------------------------------ #
+
+    async def overview(self, user_id: int) -> dict[str, Any]:
+        async with self.pool.acquire() as con:
+            rows = await con.fetch("select * from stocks order by id")
+            holdings = await con.fetch(
+                "select stock_id, shares, spent from stock_holdings where user_id = $1",
+                user_id,
+            )
+            balance = await con.fetchval(
+                "select coalesce(bonus_points, 0) from players where user_id = $1",
+                user_id,
+            )
+            hold = {
+                int(h["stock_id"]): (int(h["shares"]), int(h["spent"]))
+                for h in holdings
+            }
+            items = []
+            total_value = 0
+            total_spent = 0
+            for row in rows:
+                sid = int(row["id"])
+                hist = await self._history(con, sid)
+                price = int(row["price"])
+                shares, spent = hold.get(sid, (0, 0))
+                value = stocks.sell_price(price) * shares
+                total_value += value
+                total_spent += spent
+                items.append(
+                    {
+                        "slug": row["slug"],
+                        "name": row["name"],
+                        "emoji": row["emoji"],
+                        "price": price,
+                        "buy_price": stocks.buy_price(price),
+                        "sell_price": stocks.sell_price(price),
+                        "change": round(stocks.change_percent(hist), 2),
+                        "history": hist,
+                        "my_shares": shares,
+                        "my_value": value,
+                        "my_spent": spent,
+                        "my_pnl": value - spent,
+                    }
+                )
+        return {
+            "me": {"balance": int(balance or 0)},
+            "stocks": items,
+            "portfolio": {
+                "value": total_value,
+                "spent": total_spent,
+                "pnl": total_value - total_spent,
+            },
+        }
+
+    # ------------------------------------------------------------------ #
+    # Сделки
+    # ------------------------------------------------------------------ #
+
+    async def buy(self, user_id: int, slug: str, shares: int) -> dict[str, Any]:
+        shares = int(shares)
+        if shares < 1:
+            raise StocksError("Сколько акций покупаем?")
+        if shares > stocks.MAX_SHARES:
+            raise StocksError("Слишком много акций за одну сделку.")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                stock = await con.fetchrow(
+                    "select * from stocks where slug = $1 for update", slug
+                )
+                if stock is None:
+                    raise StocksError("Такой акции нет на бирже.")
+                price = stocks.buy_price(int(stock["price"]))
+                cost = price * shares
+                row = await con.fetchrow(
+                    """
+                    update players set bonus_points = bonus_points - $2
+                     where user_id = $1 and bonus_points >= $2
+                    returning bonus_points
+                    """,
+                    user_id,
+                    cost,
+                )
+                if row is None:
+                    balance = await con.fetchval(
+                        "select coalesce(bonus_points, 0) from players where user_id = $1",
+                        user_id,
+                    )
+                    raise StocksError(
+                        f"Не хватает очков: нужно {cost}, у тебя {int(balance or 0)}."
+                    )
+                await con.execute(
+                    """
+                    insert into stock_holdings (user_id, stock_id, shares, spent)
+                    values ($1, $2, $3, $4)
+                    on conflict (user_id, stock_id) do update set
+                        shares = stock_holdings.shares + excluded.shares,
+                        spent = stock_holdings.spent + excluded.spent
+                    """,
+                    user_id,
+                    int(stock["id"]),
+                    shares,
+                    cost,
+                )
+        return {
+            "slug": slug,
+            "shares": shares,
+            "price": price,
+            "total": cost,
+            "balance": int(row["bonus_points"]),
+        }
+
+    async def sell(self, user_id: int, slug: str, shares: int) -> dict[str, Any]:
+        shares = int(shares)
+        if shares < 1:
+            raise StocksError("Сколько акций продаём?")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                stock = await con.fetchrow(
+                    "select * from stocks where slug = $1 for update", slug
+                )
+                if stock is None:
+                    raise StocksError("Такой акции нет на бирже.")
+                holding = await con.fetchrow(
+                    "select * from stock_holdings where user_id = $1 and stock_id = $2 "
+                    "for update",
+                    user_id,
+                    int(stock["id"]),
+                )
+                have = int(holding["shares"]) if holding else 0
+                if have < shares:
+                    raise StocksError(f"У тебя только {have} акций этой компании.")
+                price = stocks.sell_price(int(stock["price"]))
+                proceeds = price * shares
+                avg = int(holding["spent"]) / have
+                spent_out = round(avg * shares)
+                await con.execute(
+                    "update stock_holdings set shares = shares - $3, "
+                    "spent = greatest(0, spent - $4) "
+                    "where user_id = $1 and stock_id = $2",
+                    user_id,
+                    int(stock["id"]),
+                    shares,
+                    spent_out,
+                )
+                await con.execute(
+                    "delete from stock_holdings "
+                    "where user_id = $1 and stock_id = $2 and shares <= 0",
+                    user_id,
+                    int(stock["id"]),
+                )
+                balance = await con.fetchval(
+                    "update players set bonus_points = bonus_points + $2 "
+                    "where user_id = $1 returning bonus_points",
+                    user_id,
+                    proceeds,
+                )
+        return {
+            "slug": slug,
+            "shares": shares,
+            "price": price,
+            "total": proceeds,
+            "pnl": proceeds - spent_out,
+            "balance": int(balance),
+        }

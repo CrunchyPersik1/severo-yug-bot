@@ -330,3 +330,38 @@ create table if not exists referrals (
     created_at  timestamptz not null default now()
 );
 create index if not exists referrals_referrer_idx on referrals (referrer_id);
+
+-- ===================================================================== --
+-- Биржа
+-- ===================================================================== --
+
+create table if not exists stocks (
+    id         bigserial primary key,
+    slug       text not null unique,
+    name       text not null,
+    emoji      text not null default '📈',
+    base_price integer not null,
+    price      integer not null,
+    prev_price integer not null default 0,
+    volatility numeric(6,4) not null default 0.03,
+    updated_at timestamptz not null default now()
+);
+
+-- История курса для графика (свечки-квадратики).
+create table if not exists stock_history (
+    id       bigserial primary key,
+    stock_id bigint not null references stocks(id) on delete cascade,
+    price    integer not null,
+    at       timestamptz not null default now()
+);
+create index if not exists stock_history_idx on stock_history (stock_id, at desc);
+
+-- Сколько акций у игрока и сколько очков он в них вложил (для P/L).
+create table if not exists stock_holdings (
+    user_id  bigint not null references players(user_id) on delete cascade,
+    stock_id bigint not null references stocks(id) on delete cascade,
+    shares   integer not null default 0,
+    spent    bigint not null default 0,
+    primary key (user_id, stock_id)
+);
+create index if not exists stock_holdings_user_idx on stock_holdings (user_id);

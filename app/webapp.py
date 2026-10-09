@@ -23,6 +23,7 @@ from .cards import get_card, image_url
 from .items import ACCESSORIES
 from .render import describe_ability
 from .shop import ShopError, catalog
+from .stocks_repo import StocksError
 
 log = logging.getLogger(__name__)
 
@@ -448,9 +449,212 @@ async def api_market_cancel(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+# --------------------------------------------------------------------------- #
+# Биржа — API
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/api/stocks")
+async def api_stocks(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    repo = state.stocks
+    # Ленивый тик: если воркер спал, курс догоняет время прямо здесь.
+    await repo.tick()
+    data = await repo.overview(int(user["id"]))
+    data["me"]["name"] = user.get("first_name") or "игрок"
+    return JSONResponse(data)
+
+
+async def _stock_trade(request: Request, kind: str) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+        body = await request.json()
+        slug = str(body.get("slug", ""))
+        shares = int(body.get("shares", 0))
+        repo = state.stocks
+        if kind == "buy":
+            result = await repo.buy(int(user["id"]), slug, shares)
+        else:
+            result = await repo.sell(int(user["id"]), slug, shares)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except StocksError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    except Exception:  # noqa: BLE001
+        log.exception("Биржа: сделка не прошла")
+        return JSONResponse({"error": "Не получилось, попробуй ещё"}, status_code=500)
+    return JSONResponse({"ok": True, **result})
+
+
+@router.post("/api/stocks/buy")
+async def api_stocks_buy(request: Request) -> JSONResponse:
+    return await _stock_trade(request, "buy")
+
+
+@router.post("/api/stocks/sell")
+async def api_stocks_sell(request: Request) -> JSONResponse:
+    return await _stock_trade(request, "sell")
+
+
 @router.get("/market", response_class=HTMLResponse)
 async def market_app() -> HTMLResponse:
     return HTMLResponse(MARKET_PAGE)
+
+
+@router.get("/stocks", response_class=HTMLResponse)
+async def stocks_app() -> HTMLResponse:
+    return HTMLResponse(STOCKS_PAGE)
+
+
+STOCKS_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Северо-Юг · Биржа</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0f1117; --card:#171a23; --line:#252a38; --ink:#e8ebf2; --muted:#8b93a7;
+  --up:#22c55e; --down:#ef4444; --accent:#4f46e5; --accent-soft:#1e2140;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:100px}
+header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);
+  backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
+  padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+h1{margin:0;font-size:19px;letter-spacing:-.2px}
+.wallet{font-weight:700;font-size:15px;background:var(--accent-soft);color:#c7c9ff;
+  border-radius:999px;padding:7px 14px;white-space:nowrap}
+main{padding:12px 14px}
+.pf{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--muted)}
+.pf b{color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:12px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.name{font-weight:700;font-size:15px}
+.price{font-size:14px;margin-top:4px;color:var(--muted)}
+.price b,.price .up,.price .down{font-weight:700}
+.buycell{font-size:11px;color:var(--muted);text-align:right;line-height:1.6;white-space:nowrap}
+.spark{display:flex;gap:2px;margin-top:10px;height:26px;align-items:flex-end}
+.spark i{flex:1 1 0;min-width:3px;border-radius:2px;background:#3a4055;height:12px}
+.spark i.up{background:var(--up);height:24px}
+.spark i.down{background:var(--down);height:24px}
+.spark i.flat{background:#3a4055}
+.mine{margin-top:9px;font-size:12px;color:var(--muted)}
+.up{color:var(--up)} .down{color:var(--down)}
+.act{display:flex;gap:8px;margin-top:11px}
+.qty{width:74px;background:#0d0f16;border:1px solid var(--line);color:var(--ink);
+  border-radius:10px;padding:10px;font-size:14px;text-align:center}
+.btn{flex:1;border:0;border-radius:10px;padding:11px;font-size:14px;font-weight:700;color:#fff}
+.btn.buy{background:linear-gradient(135deg,#16a34a,#15803d)}
+.btn.sell{background:linear-gradient(135deg,#dc2626,#b91c1c)}
+.btn:active{transform:scale(.98)}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;
+  border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.45;
+  transform:translateY(150%);transition:.26s cubic-bezier(.2,.8,.3,1);z-index:9}
+#toast.on{transform:translateY(0)}
+#toast.ok{background:#15803d}
+#toast.bad{background:#b91c1c}
+</style>
+</head>
+<body>
+<header>
+  <h1>📈 Биржа</h1>
+  <div class="wallet">💰 <span id="balance">…</span></div>
+</header>
+<main id="list"><div class="pf">Загружаю курсы…</div></main>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
+let state = {stocks: [], portfolio: {}, balance: 0};
+
+function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function toast(t,k){ var el=document.getElementById("toast"); el.textContent=t;
+  el.className="on "+(k||""); clearTimeout(el._t); el._t=setTimeout(function(){el.className="";},3200); }
+
+function spark(hist){
+  if(!hist || hist.length < 2) return "";
+  var out = "";
+  for(var i=0;i<hist.length;i++){
+    var prev = i ? hist[i-1] : hist[i];
+    var cls = hist[i] > prev ? "up" : (hist[i] < prev ? "down" : "flat");
+    out += '<i class="'+cls+'" title="'+hist[i]+'"></i>';
+  }
+  return '<div class="spark">'+out+'</div>';
+}
+
+function card(s){
+  var up = s.change >= 0;
+  var mine = "";
+  if(s.my_shares > 0){
+    var pnl = s.my_pnl >= 0 ? '<span class="up">+'+money(s.my_pnl)+'</span>' : '<span class="down">'+money(s.my_pnl)+'</span>';
+    mine = '<div class="mine">У тебя: <b>'+s.my_shares+'</b> акц. · '+money(s.my_value)+' · '+pnl+'</div>';
+  }
+  return '<div class="card">'+
+    '<div class="top"><div><div class="name">'+s.emoji+' '+esc(s.name)+'</div>'+
+    '<div class="price"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span></div></div>'+
+    '<div class="buycell">купить '+money(s.buy_price)+'<br>продать '+money(s.sell_price)+'</div></div>'+
+    spark(s.history) + mine +
+    '<div class="act"><input class="qty" type="number" min="1" value="1" data-qty="'+s.slug+'">'+
+    '<button class="btn buy" data-buy="'+s.slug+'">Купить</button>'+
+    '<button class="btn sell" data-sell="'+s.slug+'">Продать</button></div>'+
+  '</div>';
+}
+
+function render(){
+  document.getElementById("balance").textContent = money(state.balance);
+  var pf = state.portfolio || {};
+  var pnl = (pf.pnl||0) >= 0 ? '<span class="up">+'+money(pf.pnl||0)+'</span>' : '<span class="down">'+money(pf.pnl||0)+'</span>';
+  var head = '<div class="pf">Портфель: <b>'+money(pf.value||0)+'</b> · вложено '+money(pf.spent||0)+' · '+pnl+'</div>';
+  document.getElementById("list").innerHTML = head + state.stocks.map(card).join("");
+  document.querySelectorAll("[data-buy]").forEach(function(b){ b.onclick=function(){ trade("buy", b.dataset.buy); }; });
+  document.querySelectorAll("[data-sell]").forEach(function(b){ b.onclick=function(){ trade("sell", b.dataset.sell); }; });
+}
+
+async function load(){
+  try{
+    var r = await fetch("/api/stocks", {headers});
+    var d = await r.json();
+    if(d.error){ toast(d.error,"bad"); return; }
+    state.stocks = d.stocks; state.portfolio = d.portfolio; state.balance = d.me.balance;
+    render();
+  }catch(e){ toast("Не смог загрузить биржу","bad"); }
+}
+
+async function trade(kind, slug){
+  var input = document.querySelector('[data-qty="'+slug+'"]');
+  var shares = Math.max(1, Math.floor(Number(input ? input.value : 1) || 1));
+  try{
+    var r = await fetch("/api/stocks/"+kind, {method:"POST", headers, body: JSON.stringify({slug: slug, shares: shares})});
+    var d = await r.json();
+    if(d.error){ toast(d.error,"bad"); }
+    else{
+      toast((kind==="buy"?"Куплено ":"Продано ")+shares+" за "+money(d.total), "ok");
+      if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    }
+  }catch(e){ toast("Связь потерялась","bad"); }
+  await load();
+}
+
+if(tg){ tg.ready(); tg.expand(); }
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
+"""
 
 
 MARKET_PAGE = r"""<!doctype html>

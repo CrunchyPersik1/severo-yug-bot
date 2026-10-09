@@ -1577,6 +1577,13 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
                 ),
             ]
         )
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📈 Биржа", web_app=WebAppInfo(url=f"{app_url}/stocks")
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(text="🏆 Топ", callback_data="mn:top"),
