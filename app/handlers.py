@@ -2132,6 +2132,11 @@ async def _card_page(
             except Exception:  # noqa: BLE001
                 pass
             return
+    # Арта нет — показываем карточку текстом. Без этой строки карты без
+    # картинки вообще не открывались (кнопка молчала).
+    await _safe_edit(callback, text, keyboard)
+
+
 async def _profile_photo(bot: Bot, user_id: int) -> str | None:
     """Аватарка игрока, если Телеграм её отдаёт."""
     try:

@@ -688,6 +688,26 @@ def test_other_players_cards_and_stats_are_viewable():
     asyncio.run(scenario())
 
 
+def test_card_without_art_still_opens():
+    """Регрессия: карты без арта не открывались вообще (клик молчал)."""
+
+    async def scenario():
+        db = FakeDB()
+        db.collection[111] = {"guzel_armatura": 1}
+
+        session = await feed_callback("my:d:#guzel_armatura", db, FakeMarket())
+        edits = [p for n, p in session.calls if n == "EditMessageText"]
+        assert edits, "карточка без арта должна приходить текстом"
+        assert "Красная ручка" in edits[0]["text"]
+
+        session = await feed_callback("fq:card:guzel_armatura", db, FakeMarket())
+        edits = [p for n, p in session.calls if n == "EditMessageText"]
+        assert edits, "и в FAQ тоже"
+        assert "Гузель Арматуровна" in edits[0]["text"]
+
+    asyncio.run(scenario())
+
+
 def test_own_card_detail_offers_actions():
     async def scenario():
         db = FakeDB()
