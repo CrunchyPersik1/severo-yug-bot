@@ -703,13 +703,21 @@ def test_other_players_cards_and_stats_are_viewable():
     asyncio.run(scenario())
 
 
-def test_new_level_is_announced_after_action():
+def test_new_level_is_announced_in_dm():
+    """Новый уровень должен уходить игроку в личку, а не в общую группу."""
+
     async def scenario():
         db = FakeDB()
         db.pending_levels[111] = [2, 3]
+        # сообщение пришло из группы -100123
         session = await feed("/help", db, FakeService())
-        texts = sent_texts(session)
-        assert any("Новый уровень" in text for text in texts), texts
+        level_messages = [
+            payload
+            for name, payload in session.calls
+            if name == "SendMessage" and "Новый уровень" in str(payload.get("text"))
+        ]
+        assert level_messages, [p for n, p in session.calls if n == "SendMessage"]
+        assert int(level_messages[0]["chat_id"]) == 111, "уровень шлём в лс игроку"
 
     asyncio.run(scenario())
 

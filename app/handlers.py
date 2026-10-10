@@ -133,13 +133,19 @@ async def levelup_notify(handler, event, data):
         return result
     if not summary.get("levels"):
         return result
-    chat = getattr(event, "chat", None)
-    if chat is None:
-        chat = getattr(getattr(event, "message", None), "chat", None)
-    if chat is None:
+    text = render.render_levelup(summary)
+    if not text:
         return result
-    with contextlib.suppress(Exception):
-        await bot.send_message(chat.id, render.render_levelup(summary))
+    # Уровень — личное дело: шлём игроку в личку, а не в общую группу.
+    try:
+        await bot.send_message(user.id, text)
+    except Exception:  # noqa: BLE001 - не написать в лс (не начинал бота)
+        chat = getattr(event, "chat", None)
+        if chat is None:
+            chat = getattr(getattr(event, "message", None), "chat", None)
+        if chat is not None:
+            with contextlib.suppress(Exception):
+                await bot.send_message(chat.id, text)
     return result
 
 
