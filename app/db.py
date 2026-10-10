@@ -318,6 +318,35 @@ class Database:
             )
         return None if row is None else int(row["left"])
 
+    async def roulette_left(self, user_id: int, day: Any, limit: int = 1) -> int:
+        """Сколько спинов рулетки осталось на текущие сутки."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select roulette_day, roulette_uses, roulette_limit "
+                "from players where user_id = $1",
+                user_id,
+            )
+        if row is None:
+            return 0
+        if row["roulette_day"] != day:
+            return int(limit)
+        return max(0, int(row["roulette_limit"]) - int(row["roulette_uses"]))
+
+    async def get_setting(self, key: str) -> str | None:
+        async with self._p().acquire() as con:
+            return await con.fetchval(
+                "select value from app_settings where key = $1", str(key)
+            )
+
+    async def set_setting(self, key: str, value: str) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into app_settings (key, value) values ($1, $2) "
+                "on conflict (key) do update set value = excluded.value",
+                str(key),
+                str(value),
+            )
+
     async def add_points(self, user_id: int, amount: int) -> int:
         async with self._p().acquire() as con:
             row = await con.fetchrow(

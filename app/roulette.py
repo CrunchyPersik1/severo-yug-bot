@@ -70,6 +70,51 @@ def roll_points(rng: random.Random | None = None) -> int:
     return rng.randint(low, high)
 
 
+def wheel_segments() -> list[dict]:
+    """Сегменты колеса: их доли совпадают с реальными шансами призов."""
+    colors = ("#1d4ed8", "#2563eb", "#0ea5e9", "#7c3aed")
+    segments: list[dict] = []
+    for index, (low, high, weight) in enumerate(POINT_TIERS):
+        segments.append(
+            {
+                "key": f"points_{index}",
+                "label": f"{low}-{high}",
+                "color": colors[index % len(colors)],
+                "weight": PRIZE_WEIGHTS[PRIZE_POINTS] * weight,
+            }
+        )
+    segments.append(
+        {
+            "key": PRIZE_CASE,
+            "label": "Кейс",
+            "color": "#15803d",
+            "weight": PRIZE_WEIGHTS[PRIZE_CASE],
+        }
+    )
+    segments.append(
+        {
+            "key": PRIZE_CARD,
+            "label": "Дэниэл",
+            "color": "#b45309",
+            "weight": PRIZE_WEIGHTS[PRIZE_CARD],
+        }
+    )
+    return segments
+
+
+def segment_index(prize: tuple[str, int | str]) -> int:
+    """В какой сегмент колеса попадёт приз."""
+    kind, value = prize
+    if kind == PRIZE_POINTS:
+        for index, (low, high, _) in enumerate(POINT_TIERS):
+            if int(low) <= int(value) <= int(high):
+                return index
+        return len(POINT_TIERS) - 1
+    if kind == PRIZE_CASE:
+        return len(POINT_TIERS)
+    return len(POINT_TIERS) + 1
+
+
 def roll_prize(rng: random.Random | None = None) -> tuple[str, int | str]:
     """Возвращает ('points', 750) | ('case', 'case') | ('card', 'daniel')."""
     kind = roll_prize_kind(rng)

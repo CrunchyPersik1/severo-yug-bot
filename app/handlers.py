@@ -65,6 +65,13 @@ class NormalizedText(Filter):
         return normalize(message.text) in self.variants
 
 
+class UpdateWord(Filter):
+    """Слово-рубильник: «ОБНОВЛЕНИЕ» в любом регистре и с пробелами вокруг."""
+
+    async def __call__(self, message: Message) -> bool:
+        return bool(message.text) and message.text.strip().upper() == "ОБНОВЛЕНИЕ"
+
+
 def _humanize(delta_seconds: float) -> str:
     total = max(0, int(delta_seconds))
     hours, remainder = divmod(total, 3600)
@@ -902,17 +909,139 @@ async def cmd_gift(message: Message, db: Database, market: MarketRepo) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# ОБНОВЛЕНИЕ: рубильник новых мини-аппок (кейсы и рулетка)
+# --------------------------------------------------------------------------- #
+
+UPDATE_ANNOUNCE = (
+    "🚀 <b>ОБНОВЛЕНИЕ!</b>\n\n"
+    "📦 Кейсы теперь открываются как в CS:GO — крутится лента, и видно, что выпало.\n"
+    "🎡 Рулетка стала настоящим колесом с призами и шансами.\n\n"
+    "Всё это — в мини-аппке, жми кнопку ниже."
+)
+
+
+async def _miniapps_live(db: Database) -> bool:
+    """Обновление включается, только когда админ напишет ОБНОВЛЕНИЕ."""
+    return (await db.get_setting("miniapps_live")) == "1"
+
+
+def _link_keyboard(username: str, chat_type: str) -> InlineKeyboardMarkup:
+    """web_app-кнопки Telegram разрешает только в личке. В группах — ссылка,
+    которая открывает личку с ботом и уже там показывает мини-аппку."""
+    if chat_type == "private":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📦 Кейсы", url=f"https://t.me/{username}?start=caseapp")],
+                [InlineKeyboardButton(text="🎡 Рулетка", url=f"https://t.me/{username}?start=rouletteapp")],
+            ]
+        )
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Кейсы — в личке", url=f"https://t.me/{username}?start=caseapp")],
+            [InlineKeyboardButton(text="🎡 Рулетка — в личке", url=f"https://t.me/{username}?start=rouletteapp")],
+        ]
+    )
+
+
+async def _send_miniapp(message: Message, bot: Bot, kind: str) -> None:
+    """Кнопка на мини-аппку кейсов или рулетки."""
+    base = _base_url()
+    if kind == "case":
+        label, path = "📦 Открыть кейсы", "/case_app"
+    else:
+        label, path = "🎡 Крутить рулетку", "/roulette_app"
+    if message.chat.type == "private" and base:
+        from aiogram.types import WebAppInfo
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=label, web_app=WebAppInfo(url=f"{base}{path}")
+                    )
+                ]
+            ]
+        )
+        await message.answer("Открывай:", reply_markup=keyboard)
+        return
+    username = await _bot_username(bot)
+    payload = "caseapp" if kind == "case" else "rouletteapp"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"{label} — в личке",
+                    url=f"https://t.me/{username}?start={payload}",
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "Мини-аппка открывается в личке со мной — жми кнопку:", reply_markup=keyboard
+    )
+
+
+async def _broadcast_update(
+    bot: Bot, db: Database, username: str, exclude: int | None = None
+) -> int:
+    sent = 0
+    for chat_id in await db.broadcast_targets():
+        if exclude is not None and int(chat_id) == int(exclude):
+            continue
+        try:
+            await bot.send_message(
+                chat_id, UPDATE_ANNOUNCE, reply_markup=_link_keyboard(username, "group")
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        sent += 1
+        await asyncio.sleep(0.05)
+    for user_id in await db.all_player_ids():
+        try:
+            await bot.send_message(
+                user_id, UPDATE_ANNOUNCE, reply_markup=_link_keyboard(username, "private")
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(0.05)
+    return sent
+
+
+@router.message(UpdateWord())
+async def cmd_update_live(message: Message, bot: Bot, db: Database) -> None:
+    """Рубильник: пока админ молчит, новых мини-аппок для игроков нет."""
+    user = message.from_user
+    if user is None or not settings.is_admin(user.id):
+        return
+    await db.set_setting("miniapps_live", "1")
+    username = await _bot_username(bot)
+    await message.answer(
+        UPDATE_ANNOUNCE, reply_markup=_link_keyboard(username, message.chat.type)
+    )
+    sent = await _broadcast_update(
+        bot, db, username, exclude=message.chat.id
+    )
+    await message.answer(f"✅ Обновление включено. Разослал ещё в {sent} групп(ы).")
+
+
+# --------------------------------------------------------------------------- #
 # Рулетка и кейсы
 # --------------------------------------------------------------------------- #
 
 
 @router.message(Command("roulette", "рулетка"))
 @router.message(NormalizedText("рулетка", "руль"))
-async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> None:
+async def cmd_roulette(
+    message: Message, db: Database, market: MarketRepo, bot: Bot
+) -> None:
     user = message.from_user
     if user is None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
+
+    if await _miniapps_live(db):
+        await _send_miniapp(message, bot, "roulette")
+        return
 
     spins_left = await db.claim_roulette(user.id, roulette_day_key(), SPINS_PER_DAY)
     if spins_left is None:
@@ -943,11 +1072,15 @@ async def cmd_roulette(message: Message, db: Database, market: MarketRepo) -> No
 
 @router.message(Command("case", "кейс", "открыть"))
 @router.message(NormalizedText("кейс", "открыть кейс"))
-async def cmd_case(message: Message, db: Database) -> None:
+async def cmd_case(message: Message, db: Database, bot: Bot) -> None:
     user = message.from_user
     if user is None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
+
+    if await _miniapps_live(db):
+        await _send_miniapp(message, bot, "case")
+        return
 
     cases = await db.user_cases(user.id)
     if not cases:
@@ -2100,6 +2233,14 @@ async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
             log.exception("Реферальный переход не обработался")
         if note:
             await message.answer(note)
+
+    # Ссылки из групп: ?start=caseapp / ?start=rouletteapp открывают мини-аппку.
+    if user is not None and payload in ("caseapp", "rouletteapp"):
+        await db.ensure_player(user.id, user.username, user.first_name)
+        await _send_miniapp(
+            message, bot, "case" if payload == "caseapp" else "roulette"
+        )
+        return
 
     # Кнопки-мини-апп Telegram разрешает только в личке: в группе /start
     # должен отдать то же меню, но без web_app-кнопок.

@@ -19,9 +19,21 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from .cards import get_card, image_url
+from . import cases as cases_mod
+from . import roulette as roulette_mod
+from .cards import get_card, image_url, rarity_name
+from .cases import roll_case_card
+from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .items import ACCESSORIES
 from .render import describe_ability
+from .roulette import (
+    SPINS_PER_DAY,
+    next_roulette_reset,
+    roll_prize,
+    roulette_day_key,
+    segment_index,
+    wheel_segments,
+)
 from .shop import ShopError, catalog
 from .stocks_repo import StocksError
 
@@ -500,6 +512,165 @@ async def api_stocks_buy(request: Request) -> JSONResponse:
 @router.post("/api/stocks/sell")
 async def api_stocks_sell(request: Request) -> JSONResponse:
     return await _stock_trade(request, "sell")
+
+
+# --------------------------------------------------------------------------- #
+# Кейсы и рулетка — мини-аппки. До «ОБНОВЛЕНИЯ» закрыты.
+# --------------------------------------------------------------------------- #
+
+LIVE_KEY = "miniapps_live"
+
+
+async def _live(request: Request) -> bool:
+    value = await request.app.state.db.get_setting(LIVE_KEY)
+    return value == "1"
+
+
+def _wheel_payload() -> list[dict]:
+    segments = wheel_segments()
+    total = sum(float(item["weight"]) for item in segments) or 1.0
+    for item in segments:
+        item["angle"] = round(float(item["weight"]) / total * 360.0, 2)
+    return segments
+
+
+def _reset_text() -> str:
+    from datetime import datetime, timezone
+
+    seconds = (
+        next_roulette_reset() - datetime.now(timezone.utc)
+    ).total_seconds()
+    hours = int(max(0, seconds) // 3600)
+    minutes = int(max(0, seconds) % 3600 // 60)
+    return f"Сброс через {hours} ч {minutes} мин"
+
+
+@router.get("/case_app", response_class=HTMLResponse)
+async def case_app_page() -> HTMLResponse:
+    return HTMLResponse(CASE_PAGE)
+
+
+@router.get("/roulette_app", response_class=HTMLResponse)
+async def roulette_app_page() -> HTMLResponse:
+    return HTMLResponse(ROULETTE_PAGE)
+
+
+async def _games_user(request: Request) -> tuple[int, JSONResponse | None]:
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return 0, JSONResponse({"error": str(error)}, status_code=401)
+    if not await _live(request):
+        return 0, JSONResponse(
+            {"error": "Обновление ещё не вышло. Следи за анонсами!"},
+            status_code=403,
+        )
+    return int(user["id"]), None
+
+
+@router.get("/api/case")
+async def api_case(request: Request) -> JSONResponse:
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    cases = await state.db.user_cases(uid)
+    return JSONResponse(
+        {
+            "cases": len(cases),
+            "pool": cases_mod.case_pool(),
+            "balance": await state.market.balance(uid),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/case/open")
+async def api_case_open(request: Request) -> JSONResponse:
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    cases = await state.db.user_cases(uid)
+    if not cases:
+        return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
+    case = cases[0]
+    if not await state.db.open_case(uid, int(case["id"])):
+        return JSONResponse({"error": "Этот кейс уже открыт"}, status_code=400)
+    card = roll_case_card()
+    counts = await state.db.get_collection(uid)
+    is_new = card.card_id not in counts
+    count = await state.db.add_card(uid, card.card_id)
+    await state.db.add_points(uid, card.points)
+    left = len(await state.db.user_cases(uid))
+    return JSONResponse(
+        {
+            "ok": True,
+            "card": {
+                "id": card.card_id,
+                "name": card.name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "points": card.points,
+                "color": cases_mod.RARITY_COLORS.get(card.rarity, "#334155"),
+            },
+            "cases": left,
+            "is_new": is_new,
+            "count": count,
+        }
+    )
+
+
+@router.get("/api/roulette")
+async def api_roulette(request: Request) -> JSONResponse:
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    left = await state.db.roulette_left(uid, roulette_day_key(), SPINS_PER_DAY)
+    return JSONResponse(
+        {
+            "segments": _wheel_payload(),
+            "spins_left": left,
+            "balance": await state.market.balance(uid),
+            "reset_text": _reset_text(),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/roulette/spin")
+async def api_roulette_spin(request: Request) -> JSONResponse:
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    left = await state.db.claim_roulette(uid, roulette_day_key(), SPINS_PER_DAY)
+    if left is None:
+        return JSONResponse({"error": "Спины на сегодня кончились"}, status_code=400)
+    prize = roll_prize()
+    kind, value = prize
+    if kind == roulette_mod.PRIZE_POINTS:
+        await state.db.add_points(uid, int(value))
+        label = f"💰 +{int(value)} очков!"
+    elif kind == roulette_mod.PRIZE_CASE:
+        await state.db.add_case(uid, "roulette")
+        label = "📦 Кейс! Открывай в кейсах."
+    else:
+        card = get_card(str(value))
+        await state.db.add_card(uid, card.card_id)
+        await state.db.add_points(uid, card.points)
+        label = f"🃏 Главный приз — {card.name}!"
+    return JSONResponse(
+        {
+            "ok": True,
+            "index": segment_index(prize),
+            "prize_label": label,
+            "spins_left": left,
+            "balance": await state.market.balance(uid),
+        }
+    )
 
 
 @router.get("/market", response_class=HTMLResponse)

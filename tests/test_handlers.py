@@ -76,6 +76,7 @@ class FakeDB:
         self.referrals: dict[int, int] = {}
         self.drop_grants: list[tuple[int, int]] = []
         self.boss_rewards: tuple[int, int, int] | None = None
+        self.settings: dict[str, str] = {}
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -83,6 +84,12 @@ class FakeDB:
 
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+    async def get_setting(self, key: str) -> str | None:
+        return self.settings.get(key)
+
+    async def set_setting(self, key: str, value: str) -> None:
+        self.settings[key] = str(value)
 
     async def broadcast_targets(self) -> list[int]:
         return []
@@ -679,6 +686,42 @@ def test_own_card_detail_offers_actions():
         assert "/sell" in body and "/upgrade" in body
 
     asyncio.run(scenario())
+
+def test_update_word_turns_on_the_new_miniapps():
+    """Рубильник обновления: срабатывает только у админа и только на слово."""
+
+    async def scenario():
+        db = FakeDB()
+        session = await feed("ОБНОВЛЕНИЕ", db, FakeService(), user_id=111)
+        assert db.settings.get("miniapps_live") == "1"
+        assert any("ОБНОВЛЕНИЕ" in text for text in sent_texts(session))
+
+        other = FakeDB()
+        await feed("ОБНОВЛЕНИЕ", other, FakeService(), user_id=222)
+        assert other.settings.get("miniapps_live") is None
+
+    asyncio.run(scenario())
+
+
+def test_case_and_roulette_switch_to_miniapps_after_update():
+    async def scenario():
+        db = FakeDB()
+        db.settings["miniapps_live"] = "1"
+
+        session = await feed("/case", db, FakeService())
+        markup = str(
+            [p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup")
+        )
+        assert "caseapp" in markup, markup
+
+        session = await feed("/roulette", db, FakeService())
+        markup = str(
+            [p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup")
+        )
+        assert "rouletteapp" in markup, markup
+
+    asyncio.run(scenario())
+
 
 def test_admin_starts_boss_and_hits_reduce_hp():
     """Рейд-босс: админ запускает, любой тап снимает 50 HP."""
