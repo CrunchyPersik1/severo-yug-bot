@@ -302,6 +302,43 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_stocks_tick_survives_broken_pump_table():
+    """Если расписание пампов сломалось, курс всё равно должен двигаться."""
+
+    async def scenario():
+        db = await fresh_db()
+        try:
+            from app.stocks_repo import StocksRepo
+
+            repo = StocksRepo(db)
+            await repo.seed()
+            async with db.pool.acquire() as con:
+                await con.execute("drop table if exists stock_pumps")
+                await con.execute(
+                    "update stocks set volatility = 0, target_price = price * 2, "
+                    "updated_at = now() - interval '30 seconds' where slug = 'syug'"
+                )
+                before = int(
+                    await con.fetchval("select price from stocks where slug = 'syug'")
+                )
+            await repo.tick()
+            async with db.pool.acquire() as con:
+                after = int(
+                    await con.fetchval("select price from stocks where slug = 'syug'")
+                )
+            assert after > before, "без таблицы пампов курс всё равно должен идти"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "create table if not exists stock_pumps ("
+                    "id integer primary key, "
+                    "next_at timestamptz not null default now())"
+                )
+            await db.close()
+
+    run(scenario())
+
+
 def test_stocks_pump_rises_and_returns():
     async def scenario():
         db = await fresh_db()

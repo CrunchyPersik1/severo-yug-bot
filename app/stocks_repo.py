@@ -37,6 +37,18 @@ class StocksRepo:
         known = [str(stock["slug"]) for stock in stocks.STOCKS]
         async with self.pool.acquire() as con:
             async with con.transaction():
+                # Страховка: если schema.sql почему-то не докатился, тикер падал
+                # бы каждые 15 секунд и курс «зависал». Догоняем миграции тут.
+                for statement in (
+                    "alter table stocks add column if not exists pump_phase text",
+                    "alter table stocks add column if not exists pump_peak integer",
+                    "alter table stocks add column if not exists pump_home integer",
+                    "alter table stocks add column if not exists pump_at timestamptz",
+                    "create table if not exists stock_pumps ("
+                    " id integer primary key,"
+                    " next_at timestamptz not null default now())",
+                ):
+                    await con.execute(statement)
                 for stock in stocks.STOCKS:
                     await con.execute(
                         """
@@ -175,7 +187,14 @@ class StocksRepo:
         async with self.pool.acquire() as con:
             async with con.transaction():
                 rows = await con.fetch("select * from stocks for update")
-                await self._maybe_start_pump(con, rows, now)
+                try:
+                    # Вложенная транзакция = savepoint: если памп не смог
+                    # запуститься (например, нет таблицы расписания), курс всё
+                    # равно должен двигаться, а не «зависать».
+                    async with con.transaction():
+                        await self._maybe_start_pump(con, rows, now)
+                except Exception:  # noqa: BLE001
+                    log.exception("Биржа: не смог запустить памп")
                 # Перечитываем: могли только что поставить памп.
                 rows = await con.fetch("select * from stocks for update")
                 for row in rows:
@@ -186,7 +205,22 @@ class StocksRepo:
         self, con: asyncpg.Connection, rows: list, now: datetime
     ) -> None:
         """Раз в час запускает памп случайной монеты, если сейчас ничего не летит."""
-        if any(row["pump_phase"] for row in rows):
+        # Застрявший памп (дольше 15 минут) снимаем — иначе монета залипнет.
+        active: set[int] = set()
+        for row in rows:
+            if not row["pump_phase"]:
+                continue
+            started = row["pump_at"]
+            age = (now - started).total_seconds() if started is not None else 0.0
+            if age > 900:
+                await con.execute(
+                    "update stocks set pump_phase = null, pump_peak = null, "
+                    "pump_home = null where id = $1",
+                    int(row["id"]),
+                )
+            else:
+                active.add(int(row["id"]))
+        if active:
             return
         schedule = await con.fetchrow(
             "select next_at from stock_pumps where id = 1 for update"
@@ -392,8 +426,13 @@ class StocksRepo:
                         "room": max(0, stocks.MAX_PER_STOCK - shares),
                     }
                 )
+            # Насколько давно двигался курс: если давно — в аппке покажем
+            # предупреждение, а не молчаливый замерший график.
+            ages = [(now - row["updated_at"]).total_seconds() for row in rows]
+            tick_age = int(max(ages)) if ages else 0
         return {
             "me": {"balance": int(balance or 0)},
+            "tick_age": tick_age,
             "stocks": items,
             "portfolio": {
                 "value": total_value,

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import asyncpg
@@ -36,6 +37,7 @@ take @ник daniel 1         забрать у ОДНОГО игрока кар
 stock                      показать курсы биржи
 stock syug 1500            задать курс монеты (плавно доедет за пару шагов)
 stock syug +10%            поднять (или -10% опустить) курс на процент
+stock fix                  вылечить биржу, если курс замер
 
 Игрока можно указывать как @username, так и числовым id.
 give начисляет очки за карту, take списывает их же.
@@ -444,29 +446,71 @@ async def act_take(con: asyncpg.Connection, args: list[str]) -> str:
     )
 
 
-async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
-    """Курс биржи: показать или задать цель, к которой цена плавно доедет.
+_STOCK_MIGRATIONS = (
+    "alter table stocks add column if not exists pump_phase text",
+    "alter table stocks add column if not exists pump_peak integer",
+    "alter table stocks add column if not exists pump_home integer",
+    "alter table stocks add column if not exists pump_at timestamptz",
+    "create table if not exists stock_pumps ("
+    "id integer primary key, next_at timestamptz not null default now())",
+)
 
-    stock                 — все монеты
+
+async def _stock_fix(con: asyncpg.Connection) -> str:
+    """Лечит зависшую биржу: догоняет миграции и снимает залипшие пампы."""
+    for statement in _STOCK_MIGRATIONS:
+        await con.execute(statement)
+    await con.execute(
+        "update stocks set pump_phase = null, pump_peak = null, pump_home = null "
+        "where pump_phase is not null"
+    )
+    await con.execute(
+        "insert into stock_pumps (id, next_at) values (1, $1) "
+        "on conflict (id) do update set next_at = excluded.next_at",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    # Сдвигаем в прошлое: ближайший тик сразу двинет курс.
+    await con.execute("update stocks set updated_at = now() - interval '20 seconds'")
+    return (
+        "✅ Биржа вылечена: миграции догнаны, залипшие пампы сняты, следующий "
+        "памп — через час. Курс двинется на ближайшем тике (до 15 секунд)."
+    )
+
+
+async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
+    """Курс биржи: показать, задать цель или вылечить зависшую биржу.
+
+    stock                 — все монеты и когда был последний тик
+    stock fix             — снять залипшие пампы и догнать миграции
     stock syug            — одна монета
     stock syug 1500       — цель 1500
     stock syug +10%       — цель = текущая × 1.1 (можно -10%)
     """
+    if args and (args[0] or "").strip().lower() in ("fix", "фикс", "ремонт"):
+        return await _stock_fix(con)
+
     if not args:
         rows = await con.fetch(
-            "select slug, name, price, target_price from stocks order by id"
+            "select slug, name, price, target_price, updated_at from stocks order by id"
         )
         if not rows:
             raise ValueError("Биржа ещё не создана — таблица stocks пуста.")
+        now = datetime.now(timezone.utc)
         lines = ["Курсы биржи:"]
         for row in rows:
             target = (
                 f"  → цель {int(row['target_price'])}" if row["target_price"] else ""
             )
+            age = int((now - row["updated_at"]).total_seconds())
             lines.append(
                 f"  {row['slug']:<9} {row['name']}: {int(row['price'])}{target}"
+                f"  (тик {age} с назад)"
             )
-        lines += ["", "Задать: stock <монета> <цена>  (или +10% / -10%)"]
+        lines += [
+            "",
+            "Задать: stock <монета> <цена>  (или +10% / -10%)",
+            "Если курс замер: stock fix",
+        ]
         return "\n".join(lines)
 
     query = (args[0] or "").lstrip("#").strip().lower()

@@ -538,6 +538,7 @@ main{padding:12px 14px}
 .pf{background:var(--card);border:1px solid var(--line);border-radius:14px;
   padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--muted)}
 .pf b{color:var(--ink)}
+.pf.warn{color:#fecaca;border-color:#7f1d1d;background:#2a1416}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
   padding:12px;margin-bottom:12px}
 .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
@@ -593,7 +594,7 @@ main{padding:12px 14px}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let state = {stocks: [], portfolio: {}, balance: 0, selected: null};
+let state = {stocks: [], portfolio: {}, balance: 0, selected: null, tickAge: 0};
 let maxPerStock = 100;
 
 function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -725,6 +726,10 @@ function render(){
   var pf = state.portfolio || {};
   var pnl = (pf.pnl||0) >= 0 ? '<span class="up">+'+money(pf.pnl||0)+'</span>' : '<span class="down">'+money(pf.pnl||0)+'</span>';
   var head = '<div class="pf">Портфель: <b>'+money(pf.value||0)+'</b> · вложено '+money(pf.spent||0)+' · '+pnl+'</div>';
+  if(state.tickAge > 120){
+    head = '<div class="pf warn">⚠️ Курс не обновлялся уже '+Math.floor(state.tickAge/60)+
+      ' мин. Если так и стоит — напиши админу: <b>/admin stock fix</b></div>' + head;
+  }
   var box = document.getElementById("list");
   var stock = null;
   if(state.selected){
@@ -757,6 +762,7 @@ async function load(){
     var d = await r.json();
     if(d.error){ toast(d.error,"bad"); return; }
     state.stocks = d.stocks; state.portfolio = d.portfolio; state.balance = d.me.balance;
+    state.tickAge = d.tick_age || 0;
     if(d.limits && d.limits.max_per_stock) maxPerStock = d.limits.max_per_stock;
     render();
   }catch(e){ toast("Не смог загрузить биржу","bad"); }

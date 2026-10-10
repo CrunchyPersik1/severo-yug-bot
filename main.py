@@ -64,6 +64,21 @@ async def setup_commands(bot: Bot) -> None:
     log.info("Меню команд обновлено: %d шт.", len(COMMANDS))
 
 
+async def _safe_tick(name: str, factory) -> Any:
+    """Один шаг фонового сервиса: ошибку пишем в лог, но цикл не роняем.
+
+    Раньше ошибки молча глотались — из-за этого биржа могла «зависнуть»,
+    а в логах не было ни строчки.
+    """
+    try:
+        return await asyncio.wait_for(factory(), timeout=25)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001
+        log.exception("Тикер: %s не прошли", name)
+        return None
+
+
 async def _ticker(
     bot: Bot,
     db: Database,
@@ -72,18 +87,19 @@ async def _ticker(
     stocks: StocksRepo,
 ) -> None:
     while True:
-        await asyncio.sleep(15)
-        with contextlib.suppress(Exception):
-            await service.tick()
-        with contextlib.suppress(Exception):
-            await team.tick()
-        # Живой курс биржи: один шаг каждые 15 секунд + оповещения о росте.
-        alerts: list[dict] = []
-        with contextlib.suppress(Exception):
-            alerts = await stocks.tick()
-        if alerts:
-            with contextlib.suppress(Exception):
-                await stocks_alerts.broadcast(bot, db, alerts)
+        try:
+            await asyncio.sleep(15)
+            await _safe_tick("бои", service.tick)
+            await _safe_tick("командные бои", team.tick)
+            # Живой курс биржи: шаг каждые 15 секунд + оповещения о росте.
+            alerts = await _safe_tick("биржа", stocks.tick)
+            if alerts:
+                with contextlib.suppress(Exception):
+                    await stocks_alerts.broadcast(bot, db, alerts)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("Тикер: неожиданная ошибка, продолжаю")
 
 
 @asynccontextmanager
