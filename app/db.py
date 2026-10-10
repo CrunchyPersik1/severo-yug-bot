@@ -256,6 +256,48 @@ class Database:
                 )
                 return max(0, new_limit - uses)
 
+    async def grant_boss_rewards(
+        self,
+        drop_day: Any,
+        spin_day: Any,
+        drops: int,
+        spins: int,
+        cases: int,
+    ) -> int:
+        """Награда всем за рейд-босса: крутки, спины и кейсы.
+
+        Возвращает, скольким игрокам выдали.
+        """
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    """
+                    update players
+                       set last_drop_day = $1::date,
+                           drop_uses = 0,
+                           drop_limit = drop_limit + $3::integer,
+                           roulette_day = $2::date,
+                           roulette_uses = 0,
+                           roulette_limit = roulette_limit + $4::integer,
+                           updated_at = now()
+                    """,
+                    drop_day,
+                    spin_day,
+                    int(drops),
+                    int(spins),
+                )
+                if int(cases) > 0:
+                    await con.execute(
+                        """
+                        insert into cases (user_id, source)
+                        select p.user_id, 'boss' from players p
+                        cross join generate_series(1, $1::integer)
+                        """,
+                        int(cases),
+                    )
+                total = await con.fetchval("select count(*) from players")
+        return int(total or 0)
+
     async def claim_roulette(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         """Атомарно тратит один спин рулетки. Возвращает остаток или None."""
         async with self._p().acquire() as con:

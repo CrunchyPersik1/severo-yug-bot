@@ -14,7 +14,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
-from . import admin_actions, casino, dice_casino, promo, referrals, render, team_battle
+from . import admin_actions, boss, casino, dice_casino, promo, referrals, render, team_battle
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
@@ -37,6 +37,7 @@ from .roulette import (
 )
 from .items import SLOT_ICONS
 from .market import UPGRADE_PRICE, effective_stats, parse_handle, sum_bonus
+from .boss_repo import BossError, BossRepo
 from .market_repo import MarketError, MarketRepo, item_of
 
 MARKET_PAGE_SIZE = 6
@@ -161,7 +162,9 @@ async def broadcast_to_chats(bot: Bot, db: Database, text: str) -> str:
 
 
 @router.message(Command("admin", "админ"))
-async def cmd_admin(message: Message, db: Database, bot: Bot) -> None:
+async def cmd_admin(
+    message: Message, db: Database, bot: Bot, boss_repo: BossRepo
+) -> None:
     """Админка прямо в Telegram — доступна только id из ADMIN_IDS."""
     user = message.from_user
     if user is None:
@@ -187,6 +190,31 @@ async def cmd_admin(message: Message, db: Database, bot: Bot) -> None:
             )
             return
         await message.answer(await broadcast_to_chats(bot, db, text))
+        return
+
+    # /admin boss [hp|имя] — запустить рейд-босса и разослать карточку.
+    if len(head) >= 2 and head[1].lower() in ("boss", "босс"):
+        arg = head[2].strip() if len(head) > 2 else ""
+        if arg.isdigit():
+            hp, name = int(arg), boss.DEFAULT_NAME
+        elif arg:
+            hp, name = boss.DEFAULT_HP, arg
+        else:
+            hp, name = boss.DEFAULT_HP, boss.DEFAULT_NAME
+        raid = await boss_repo.start(name, hp, message.chat.id)
+        # Карточку шлём прямо сюда, чтобы было куда тыкать, и в остальные группы.
+        card_text, card_keyboard = await _boss_view(boss_repo, raid)
+        here = await message.answer(card_text, reply_markup=card_keyboard)
+        if here is not None and message.chat is not None:
+            await boss_repo.attach(raid["id"], message.chat.id, here.message_id)
+        sent = await broadcast_boss(
+            bot, db, boss_repo, raid, exclude=message.chat.id
+        )
+        await message.answer(
+            f"👹 Рейд запущен: <b>{render.esc(name)}</b> · {hp} HP · "
+            f"удар {boss.HIT_DAMAGE}. Ещё разослал в {sent} групп(ы).\n"
+            "Карты не нужны — жми «Ударить»."
+        )
         return
 
     try:
@@ -1731,6 +1759,121 @@ async def cmd_favorite(message: Message, db: Database, market: MarketRepo) -> No
         f"❤️ Любимая карта: {card.rarity_emoji} <b>{render.esc(card.display_name)}</b>\n"
         "Она теперь показывается в профиле — /profile"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Рейд-босс: тыкают все, карты не нужны
+# --------------------------------------------------------------------------- #
+
+
+async def _boss_view(repo: BossRepo, raid: dict) -> tuple[str, Any]:
+    stats = await repo.stats(raid["id"])
+    top = await repo.top(raid["id"], 5)
+    return render.render_boss(raid, top, stats)
+
+
+async def broadcast_boss(
+    bot: Bot, db: Database, repo: BossRepo, raid: dict, exclude: int | None = None
+) -> int:
+    """Рассылает карточку босса во все группы, чтобы каждый мог бить."""
+    text, keyboard = await _boss_view(repo, raid)
+    sent = 0
+    for chat_id in await db.broadcast_targets():
+        if exclude is not None and int(chat_id) == int(exclude):
+            continue
+        try:
+            await bot.send_message(chat_id, text, reply_markup=keyboard)
+        except Exception:  # noqa: BLE001
+            continue
+        sent += 1
+        await asyncio.sleep(0.05)
+    return sent
+
+
+@router.message(Command("boss", "босс"))
+@router.message(NormalizedText("босс", "рейд"))
+async def cmd_boss(message: Message, boss_repo: BossRepo) -> None:
+    """Показать текущего босса, если рейд идёт."""
+    raid = await boss_repo.active()
+    if raid is None:
+        await message.answer("Сейчас рейда нет. Запустят — сразу увидишь карточку.")
+        return
+    text, keyboard = await _boss_view(boss_repo, raid)
+    await message.answer(text, reply_markup=keyboard)
+
+
+async def _finish_raid(
+    bot: Bot, db: Database, repo: BossRepo, raid: dict
+) -> None:
+    """Босса добили: награда всем и анонс в группы и лички."""
+    if not await repo.mark_rewarded(raid["id"]):
+        return
+    stats = await repo.stats(raid["id"])
+    top = await repo.top(raid["id"], 10)
+    try:
+        await db.grant_boss_rewards(
+            day_key(),
+            roulette_day_key(),
+            boss.REWARD_DROPS,
+            boss.REWARD_SPINS,
+            boss.REWARD_CASES,
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("Рейд: не смог выдать награды")
+    text = render.render_boss_victory(raid, top, stats)
+    for chat_id in await db.broadcast_targets():
+        try:
+            await bot.send_message(chat_id, text)
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(0.05)
+    for user_id in await db.all_player_ids():
+        try:
+            await bot.send_message(user_id, text)
+        except Exception:  # noqa: BLE001
+            pass
+        await asyncio.sleep(0.05)
+
+
+@router.callback_query(F.data == "boss:hit")
+async def cb_boss(
+    callback: CallbackQuery, bot: Bot, db: Database, boss_repo: BossRepo
+) -> None:
+    """Удар по боссу: один тап — 50 урона, карты не нужны."""
+    user = callback.from_user
+    raid = await boss_repo.active()
+    if raid is None:
+        await callback.answer("Босса уже добили — жди следующего рейда.", show_alert=True)
+        return
+    try:
+        result = await boss_repo.hit(
+            raid["id"], user.id, datetime.now(timezone.utc)
+        )
+    except BossError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+    if result.get("cooldown"):
+        await callback.answer("Не так быстро — дай и другим ударить 🙂")
+        return
+    mine = await boss_repo.my_hits(raid["id"], user.id)
+    if result["dead"]:
+        await callback.answer(
+            f"💥 Добил! Урон {result['damage']}", show_alert=True
+        )
+    else:
+        await callback.answer(
+            f"👊 −{result['damage']} HP · твой вклад: {mine['hits']}"
+        )
+    fresh = await boss_repo.get(raid["id"]) or raid
+    text, keyboard = await _boss_view(boss_repo, fresh)
+    if callback.message is not None:
+        try:
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except TelegramBadRequest as error:
+            if "not modified" not in str(error).lower():
+                log.warning("Рейд-босс не обновился: %s", error)
+    if result["dead"]:
+        await _finish_raid(bot, db, boss_repo, fresh)
 
 
 # --------------------------------------------------------------------------- #

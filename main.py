@@ -16,6 +16,7 @@ from aiogram.types import ErrorEvent, Update
 from fastapi import FastAPI, Request, Response
 
 from app.battle_service import BattleService
+from app.boss_repo import BossRepo
 from app.cards import CARDS, card_rows
 from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
@@ -135,6 +136,7 @@ async def lifespan(app: FastAPI):
     shop = ShopRepo(db, market)
     stocks = StocksRepo(db)
     await stocks.seed()
+    boss_repo = BossRepo(db)
 
     # мини-аппка магазина читает это из app.state
     app.state.settings = settings
@@ -142,8 +144,16 @@ async def lifespan(app: FastAPI):
     app.state.market = market
     app.state.shop = shop
     app.state.stocks = stocks
+    app.state.boss = boss_repo
     runtime.update(
-        db=db, bot=bot, dp=dp, service=service, market=market, team=team, stocks=stocks
+        db=db,
+        bot=bot,
+        dp=dp,
+        service=service,
+        market=market,
+        team=team,
+        stocks=stocks,
+        boss_repo=boss_repo,
     )
 
     me = await bot.get_me()
@@ -252,6 +262,7 @@ async def telegram_webhook(request: Request) -> Response:
             db=runtime["db"],
             service=runtime["service"],
             market=runtime["market"],
+            boss_repo=runtime["boss_repo"],
         )
     except Exception:  # noqa: BLE001 - всегда отвечаем 200, иначе Telegram будет ретраить
         log.exception("Ошибка обработки апдейта")

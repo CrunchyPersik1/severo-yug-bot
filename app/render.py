@@ -8,7 +8,7 @@ from typing import Any
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
-from . import casino, dice_casino, team_battle
+from . import boss, casino, dice_casino, team_battle
 from .battle import ability_targets, can_use_ability
 from .cards import (
     CARDS,
@@ -1714,4 +1714,66 @@ def render_top(rows: list[dict[str, Any]]) -> str:
         )
     if not rows:
         lines.append("Пока пусто.")
+    return "\n".join(lines)
+
+def render_boss(
+    raid: dict[str, Any], top: list[dict[str, Any]], stats: dict[str, Any]
+) -> tuple[str, InlineKeyboardMarkup]:
+    hp = int(raid["hp"])
+    max_hp = max(1, int(raid["max_hp"]))
+    damage = int(raid["hit_damage"])
+    lines = [
+        f"👹 <b>РЕЙД-БОСС: {esc(str(raid['name']))}</b>",
+        "",
+        f"❤️ HP: <b>{_money(hp)}</b> / {_money(max_hp)} · "
+        f"{boss.percent(hp, max_hp)}%",
+        boss.bar(hp, max_hp),
+        "",
+        f"👊 Один удар — <b>{damage}</b> урона. Карты и способности не нужны.",
+        f"👥 Бьют: <b>{int(stats['people'])}</b> · "
+        f"ударов: <b>{int(stats['hits'])}</b>",
+    ]
+    if top:
+        lines += ["", "🏆 <b>Кто бьёт сильнее всех</b>"]
+        for index, row in enumerate(top, start=1):
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(index, f"{index}.")
+            lines.append(
+                f"  {medal} {esc(str(row.get('name') or 'игрок'))} — "
+                f"{int(row['hits'])} уд. ({_money(int(row['damage']))})"
+            )
+    lines += ["", "👇 Жми кнопку сколько угодно — лишь бы успеть добить!"]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"⚔️ Ударить (−{damage})", callback_data="boss:hit"
+                )
+            ]
+        ]
+    )
+    return "\n".join(lines), keyboard
+
+
+def render_boss_victory(
+    raid: dict[str, Any], top: list[dict[str, Any]], stats: dict[str, Any]
+) -> str:
+    lines = [
+        "🏆 <b>РЕЙД-БОСС ПОВЕРЖЕН!</b>",
+        f"{esc(str(raid['name']))} добит: {int(stats['hits'])} ударов от "
+        f"{int(stats['people'])} игроков.",
+        "",
+        "🎁 <b>Награда каждому игроку</b>",
+        f"  🎴 +{boss.REWARD_DROPS} круток «Северо-Юг»",
+        f"  🎰 +{boss.REWARD_SPINS} спинов рулетки",
+        f"  📦 +{boss.REWARD_CASES} кейса",
+        "",
+        "Уже выдали — забирай: /drop и /case",
+    ]
+    if top:
+        lines += ["", "🏆 <b>Топ по урону</b>"]
+        for index, row in enumerate(top, start=1):
+            lines.append(
+                f"  {index}. {esc(str(row.get('name') or 'игрок'))} — "
+                f"{_money(int(row['damage']))} урона"
+            )
     return "\n".join(lines)

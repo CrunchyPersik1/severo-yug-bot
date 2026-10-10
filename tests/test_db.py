@@ -302,6 +302,70 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_boss_raid_hits_and_rewards():
+    async def scenario():
+        from datetime import datetime, timedelta, timezone
+
+        from app.boss_repo import BossError, BossRepo
+        from app.gacha import day_key
+        from app.roulette import roulette_day_key
+
+        db = await fresh_db()
+        try:
+            repo = BossRepo(db)
+            raid = await repo.start("Тест", 100)
+            user = 900020
+            async with db.pool.acquire() as con:
+                await con.execute("delete from cases where user_id = $1", user)
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Боец")
+
+            now = datetime.now(timezone.utc)
+            first = await repo.hit(raid["id"], user, now)
+            assert first["hp"] == 50 and not first["dead"]
+
+            # Кулдаун: два тапа подряд не считаются.
+            again = await repo.hit(raid["id"], user, now)
+            assert again.get("cooldown")
+
+            later = now + timedelta(seconds=5)
+            final = await repo.hit(raid["id"], user, later)
+            assert final["dead"] and final["hp"] == 0
+            with pytest.raises(BossError):
+                await repo.hit(raid["id"], user, later + timedelta(seconds=5))
+
+            assert await repo.mark_rewarded(raid["id"]) is True
+            assert await repo.mark_rewarded(raid["id"]) is False
+
+            total = await db.grant_boss_rewards(
+                day_key(), roulette_day_key(), 10, 10, 3
+            )
+            assert total >= 1
+
+            mine = await repo.my_hits(raid["id"], user)
+            assert mine["hits"] == 2 and mine["damage"] == 100
+            async with db.pool.acquire() as con:
+                cases = int(
+                    await con.fetchval(
+                        "select count(*) from cases where user_id = $1", user
+                    )
+                )
+                limit = int(
+                    await con.fetchval(
+                        "select drop_limit from players where user_id = $1", user
+                    )
+                )
+            assert cases == 3, "за босса положено 3 кейса"
+            assert limit >= 10, "за босса положено 10 круток"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from cases where user_id = $1", 900020)
+                await con.execute("delete from players where user_id = $1", 900020)
+            await db.close()
+
+    run(scenario())
+
+
 def test_stocks_tick_survives_broken_pump_table():
     """Если расписание пампов сломалось, курс всё равно должен двигаться."""
 

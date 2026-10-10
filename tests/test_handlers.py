@@ -75,6 +75,7 @@ class FakeDB:
         self.ref_links: dict[str, dict[str, Any]] = {}
         self.referrals: dict[int, int] = {}
         self.drop_grants: list[tuple[int, int]] = []
+        self.boss_rewards: tuple[int, int, int] | None = None
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -82,6 +83,23 @@ class FakeDB:
 
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+    async def broadcast_targets(self) -> list[int]:
+        return []
+
+    async def all_player_ids(self) -> list[int]:
+        return []
+
+    async def grant_boss_rewards(
+        self,
+        drop_day: Any,
+        spin_day: Any,
+        drops: int,
+        spins: int,
+        cases: int,
+    ) -> int:
+        self.boss_rewards = (int(drops), int(spins), int(cases))
+        return 0
 
     async def claim_daily(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         if self.claimed.get(user_id):
@@ -279,6 +297,67 @@ class FakeService:
         self.created.append((challenger.id, opponent.id))
 
 
+class FakeBossRepo:
+    """Рейд-босс в памяти: без базы, но с настоящим вычитанием HP."""
+
+    def __init__(self) -> None:
+        self.raid: dict[str, Any] | None = None
+        self.hits: list[tuple[int, int]] = []
+        self.rewarded = False
+
+    async def start(self, name: str, hp: int, chat_id: int | None = None):
+        self.raid = {
+            "id": 1,
+            "name": name,
+            "hp": int(hp),
+            "max_hp": int(hp),
+            "hit_damage": 50,
+            "status": "active",
+            "chat_id": chat_id,
+        }
+        return dict(self.raid)
+
+    async def active(self):
+        return dict(self.raid) if self.raid else None
+
+    async def get(self, boss_id: int):
+        return dict(self.raid) if self.raid else None
+
+    async def attach(self, boss_id: int, chat_id: int, message_id: int) -> None:
+        return None
+
+    async def my_hits(self, boss_id: int, user_id: int) -> dict:
+        return {"hits": 0, "damage": 0}
+
+    async def stats(self, boss_id: int) -> dict:
+        return {"people": len(self.hits), "hits": len(self.hits), "damage": 0}
+
+    async def top(self, boss_id: int, limit: int = 5) -> list[dict]:
+        return []
+
+    async def hit(self, boss_id: int, user_id: int, now):
+        assert self.raid is not None
+        self.hits.append((boss_id, user_id))
+        damage = int(self.raid["hit_damage"])
+        hp = max(0, int(self.raid["hp"]) - damage)
+        self.raid["hp"] = hp
+        if hp <= 0:
+            self.raid["status"] = "dead"
+        return {
+            "cooldown": False,
+            "hp": hp,
+            "max_hp": int(self.raid["max_hp"]),
+            "damage": damage,
+            "dead": hp <= 0,
+        }
+
+    async def mark_rewarded(self, boss_id: int) -> bool:
+        if self.rewarded:
+            return False
+        self.rewarded = True
+        return True
+
+
 def build_update(text: str, user_id: int = 111, chat_id: int = -100123, reply: dict | None = None) -> dict:
     message: dict[str, Any] = {
         "message_id": 10,
@@ -299,12 +378,18 @@ async def feed(
     user_id: int = 111,
     reply: dict | None = None,
     market: "FakeMarket | None" = None,
+    boss_repo: "FakeBossRepo | None" = None,
 ):
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
     update = Update.model_validate(build_update(text, user_id=user_id, reply=reply), context={"bot": bot})
     await dispatcher().feed_update(
-        bot, update, db=db, service=service, market=market or FakeMarket()
+        bot,
+        update,
+        db=db,
+        service=service,
+        market=market or FakeMarket(),
+        boss_repo=boss_repo or FakeBossRepo(),
     )
     await bot.session.close()
     return session
@@ -321,7 +406,12 @@ def test_dependency_injection_and_resolve_update_types():
         bot = Bot(token="123456:TEST", session=session)
         update = Update.model_validate(build_update("/start"), context={"bot": bot})
         await dispatcher().feed_update(
-            bot, update, db=FakeDB(), service=FakeService(), market=FakeMarket()
+            bot,
+            update,
+            db=FakeDB(),
+            service=FakeService(),
+            market=FakeMarket(),
+            boss_repo=FakeBossRepo(),
         )
         assert "SendMessage" in [name for name, _ in session.calls]
         await bot.session.close()
@@ -427,7 +517,12 @@ def test_unknown_callback_is_answered():
         }
         update = Update.model_validate(payload, context={"bot": bot})
         await dispatcher().feed_update(
-            bot, update, db=FakeDB(), service=FakeService(), market=FakeMarket()
+            bot,
+            update,
+            db=FakeDB(),
+            service=FakeService(),
+            market=FakeMarket(),
+            boss_repo=FakeBossRepo(),
         )
         assert any(name == "AnswerCallbackQuery" for name, _ in session.calls)
         await bot.session.close()
@@ -511,13 +606,21 @@ async def feed_callback(
     user_id: int = 111,
     thread_id: int | None = None,
     photo: bool = False,
+    boss_repo: "FakeBossRepo | None" = None,
 ):
     session = FakeSession()
     bot = Bot(token="123456:TEST", session=session)
     update = Update.model_validate(
         build_callback(data, user_id, thread_id, photo), context={"bot": bot}
     )
-    await dispatcher().feed_update(bot, update, db=db, service=FakeService(), market=market)
+    await dispatcher().feed_update(
+        bot,
+        update,
+        db=db,
+        service=FakeService(),
+        market=market,
+        boss_repo=boss_repo or FakeBossRepo(),
+    )
     await bot.session.close()
     return session
 
@@ -576,6 +679,29 @@ def test_own_card_detail_offers_actions():
         assert "/sell" in body and "/upgrade" in body
 
     asyncio.run(scenario())
+
+def test_admin_starts_boss_and_hits_reduce_hp():
+    """Рейд-босс: админ запускает, любой тап снимает 50 HP."""
+
+    async def scenario():
+        db = FakeDB()
+        repo = FakeBossRepo()
+        session = await feed("/admin boss 100", db, FakeService(), boss_repo=repo)
+        assert repo.raid is not None and repo.raid["hp"] == 100
+        sent = [p for n, p in session.calls if n == "SendMessage"]
+        assert any("Ударить" in str(p.get("reply_markup")) for p in sent), (
+            "в карточке босса должна быть кнопка удара"
+        )
+
+        session = await feed_callback("boss:hit", db, FakeMarket(), boss_repo=repo)
+        assert repo.raid["hp"] == 50, "один удар — минус 50 HP"
+        answers = [
+            p.get("text", "") for n, p in session.calls if n == "AnswerCallbackQuery"
+        ]
+        assert any("50" in text for text in answers)
+
+    asyncio.run(scenario())
+
 
 def test_admin_command_is_closed_for_regular_players():
     async def scenario():

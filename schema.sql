@@ -395,3 +395,32 @@ create table if not exists stock_pumps (
 insert into stock_pumps (id, next_at)
 values (1, now() + interval '30 minutes')
 on conflict (id) do nothing;
+
+-- ===================================================================== --
+-- Рейд-босс
+-- ===================================================================== --
+
+create table if not exists boss_raid (
+    id          bigserial primary key,
+    name        text not null,
+    hp          bigint not null,
+    max_hp      bigint not null,
+    hit_damage  integer not null default 50,
+    status      text not null default 'active',
+    chat_id     bigint,
+    message_id  bigint,
+    created_at  timestamptz not null default now(),
+    killed_at   timestamptz,
+    rewarded_at timestamptz
+);
+create index if not exists boss_raid_status_idx on boss_raid (status);
+
+-- Вклад каждого игрока: сколько ударов и сколько урона.
+create table if not exists boss_hits (
+    boss_id    bigint not null references boss_raid(id) on delete cascade,
+    user_id    bigint not null,
+    hits       integer not null default 0,
+    damage     bigint not null default 0,
+    updated_at timestamptz not null default now(),
+    primary key (boss_id, user_id)
+);
