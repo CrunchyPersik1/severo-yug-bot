@@ -11,6 +11,7 @@ from typing import Any
 
 import asyncpg
 
+from . import levels as levels_mod
 from .cards import CARDS_BY_ID, get_card
 from .cases import CASE_PRICE
 from .db import Database, as_json_dict
@@ -594,6 +595,17 @@ class MarketRepo:
                     income,
                 )
 
+                # Опыт: покупка и успешная продажа.
+                await con.execute(
+                    "update players set xp = xp + $2::integer where user_id = $1",
+                    buyer_id,
+                    levels_mod.XP_PURCHASE,
+                )
+                await con.execute(
+                    "update players set xp = xp + $2::integer where user_id = $1",
+                    lot["seller_id"],
+                    levels_mod.XP_SALE,
+                )
                 await self._give_unit(con, buyer_id, dict(lot))
                 await con.execute(
                     "update market set status = 'sold', updated_at = now() where id = $1",

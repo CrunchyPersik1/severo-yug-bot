@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import random
 from copy import deepcopy
 from typing import Any
 
@@ -59,6 +60,8 @@ def new_side(user_id: int, card: Card, stats: dict[str, int] | None = None) -> d
         "weaken": 0,
         "weaken_turns": 0,
         "silence": 0,
+        # Смута: сколько ходов атака идёт «не туда» (Посейдон).
+        "confuse": 0,
         "cd": 0,
         "timeouts": 0,
         # Вечная утечка (Словесное исцеление Эмина): сколько HP в ход жертвы
@@ -263,6 +266,7 @@ def begin_unit_turn(state: dict[str, Any], key: str, tick_cd: bool = True) -> st
     if tick_cd:
         side["cd"] = max(0, side["cd"] - 1)
         side["silence"] = max(0, side["silence"] - 1)
+        side["confuse"] = max(0, int(side.get("confuse", 0)) - 1)
 
     if side["drain"] > 0:
         owner = state["sides"].get(side["drain_from"] or "")
@@ -316,6 +320,20 @@ def _strike(
     # у самого ослабленного.
     attacker = state["sides"][actor_key]
     damage = max(1, card.atk - int(attacker["weaken"]))
+
+    # Смута: запутавшийся бьёт не туда. 50% — как надо, 25% — лечит врага,
+    # 25% — бьёт себя.
+    if int(attacker.get("confuse", 0)) > 0:
+        roll = random.random()
+        if roll < 0.25:
+            _heal(state, foe_key, damage)
+            _log(state, f"❓ Смута: {card.name} вместо удара лечит врага (+{damage})")
+            _counter_attack(state, actor_key, foe_key)
+            return
+        if roll < 0.5:
+            _deal_damage(state, actor_key, damage, "❓ Смута: удар по себе")
+            return
+
     _deal_damage(state, foe_key, damage, "⚔️ Удар")
     _counter_attack(state, actor_key, foe_key)
 
@@ -389,6 +407,10 @@ def _apply_ability(
     if "silence" in effects:
         foe["silence"] = max(int(foe["silence"]), int(effects["silence"]))
         _log(state, "🔇 Немота: способность недоступна")
+
+    if "confuse" in effects:
+        foe["confuse"] = max(int(foe.get("confuse", 0)), int(effects["confuse"]))
+        _log(state, f"❓ Смута на {int(effects['confuse'])} х.")
 
     if "dodge" in effects:
         actor["dodge"] += int(effects["dodge"])

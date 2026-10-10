@@ -335,3 +335,38 @@ def test_timeout_counter_resets_after_a_real_move():
     state["turn"] = KEY_A
     apply_action(state, KEY_A, ACTION_HIT, max_timeouts=3)
     assert state["sides"][KEY_A]["timeouts"] == 0
+
+def test_poseidon_is_on_misha_and_daniyar():
+    """Миша и Данияр получили «Посейдон»: 80 урона и смута."""
+    from app.render import describe_ability
+
+    for card_id in ("misha", "daniyar_mif"):
+        card = get_card(card_id)
+        assert card.ability.name == "Посейдон", card_id
+        assert card.ability.effects["damage"] == 80, card_id
+        assert card.ability.effects["confuse"] == 2, card_id
+        assert "смута" in describe_ability(card)
+
+
+def test_confused_strike_can_backfire_or_heal():
+    """Смута: 50% — как надо, 25% — бьёт себя, 25% — лечит врага."""
+    from app import battle
+
+    random.seed(7)
+    outcomes = set()
+    for _ in range(600):
+        state = make_state()
+        actor, foe = KEY_A, KEY_B
+        state["sides"][actor]["confuse"] = 3
+        state["sides"][foe]["hp"] = state["sides"][foe]["max_hp"] // 2
+        hp_actor = state["sides"][actor]["hp"]
+        hp_foe = state["sides"][foe]["hp"]
+        battle._strike(state, actor, get_card("oleg"))
+        if state["sides"][foe]["hp"] > hp_foe:
+            outcomes.add("heal")
+        elif state["sides"][actor]["hp"] < hp_actor:
+            outcomes.add("self")
+        elif state["sides"][foe]["hp"] < hp_foe:
+            outcomes.add("normal")
+    assert outcomes == {"normal", "heal", "self"}, outcomes
+

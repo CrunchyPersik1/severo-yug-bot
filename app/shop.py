@@ -12,6 +12,7 @@ from typing import Any
 
 import asyncpg
 
+from . import levels as levels_mod
 from .cards import CARDS, SECRET_CARD_IDS, get_card
 from .db import Database
 from .items import ACCESSORIES, Item
@@ -167,6 +168,11 @@ class ShopRepo:
                         f"у тебя {int(balance or 0)}."
                     )
                 granted = await self._grant(con, user_id, entry)
+                await con.execute(
+                    "update players set xp = xp + $2::integer where user_id = $1",
+                    user_id,
+                    levels_mod.XP_PURCHASE,
+                )
                 await con.execute(
                     "insert into shop_log (user_id, sku, price) values ($1, $2, $3)",
                     user_id,

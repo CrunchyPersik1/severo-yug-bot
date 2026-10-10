@@ -112,6 +112,7 @@ def begin_round(state: dict[str, Any]) -> None:
         # способности восстанавливаются раз в раунд — раньше не восстанавливались
         side["cd"] = max(0, side["cd"] - 1)
         side["silence"] = max(0, side["silence"] - 1)
+        side["confuse"] = max(0, int(side.get("confuse", 0)) - 1)
     state["round"] += 1
     _log(state, f"🔁 Раунд {state['round']}")
 

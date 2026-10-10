@@ -117,6 +117,33 @@ _SEEN_CHATS: set[int] = set()
 
 
 @router.message.outer_middleware()
+@router.callback_query.outer_middleware()
+async def levelup_notify(handler, event, data):
+    """После любого действия выдаёт награды за новые уровни и сообщает о них."""
+    result = await handler(event, data)
+    db = data.get("db")
+    bot = data.get("bot")
+    user = getattr(event, "from_user", None)
+    if db is None or bot is None or user is None:
+        return result
+    try:
+        summary = await db.apply_pending_levels(user.id)
+    except Exception:  # noqa: BLE001 - игра важнее награды
+        log.exception("Не смог выдать награды за уровень")
+        return result
+    if not summary.get("levels"):
+        return result
+    chat = getattr(event, "chat", None)
+    if chat is None:
+        chat = getattr(getattr(event, "message", None), "chat", None)
+    if chat is None:
+        return result
+    with contextlib.suppress(Exception):
+        await bot.send_message(chat.id, render.render_levelup(summary))
+    return result
+
+
+@router.message.outer_middleware()
 async def track_chat(handler, event, data):
     """Запоминает группы, где есть бот, — чтобы было куда рассылать."""
     chat = getattr(event, "chat", None)

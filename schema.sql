@@ -74,6 +74,8 @@ create index if not exists battles_opponent_idx on battles (opponent_id, status)
 alter table players    add column if not exists kills        integer not null default 0;
 alter table players    add column if not exists bonus_points integer not null default 0;
 alter table players    add column if not exists favorite_card text;
+alter table players    add column if not exists xp             integer not null default 0;
+alter table players    add column if not exists rewarded_level integer not null default 1;
 alter table collection add column if not exists kills        integer not null default 0;
 -- ===================================================================== --
 -- Рынок, инвентарь и улучшения

@@ -302,6 +302,48 @@ def test_stocks_buy_sell_and_no_arbitrage():
     run(scenario())
 
 
+def test_levels_grant_rewards_once():
+    async def scenario():
+        from app import levels
+
+        db = await fresh_db()
+        try:
+            user = 900031
+            async with db.pool.acquire() as con:
+                await con.execute("delete from players where user_id = $1", user)
+            await db.ensure_player(user, None, "Качается")
+
+            await db.grant_xp(user, levels.xp_for_level(1))
+            summary = await db.apply_pending_levels(user)
+            assert summary["levels"] == [2], summary
+            assert summary["rewards"], "за уровень должна быть награда"
+
+            again = await db.apply_pending_levels(user)
+            assert again["levels"] == [], "повторно награды не выдают"
+
+            async with db.pool.acquire() as con:
+                await con.execute(
+                    "update players set xp = 0, rewarded_level = 1 "
+                    "where user_id = $1",
+                    user,
+                )
+            await db.add_card(user, "oleg")
+            async with db.pool.acquire() as con:
+                xp = int(
+                    await con.fetchval(
+                        "select xp from players where user_id = $1", user
+                    )
+                )
+            assert xp == levels.XP_PER_CARD, "карта даёт 100 опыта"
+        finally:
+            async with db.pool.acquire() as con:
+                await con.execute("delete from cases where user_id = $1", 900031)
+                await con.execute("delete from players where user_id = $1", 900031)
+            await db.close()
+
+    run(scenario())
+
+
 def test_boss_raid_hits_and_rewards():
     async def scenario():
         from datetime import datetime, timedelta, timezone

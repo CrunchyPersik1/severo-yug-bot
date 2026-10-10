@@ -439,7 +439,11 @@ class Database:
             )
         return row is not None
 
-    async def add_card(self, user_id: int, card_id: str) -> int:
+    async def add_card(
+        self, user_id: int, card_id: str, xp: bool = True
+    ) -> int:
+        from . import levels as levels_mod
+
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
@@ -451,7 +455,143 @@ class Database:
                 user_id,
                 card_id,
             )
-            return int(row["count"])
+            count = int(row["count"])
+            if xp:
+                await self.grant_xp(user_id, levels_mod.XP_PER_CARD, con=con)
+            return count
+
+    # ------------------------------------------------------------------ #
+    # Уровни
+    # ------------------------------------------------------------------ #
+
+    async def grant_xp(self, user_id: int, amount: int, con: Any = None) -> int:
+        """Начисляет опыт. Награды за уровни выдаются лениво (apply_pending_levels)."""
+        amount = int(amount)
+        if amount == 0:
+            return 0
+        query = (
+            "update players set xp = xp + $2::integer, updated_at = now() "
+            "where user_id = $1 returning xp"
+        )
+        if con is not None:
+            row = await con.fetchrow(query, user_id, amount)
+        else:
+            async with self._p().acquire() as own:
+                row = await own.fetchrow(query, user_id, amount)
+        return int(row["xp"]) if row else 0
+
+    async def grant_shares(self, user_id: int, amount: int) -> int:
+        """Выдаёт акции случайной компании в пределах лимита на монету."""
+        import random as _random
+
+        from . import stocks as stocks_mod
+
+        amount = max(0, int(amount))
+        if amount <= 0:
+            return 0
+        slug = str(_random.choice(list(stocks_mod.STOCKS))["slug"])
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                stock = await con.fetchrow(
+                    "select id, price from stocks where slug = $1 for update", slug
+                )
+                if stock is None:
+                    return 0
+                row = await con.fetchrow(
+                    "select shares from stock_holdings "
+                    "where user_id = $1 and stock_id = $2",
+                    user_id,
+                    int(stock["id"]),
+                )
+                have = int(row["shares"]) if row else 0
+                give = max(0, min(amount, stocks_mod.MAX_PER_STOCK - have))
+                if give <= 0:
+                    return 0
+                await con.execute(
+                    """
+                    insert into stock_holdings (user_id, stock_id, shares, spent)
+                    values ($1, $2, $3, $4)
+                    on conflict (user_id, stock_id) do update
+                       set shares = stock_holdings.shares + $3,
+                           spent = stock_holdings.spent + $4
+                    """,
+                    user_id,
+                    int(stock["id"]),
+                    give,
+                    int(stock["price"]) * give,
+                )
+        return give
+
+    async def _grant_level_rewards(self, user_id: int, level: int) -> list[str]:
+        import random as _random
+
+        from . import levels as levels_mod
+        from .cards import CARDS_BY_RARITY, SECRET_CARD_IDS
+        from .gacha import DROPS_PER_DAY, day_key
+        from .roulette import SPINS_PER_DAY, roulette_day_key
+
+        lines: list[str] = []
+        for reward in levels_mod.rewards_for(level):
+            kind = reward["kind"]
+            if kind == "points":
+                await self.add_points(user_id, int(reward["amount"]))
+            elif kind == "drops":
+                await self.grant_drop_limit(
+                    user_id, day_key(), int(reward["amount"]), DROPS_PER_DAY
+                )
+            elif kind == "spins":
+                await self.grant_spin_limit(
+                    user_id,
+                    roulette_day_key(),
+                    int(reward["amount"]),
+                    SPINS_PER_DAY,
+                )
+            elif kind == "cases":
+                for _ in range(int(reward["amount"])):
+                    await self.add_case(user_id, "level")
+            elif kind == "card":
+                pool = [
+                    card
+                    for card in CARDS_BY_RARITY.get(str(reward["rarity"]), [])
+                    if card.card_id not in SECRET_CARD_IDS
+                ]
+                if pool:
+                    await self.add_card(
+                        user_id, _random.choice(pool).card_id, xp=False
+                    )
+            elif kind == "shares":
+                await self.grant_shares(user_id, int(reward["amount"]))
+            lines.append(levels_mod.describe(reward))
+        return lines
+
+    async def apply_pending_levels(self, user_id: int) -> dict:
+        """Выдаёт награды за все неотыгранные уровни игрока."""
+        from . import levels as levels_mod
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select xp, rewarded_level from players "
+                    "where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return {"levels": [], "rewards": [], "level": 1}
+                target = levels_mod.level_from_xp(int(row["xp"]))
+                start = int(row["rewarded_level"] or 1)
+                if target <= start:
+                    return {"levels": [], "rewards": [], "level": target}
+                await con.execute(
+                    "update players set rewarded_level = $2, updated_at = now() "
+                    "where user_id = $1",
+                    user_id,
+                    target,
+                )
+        gained = list(range(start + 1, target + 1))
+        rewards: list[str] = []
+        for level in gained:
+            rewards.extend(await self._grant_level_rewards(user_id, level))
+        return {"levels": gained, "rewards": rewards, "level": target}
 
     async def add_drop(self, user_id: int, chat_id: int | None, card_id: str, day: Any) -> None:
         async with self._p().acquire() as con:
@@ -589,7 +729,7 @@ class Database:
                 """
                 select p.user_id, p.username, p.first_name,
                        p.wins, p.losses, p.draws, p.kills, p.bonus_points,
-                       p.favorite_card,
+                       p.favorite_card, p.xp,
                        coalesce(sum(c.points), 0) as card_points,
                        count(col.card_id) as unique_cards,
                        coalesce(sum(col.count), 0) as total_cards,

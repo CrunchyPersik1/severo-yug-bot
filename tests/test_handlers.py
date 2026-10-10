@@ -80,6 +80,7 @@ class FakeDB:
         self.spin_grants: list[tuple[int, int]] = []
         self.cases: list[tuple[int, str]] = []
         self.battles: dict[str, Any] = {}
+        self.pending_levels: dict[int, list[int]] = {}
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -90,6 +91,16 @@ class FakeDB:
 
     async def get_battle(self, battle_id: str):
         return self.battles.get(battle_id)
+
+    async def apply_pending_levels(self, user_id: int) -> dict:
+        gained = self.pending_levels.pop(user_id, [])
+        if not gained:
+            return {"levels": [], "rewards": [], "level": 1}
+        return {
+            "levels": gained,
+            "rewards": ["💰 100 очков"],
+            "level": gained[-1],
+        }
 
     async def get_setting(self, key: str) -> str | None:
         return self.settings.get(key)
@@ -688,6 +699,17 @@ def test_other_players_cards_and_stats_are_viewable():
         assert "Олег" in body and "Атака" in body
         assert "только просмотр" in body, "чужие карты нельзя продавать или улучшать"
         assert "/sell" not in body
+
+    asyncio.run(scenario())
+
+
+def test_new_level_is_announced_after_action():
+    async def scenario():
+        db = FakeDB()
+        db.pending_levels[111] = [2, 3]
+        session = await feed("/help", db, FakeService())
+        texts = sent_texts(session)
+        assert any("Новый уровень" in text for text in texts), texts
 
     asyncio.run(scenario())
 

@@ -12,6 +12,7 @@ from typing import Any
 import asyncpg
 
 from . import casino
+from . import levels as levels_mod
 from .cards import get_card
 from .db import Database, as_json_dict
 from .market import market_price
@@ -73,6 +74,13 @@ class CasinoRepo:
             user_id,
             int(payout),
         )
+        if won:
+            # Выигрыш в казино капает опытом (чуть-чуть, чтобы не фармили).
+            await con.execute(
+                "update players set xp = xp + $2::integer where user_id = $1",
+                user_id,
+                levels_mod.XP_CASINO_WIN,
+            )
         await con.execute(
             """
             insert into casino_log (user_id, bet_kind, bet_value, color, rolled,

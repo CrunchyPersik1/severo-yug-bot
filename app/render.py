@@ -19,7 +19,7 @@ from .cards import (
     cards_sorted_for_user,
     get_card,
 )
-from . import titles
+from . import levels, titles
 from .cases import CASE_RARITY_ORDER, CASE_RARITY_WEIGHTS
 from .team_battle import TEAM_BLUE, TEAM_RED
 from .items import (
@@ -55,6 +55,7 @@ _ABILITY_TEXT = {
     "poison_turns": "на {v} х.",
     "stun": "оглушение {v} х.",
     "silence": "немота {v} х.",
+    "confuse": "смута {v} х.",
     "dodge": "уклонение ×{v}",
     "counter": "контрудар {v}",
     "counter_turns": "{v} х.",
@@ -67,7 +68,8 @@ _ABILITY_TEXT = {
 
 _ORDER = [
     "heal", "shield", "damage", "hits", "ignore_shield", "steal", "poison",
-    "poison_turns", "stun", "silence", "dodge", "counter", "counter_turns",
+    "poison_turns", "stun", "silence", "confuse", "dodge", "counter",
+    "counter_turns",
     "weaken", "weaken_turns", "cleanse", "self_stun", "drain",
 ]
 
@@ -107,6 +109,8 @@ def status_badges(side: dict[str, Any]) -> str:
         badges.append(f"🔻{side['weaken']}")
     if side["silence"] > 0:
         badges.append(f"🔇{side['silence']}")
+    if side.get("confuse", 0) > 0:
+        badges.append(f"❓{side['confuse']}")
     return " ".join(badges)
 
 
@@ -364,9 +368,12 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
     bonus_text = " (в минусе)" if bonus < 0 else ""
     title = titles.title_for(profile)
     points, _current, nxt = titles.progress(profile)
+    level, inside, need = levels.progress(profile.get("xp") or 0)
 
     lines = [
         f"👤 <b>{esc(name)}</b>",
+        f"⭐ Уровень: <b>{level}</b>/100"
+        + (f" · {inside}/{need} XP" if need else " · максимум"),
         f"🏅 Титул: <b>{title}</b> · вклад {points}",
         f"🏆 Место в PvP-рейтинге: <b>#{profile['rank']}</b>",
         "",
@@ -1750,6 +1757,22 @@ def render_top(rows: list[dict[str, Any]]) -> str:
     if not rows:
         lines.append("Пока пусто.")
     return "\n".join(lines)
+
+def render_levelup(summary: dict[str, Any]) -> str:
+    """Сообщение о новом уровне и выданных наградах."""
+    gained = list(summary.get("levels") or [])
+    if not gained:
+        return ""
+    top = int(gained[-1])
+    lines = [f"🎉 <b>Новый уровень: {top}!</b>"]
+    if len(gained) > 1:
+        lines.append(f"Сразу {len(gained)}: с {gained[0]} по {top}")
+    rewards = list(summary.get("rewards") or [])
+    if rewards:
+        lines += ["", "🎁 <b>Награда</b>"]
+        lines += [f"  • {esc(item)}" for item in rewards]
+    return "\n".join(lines)
+
 
 def render_boss(
     raid: dict[str, Any], top: list[dict[str, Any]], stats: dict[str, Any]
