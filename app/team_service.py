@@ -170,7 +170,7 @@ class TeamBattleService:
                 person["picks"].append(handle)
             if len(person["picks"]) >= state["cards_per_player"]:
                 person["ready"] = True
-            if not all(p["ready"] for p in state["participants"]):
+            if not all(p["ready"] for p in state.get("participants", [])):
                 return {"started": False}, None
             started["yes"] = True
             return {"started": True}, {"status": "active"}
@@ -189,7 +189,7 @@ class TeamBattleService:
             return
         state = battle["state"]
         picks: dict[int, list[dict[str, Any]]] = {}
-        for person in state["participants"]:
+        for person in state.get("participants", []):
             entries: list[dict[str, Any]] = []
             for handle in person["picks"]:
                 parsed = parse_handle(handle)
@@ -276,11 +276,13 @@ class TeamBattleService:
             return {}
         state["recorded"] = True
         winner = state["winner"]
+        # У старых боёв в базе состава могло не быть — не роняем таймаут.
+        people = state.get("participants", [])
         winners = [
-            p["user_id"] for p in state["participants"] if p["team"] == winner
+            p["user_id"] for p in people if p["team"] == winner
         ] if winner else []
         losers = [
-            p["user_id"] for p in state["participants"] if p["team"] != winner
+            p["user_id"] for p in people if p["team"] != winner
         ] if winner else []
         return {"team_result": {"winners": winners, "losers": losers}}
 

@@ -302,12 +302,17 @@ class StocksRepo:
             """
             update stocks
                set prev_price = price, price = $2, updated_at = now(),
-                   target_price = case when $3 then null else target_price end,
-                   pump_phase = $4,
-                   pump_peak = case when $4 is null then null else pump_peak end,
-                   pump_home = case when $4 is null then null else pump_home end,
-                   alert_price = case when $5 then price else alert_price end,
-                   alerted_at = case when $5 then now() else alerted_at end
+                   target_price = case when $3::boolean then null
+                                       else target_price end,
+                   pump_phase = $4::text,
+                   pump_peak = case when $4::text is null then null
+                                   else pump_peak end,
+                   pump_home = case when $4::text is null then null
+                                   else pump_home end,
+                   alert_price = case when $5::boolean then price
+                                      else alert_price end,
+                   alerted_at = case when $5::boolean then now()
+                                     else alerted_at end
              where id = $1
             """,
             int(row["id"]),

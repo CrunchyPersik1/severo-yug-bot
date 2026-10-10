@@ -23,6 +23,22 @@ def make_picks(card_ids=("valeriya", "oleg")):
     }
 
 
+def test_build_state_keeps_participants():
+    people = make_people()
+    state = team_battle.build_state(people, {}, 1)
+    assert state["participants"] == people
+
+
+def test_finalize_survives_state_without_participants():
+    """Регрессия: старый бой без состава ронял таймаут KeyError."""
+    from app.team_service import TeamBattleService
+
+    service = TeamBattleService(None, None, None)
+    record = service._finalize({"winner": team_battle.TEAM_RED})
+    assert record["team_result"]["winners"] == []
+    assert record["team_result"]["losers"] == []
+
+
 def test_build_creates_two_units_per_player():
     state = team_battle.build_state(make_people(), make_picks(), 1)
     assert len(state["sides"]) == 8

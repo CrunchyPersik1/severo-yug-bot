@@ -57,6 +57,8 @@ def build_state(participants: list[dict[str, Any]], picks: dict[int, list[dict]]
         "sides": sides,
         "teams": teams,
         "order": order,
+        # Держим состав в состоянии: по нему считаем итоги и рисуем шапку боя.
+        "participants": participants,
         "turn": first,
         "round": 1,
         "log": [],

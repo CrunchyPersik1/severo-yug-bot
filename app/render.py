@@ -1107,7 +1107,7 @@ def render_team_battle(
     else:
         turn = state["turn"]
         person = next(
-            (p for p in state["participants"] if p["user_id"] == turn), None
+            (p for p in state.get("participants", []) if p["user_id"] == turn), None
         )
         name = person["name"] if person else str(turn)
         unit_key = view.get("unit")
