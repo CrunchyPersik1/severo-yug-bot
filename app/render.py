@@ -1702,6 +1702,27 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def render_clicker() -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        "👆 <b>КЛИКЕР</b>",
+        "",
+        "Жми кнопку — что-нибудь да упадёт. Что именно, решает рандом:",
+        "  💰 очки — почти всегда",
+        "  🎴 крутка «Северо-Юг» — редко",
+        "  🎰 спин рулетки — редко",
+        "  📦 кейс — редко",
+        "  🃏 карта — совсем редко",
+        "",
+        "Тапай сколько хочешь — подарки капают!",
+    ]
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="👆 Тапнуть", callback_data="clicker:tap")]
+        ]
+    )
+    return "\n".join(lines), keyboard
+
+
 def render_top(rows: list[dict[str, Any]]) -> str:
     lines = ["🏆 <b>Топ по очкам</b>", ""]
     medals = ["🥇", "🥈", "🥉"]

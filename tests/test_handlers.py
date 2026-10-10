@@ -77,6 +77,8 @@ class FakeDB:
         self.drop_grants: list[tuple[int, int]] = []
         self.boss_rewards: tuple[int, int, int] | None = None
         self.settings: dict[str, str] = {}
+        self.spin_grants: list[tuple[int, int]] = []
+        self.cases: list[tuple[int, str]] = []
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -169,6 +171,16 @@ class FakeDB:
     ) -> int:
         self.drop_grants.append((user_id, int(amount)))
         return int(default_limit) + int(amount)
+
+    async def grant_spin_limit(
+        self, user_id: int, day: Any, amount: int, default_limit: int = 1
+    ) -> int:
+        self.spin_grants.append((user_id, int(amount)))
+        return int(default_limit) + int(amount)
+
+    async def add_case(self, user_id: int, source: str = "clicker") -> int:
+        self.cases.append((int(user_id), source))
+        return len(self.cases)
 
     async def latest_ref_link(self, user_id: int):
         links = [l for l in self.ref_links.values() if l["owner_id"] == user_id]
@@ -686,6 +698,37 @@ def test_own_card_detail_offers_actions():
         assert "/sell" in body and "/upgrade" in body
 
     asyncio.run(scenario())
+
+def test_admin_starts_clicker_and_tap_gives_a_reward():
+    """Кликер: включается админом, тап что-то выдаёт."""
+
+    async def scenario():
+        db = FakeDB()
+        session = await feed("/admin clicker", db, FakeService(), user_id=111)
+        assert db.settings.get("clicker_live") == "1"
+        markup = str(
+            [p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup")
+        )
+        assert "clicker:tap" in markup, markup
+
+        session = await feed_callback("clicker:tap", db, FakeMarket())
+        answers = [
+            p.get("text", "") for n, p in session.calls if n == "AnswerCallbackQuery"
+        ]
+        assert answers, "тап должен что-то ответить"
+
+    asyncio.run(scenario())
+
+
+def test_clicker_tap_is_closed_when_off():
+    async def scenario():
+        db = FakeDB()
+        await feed_callback("clicker:tap", db, FakeMarket())
+        # флаг не выставлен — ничего не начисляем
+        assert not db.spin_grants and not db.cases
+
+    asyncio.run(scenario())
+
 
 def test_update_word_turns_on_the_new_miniapps():
     """Рубильник обновления: срабатывает только у админа и только на слово."""

@@ -332,6 +332,41 @@ class Database:
             return int(limit)
         return max(0, int(row["roulette_limit"]) - int(row["roulette_uses"]))
 
+    async def grant_spin_limit(
+        self, user_id: int, day: Any, amount: int, default_limit: int = 1
+    ) -> int:
+        """Выдаёт дополнительные спины рулетки на текущие сутки."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select roulette_day, roulette_uses, roulette_limit "
+                    "from players where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return int(amount)
+                if row["roulette_day"] != day:
+                    uses, limit = 0, int(default_limit)
+                else:
+                    uses = int(row["roulette_uses"])
+                    limit = int(row["roulette_limit"])
+                new_limit = limit + int(amount)
+                await con.execute(
+                    """
+                    update players
+                       set roulette_day = $2,
+                           roulette_uses = $3,
+                           roulette_limit = $4,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    user_id,
+                    day,
+                    uses,
+                    new_limit,
+                )
+                return max(0, new_limit - uses)
+
     async def get_setting(self, key: str) -> str | None:
         async with self._p().acquire() as con:
             return await con.fetchval(

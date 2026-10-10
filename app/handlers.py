@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,7 +15,17 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
-from . import admin_actions, boss, casino, dice_casino, promo, referrals, render, team_battle
+from . import (
+    admin_actions,
+    boss,
+    casino,
+    clicker,
+    dice_casino,
+    promo,
+    referrals,
+    render,
+    team_battle,
+)
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
@@ -222,6 +233,20 @@ async def cmd_admin(
             f"удар {boss.HIT_DAMAGE}. Ещё разослал в {sent} групп(ы).\n"
             "Карты не нужны — жми «Ударить»."
         )
+        return
+
+    # /admin clicker [off] — кликер: тапают и получают подарки.
+    if len(head) >= 2 and head[1].lower() in ("clicker", "кликер"):
+        arg = head[2].strip().lower() if len(head) > 2 else ""
+        if arg in ("off", "stop", "стоп", "выкл"):
+            await db.set_setting("clicker_live", "0")
+            await message.answer("👆 Кликер остановлен.")
+            return
+        await db.set_setting("clicker_live", "1")
+        text, keyboard = render.render_clicker()
+        await message.answer(text, reply_markup=keyboard)
+        sent = await _broadcast_clicker(bot, db, exclude=message.chat.id)
+        await message.answer(f"👆 Кликер запущен. Ещё разослал в {sent} групп(ы).")
         return
 
     try:
@@ -906,6 +931,64 @@ async def cmd_gift(message: Message, db: Database, market: MarketRepo) -> None:
         card = get_card(unit["card_id"])
         title = f"{card.rarity_emoji} <b>{render.esc(card.display_name)}</b>"
     await message.answer(f"🎁 Подарок отправлен: {title} → {render.esc(target_name)}")
+
+
+# --------------------------------------------------------------------------- #
+# Кликер: тапают все, что-то падает
+# --------------------------------------------------------------------------- #
+
+_CLICKER_TAPS: dict[int, float] = {}
+
+
+async def _broadcast_clicker(
+    bot: Bot, db: Database, exclude: int | None = None
+) -> int:
+    text, keyboard = render.render_clicker()
+    sent = 0
+    for chat_id in await db.broadcast_targets():
+        if exclude is not None and int(chat_id) == int(exclude):
+            continue
+        try:
+            await bot.send_message(chat_id, text, reply_markup=keyboard)
+        except Exception:  # noqa: BLE001
+            continue
+        sent += 1
+        await asyncio.sleep(0.05)
+    return sent
+
+
+@router.callback_query(F.data == "clicker:tap")
+async def cb_clicker(callback: CallbackQuery, db: Database) -> None:
+    """Тап по кликеру: случайная награда, в основном очки."""
+    user = callback.from_user
+    if (await db.get_setting("clicker_live")) != "1":
+        await callback.answer("Кликер выключен.", show_alert=True)
+        return
+    now = time.monotonic()
+    if now - _CLICKER_TAPS.get(user.id, 0.0) < clicker.TAP_COOLDOWN_SECONDS:
+        await callback.answer("Не так часто 🙂")
+        return
+    _CLICKER_TAPS[user.id] = now
+    await db.ensure_player(user.id, user.username, user.first_name)
+    kind, value = clicker.roll_reward()
+    if kind == clicker.POINTS:
+        await db.add_points(user.id, int(value))
+    elif kind == clicker.DROP:
+        await db.grant_drop_limit(user.id, day_key(), 1, DROPS_PER_DAY)
+    elif kind == clicker.SPIN:
+        await db.grant_spin_limit(user.id, roulette_day_key(), 1, SPINS_PER_DAY)
+    elif kind == clicker.CASE:
+        await db.add_case(user.id, "clicker")
+    else:
+        card = value
+        await db.add_card(user.id, card.card_id)
+        await db.add_points(user.id, card.points)
+    answer = clicker.label(kind, value)
+    rare = kind != clicker.POINTS
+    await callback.answer(answer, show_alert=rare)
+    if rare and callback.message is not None:
+        with contextlib.suppress(Exception):
+            await callback.message.reply(f"🎉 {user.first_name} выбил {answer}")
 
 
 # --------------------------------------------------------------------------- #
