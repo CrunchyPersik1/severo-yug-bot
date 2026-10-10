@@ -17,13 +17,13 @@ EXPECTED = {
     "legendary": 4,
     "secret": 5,
     "ultra": 1,
-    "teacher": 13,
+    "teacher": 14,
 }
 
 
 def test_total_and_unique_ids():
-    assert len(CARDS) == 50
-    assert len(CARDS_BY_ID) == 50
+    assert len(CARDS) == 51
+    assert len(CARDS_BY_ID) == 51
 
 
 def test_duplicate_names_have_distinct_ids():
@@ -37,7 +37,7 @@ def test_duplicate_names_have_distinct_ids():
 def test_rarity_counts_match_spec():
     for rarity, expected in EXPECTED.items():
         assert len(CARDS_BY_RARITY[rarity]) == expected, rarity
-    assert sum(EXPECTED.values()) == 50
+    assert sum(EXPECTED.values()) == 51
 
 
 def test_weights_sum_to_one():
@@ -67,6 +67,31 @@ def test_my_card_shows_ability_effects():
     text, _ = my_card(unit, [])
     assert "Строгий выговор" in text
     assert "урон 170" in text and "оглушение" in text
+
+
+def test_secret_event_teacher_is_admin_only():
+    """«Гузель Арматуровна» — ивентовая училка, только вручную от админа."""
+    import random
+
+    from app.cards import ADMIN_ONLY_CARD_IDS, SECRET_CARD_IDS
+    from app.gacha import roll_card
+    from app.shop import catalog
+
+    card = get_card("guzel_armatura")
+    assert card.rarity == "teacher"
+    assert card.description, "у ивентовой карты должно быть описание"
+    assert card.ability.name == "Красная ручка"
+    assert card.ability.effects["damage"] == 175
+    assert card.ability.effects["poison"] == 35
+    assert card.card_id in ADMIN_ONLY_CARD_IDS
+    assert card.card_id in SECRET_CARD_IDS
+
+    # ни в магазине, ни в случайном дропе её быть не должно
+    assert all(entry.sku != "card:guzel_armatura" for entry in catalog())
+    rng = random.Random(11)
+    seen = {roll_card(rng).card_id for _ in range(50_000)}
+    assert "guzel_armatura" not in seen
+    assert not (seen & SECRET_CARD_IDS)
 
 
 def test_teacher_abilities_show_concrete_effects():
@@ -113,7 +138,7 @@ def test_duplicate_names_are_split_by_surname():
 
     display = Counter(card.display_name for card in CARDS)
     assert all(count == 1 for count in display.values()), "отображаемые имена не должны повторяться"
-    assert len(display) == 50
+    assert len(display) == 51
 
 
 def test_only_duplicate_names_have_surnames():

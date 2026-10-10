@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from datetime import date, datetime, timedelta, timezone
 
-from .cards import CARDS_BY_RARITY, PROMO_ONLY_CARD_IDS, RARITIES, Card
+from .cards import CARDS_BY_RARITY, RARITIES, SECRET_CARD_IDS, Card
 
 RESET_HOUR_UTC = 7  # 12:00 по ЕКБ
 
@@ -51,7 +51,7 @@ def roll_card(rng: random.Random | None = None) -> Card:
     pool = [
         card
         for card in CARDS_BY_RARITY[rarity]
-        if card.card_id not in PROMO_ONLY_CARD_IDS
+        if card.card_id not in SECRET_CARD_IDS
     ]
     return rng.choice(pool or CARDS_BY_RARITY[rarity])
 

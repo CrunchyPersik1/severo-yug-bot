@@ -12,7 +12,7 @@ from typing import Any
 
 import asyncpg
 
-from .cards import CARDS, PROMO_ONLY_CARD_IDS, get_card
+from .cards import CARDS, SECRET_CARD_IDS, get_card
 from .db import Database
 from .items import ACCESSORIES, Item
 from .market import market_price
@@ -55,8 +55,8 @@ def catalog() -> list[ShopEntry]:
     for card in CARDS:
         if card.rarity != "teacher":
             continue
-        # Промо-карты не продаются: их выдаёт только промокод.
-        if card.card_id in PROMO_ONLY_CARD_IDS:
+        # Промо и секретные ивентовые не продаются: их выдают вручную.
+        if card.card_id in SECRET_CARD_IDS:
             continue
         entries.append(
             ShopEntry(
