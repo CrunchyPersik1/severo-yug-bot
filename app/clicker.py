@@ -17,13 +17,13 @@ SPIN = "spin"
 CASE = "case"
 CARD = "card"
 
-# 90% тапов — очки. На крутки по 3%, на кейсы и карты по 2%.
+# 97% тапов — очки. Все редкие награды — меньше процента каждая.
 WEIGHTS: dict[str, float] = {
-    POINTS: 0.90,
-    DROP: 0.03,
-    SPIN: 0.03,
-    CASE: 0.02,
-    CARD: 0.02,
+    POINTS: 0.970,
+    DROP: 0.009,
+    SPIN: 0.009,
+    CASE: 0.006,
+    CARD: 0.006,
 }
 
 POINTS_MIN = 5

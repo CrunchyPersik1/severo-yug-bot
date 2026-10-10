@@ -9,9 +9,9 @@ from app import clicker
 def test_weights_sum_to_one_and_points_dominate():
     total = sum(clicker.WEIGHTS.values())
     assert abs(total - 1.0) < 1e-9
-    assert clicker.WEIGHTS[clicker.POINTS] > 0.8
+    assert clicker.WEIGHTS[clicker.POINTS] > 0.9
     for kind in (clicker.DROP, clicker.SPIN, clicker.CASE, clicker.CARD):
-        assert clicker.WEIGHTS[kind] < 0.05, kind
+        assert clicker.WEIGHTS[kind] < 0.01, kind
 
 
 def test_roll_reward_is_mostly_points():
