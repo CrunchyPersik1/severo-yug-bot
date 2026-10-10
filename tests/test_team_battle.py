@@ -23,6 +23,34 @@ def make_picks(card_ids=("valeriya", "oleg")):
     }
 
 
+def test_cooldown_keeps_attack_and_shows_ability():
+    """КД способности не должен прятать обычную атаку."""
+    from app.render import render_team_battle
+
+    people = [
+        {"user_id": 1, "name": "Я", "team": team_battle.TEAM_RED},
+        {"user_id": 2, "name": "Враг", "team": team_battle.TEAM_BLUE},
+    ]
+    picks = {
+        1: [{"card": get_card("natalya_nik")}],
+        2: [{"card": get_card("oleg")}],
+    }
+    state = team_battle.build_state(people, picks, 1)
+    key = team_battle.unit_keys(state, 1)[0]
+    state["sides"][key]["cd"] = 3
+    battle = {
+        "battle_id": "x",
+        "chat_id": 1,
+        "state": state,
+        "message_id": None,
+        "status": "active",
+    }
+    _, keyboard = render_team_battle(battle, state, {"unit": key})
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert any("Удар" in text for text in labels), labels
+    assert any("КД 3" in text for text in labels), labels
+
+
 def test_build_state_keeps_participants():
     people = make_people()
     state = team_battle.build_state(people, {}, 1)

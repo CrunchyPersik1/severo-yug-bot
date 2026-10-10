@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .battle import ACTION_ABILITY, ACTION_HIT, KEY_A, KEY_B
 from . import boss, casino, dice_casino, team_battle
-from .battle import ability_targets, can_use_ability
+from .battle import ability_targets
 from .cards import (
     CARDS,
     CARDS_BY_ID,
@@ -1133,6 +1133,7 @@ def render_team_battle(
             lines.append(f"Карта: <b>{esc(card.display_name)}</b>")
             if action is None:
                 lines.append("Что делаем?")
+                # Удар доступен всегда — КД способности его не блокирует.
                 rows.append(
                     [
                         InlineKeyboardButton(
@@ -1141,15 +1142,28 @@ def render_team_battle(
                         )
                     ]
                 )
-                if can_use_ability(side):
-                    rows.append(
-                        [
-                            InlineKeyboardButton(
-                                text=f"✨ {card.ability.name}",
-                                callback_data=f"tb:{battle_id}:a:{unit_key}:ability",
-                            )
-                        ]
-                    )
+                # Способность показываем всегда: если на КД — просто с пометкой.
+                ability_label = f"✨ {card.ability.name}"
+                if side["silence"] > 0:
+                    ability_label += " · 🔇"
+                elif side["cd"] > 0:
+                    ability_label += f" · КД {side['cd']}"
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text=ability_label,
+                            callback_data=f"tb:{battle_id}:a:{unit_key}:ability",
+                        )
+                    ]
+                )
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            text="⬅️ К списку карт",
+                            callback_data=f"tb:{battle_id}:c",
+                        )
+                    ]
+                )
             else:
                 need = ability_targets(card) if action == "ability" else "enemy"
                 if need == "both" and target is None:

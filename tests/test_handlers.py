@@ -79,6 +79,7 @@ class FakeDB:
         self.settings: dict[str, str] = {}
         self.spin_grants: list[tuple[int, int]] = []
         self.cases: list[tuple[int, str]] = []
+        self.battles: dict[str, Any] = {}
 
     async def add_points(self, user_id: int, amount: int) -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
@@ -86,6 +87,9 @@ class FakeDB:
 
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+    async def get_battle(self, battle_id: str):
+        return self.battles.get(battle_id)
 
     async def get_setting(self, key: str) -> str | None:
         return self.settings.get(key)
@@ -684,6 +688,50 @@ def test_other_players_cards_and_stats_are_viewable():
         assert "Олег" in body and "Атака" in body
         assert "только просмотр" in body, "чужие карты нельзя продавать или улучшать"
         assert "/sell" not in body
+
+    asyncio.run(scenario())
+
+
+def test_opponent_cannot_open_my_card_menu():
+    """Регрессия: чужой тап открывал меню моей карты в командном бою."""
+    from app import team_battle
+    from app.cards import get_card
+
+    async def scenario():
+        db = FakeDB()
+        people = [
+            {"user_id": 111, "name": "Я", "team": team_battle.TEAM_RED},
+            {"user_id": 222, "name": "Враг", "team": team_battle.TEAM_BLUE},
+        ]
+        picks = {
+            111: [{"card": get_card("natalya_nik")}],
+            222: [{"card": get_card("oleg")}],
+        }
+        state = team_battle.build_state(people, picks, 111)
+        key = team_battle.unit_keys(state, 111)[0]
+        db.battles["abc"] = {
+            "battle_id": "abc",
+            "chat_id": -100,
+            "state": state,
+            "message_id": 1,
+            "status": "active",
+        }
+
+        # Противник жмёт мою карту — меню не открывается.
+        session = await feed_callback(
+            "tb:abc:u:" + key, db, FakeMarket(), user_id=222
+        )
+        answers = [
+            p.get("text", "") for n, p in session.calls if n == "AnswerCallbackQuery"
+        ]
+        assert any("не твоя карта" in text for text in answers), answers
+        assert not any(n == "EditMessageText" for n, _ in session.calls)
+
+        # Хозяин карты — открывает.
+        session = await feed_callback(
+            "tb:abc:u:" + key, db, FakeMarket(), user_id=111
+        )
+        assert any(n == "EditMessageText" for n, _ in session.calls)
 
     asyncio.run(scenario())
 

@@ -1722,8 +1722,29 @@ async def cb_team_battle(
         return
     state = battle["state"]
 
+    if state.get("over"):
+        await callback.answer("Бой уже закончен.", show_alert=True)
+        return
+
+    # Кнопки принадлежат тому, чей сейчас ход: чужой тап не должен даже
+    # открывать меню чужой карты.
+    if step in ("u", "a", "t", "y"):
+        actor = state.get("sides", {}).get(parts[3])
+        if actor is None:
+            await callback.answer("Карта не найдена", show_alert=True)
+            return
+        if actor["user_id"] != callback.from_user.id:
+            await callback.answer("Это не твоя карта.", show_alert=True)
+            return
+        if state.get("turn") != callback.from_user.id:
+            await callback.answer("Сейчас не твой ход.", show_alert=True)
+            return
+
     try:
-        if step == "u":
+        if step == "c":
+            text, keyboard = render.render_team_battle(battle, state)
+            await _safe_edit(callback, text, keyboard)
+        elif step == "u":
             unit_key = parts[3]
             text, keyboard = render.render_team_battle(
                 battle, state, {"unit": unit_key}
