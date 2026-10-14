@@ -22,6 +22,7 @@ from . import (
     clicker,
     dice_casino,
     event,
+    kopilka,
     promo,
     referrals,
     render,
@@ -2476,10 +2477,13 @@ async def cb_extra_spin(
 # --------------------------------------------------------------------------- #
 
 
-async def _clicker_view(db: Database, user_id: int, running: bool):
+_KOPILKA_TAPS: dict[int, float] = {}
+
+
+async def _clicker_view(db: Database, user_id: int, running: bool, last: str = ""):
     me = await db.kopilka_me(user_id)
     top = await db.kopilka_top(5)
-    return render.clicker_hud(me, top, running)
+    return render.clicker_hud(me, top, running, last)
 
 
 @router.message(Command("kopilka", "копилка"))
@@ -2508,8 +2512,23 @@ async def cb_kopilka(callback: CallbackQuery, db: Database) -> None:
     if not state.clicker:
         await callback.answer("Кликер выключен", show_alert=True)
         return
+    last = ""
     if action == "c":
-        await db.kopilka_tap(user_id, event.CLICK_POINTS)
-    text, keyboard = await _clicker_view(db, user_id, state.active)
+        moment = time.monotonic()
+        if moment - _KOPILKA_TAPS.get(user_id, 0.0) < kopilka.TAP_COOLDOWN_SECONDS:
+            await callback.answer("Слишком быстро 🐢")
+            return
+        _KOPILKA_TAPS[user_id] = moment
+        kind, value = kopilka.roll()
+        await db.kopilka_tap(
+            user_id,
+            points=int(value) if kind == kopilka.POINTS else 0,
+            drops=1 if kind == kopilka.DROP else 0,
+            spins=1 if kind == kopilka.SPIN else 0,
+            cases=1 if kind == kopilka.CASE else 0,
+            cards=[value.card_id] if kind == kopilka.CARD else None,
+        )
+        last = kopilka.label(kind, value)
+    text, keyboard = await _clicker_view(db, user_id, state.active, last)
     await _safe_edit(callback, text, keyboard)
-    await callback.answer()
+    await callback.answer(last or "Обновлено")

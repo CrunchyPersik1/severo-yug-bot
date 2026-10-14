@@ -460,3 +460,9 @@ create table if not exists kopilka (
     granted    boolean not null default false,
     updated_at timestamptz not null default now()
 );
+
+-- Копилка копит не только очки: крутки, спины, кейсы и карты тоже.
+alter table kopilka add column if not exists drops integer not null default 0;
+alter table kopilka add column if not exists spins integer not null default 0;
+alter table kopilka add column if not exists cases integer not null default 0;
+alter table kopilka add column if not exists cards jsonb not null default '[]'::jsonb;

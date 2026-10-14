@@ -84,3 +84,75 @@ def describe_boost(value: float) -> str:
 
 def happy_until(moment: datetime | None = None) -> datetime:
     return (moment or datetime.now(timezone.utc)) + timedelta(seconds=MINUTE_SECONDS)
+
+async def payout(con: Any) -> dict[str, int]:
+    """Раздаёт ВСЁ, что накопилось в копилке, и закрывает ивент.
+
+    Работает на переданном соединении, поэтому вызывается внутри транзакции.
+    """
+    import json as _json
+
+    def as_list(value: Any) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            try:
+                value = _json.loads(value)
+            except ValueError:
+                return []
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    rows = await con.fetch(
+        """
+        select * from kopilka
+         where granted = false
+           and (points > 0 or drops > 0 or spins > 0 or cases > 0
+                or cards <> '[]'::jsonb)
+         for update
+        """
+    )
+    totals = {"players": len(rows), "points": 0, "drops": 0, "spins": 0, "cases": 0, "cards": 0}
+    for row in rows:
+        user_id = int(row["user_id"])
+        await con.execute(
+            """
+            update players
+               set bonus_points = bonus_points + $2,
+                   drop_limit = drop_limit + $3,
+                   roulette_limit = roulette_limit + $4
+             where user_id = $1
+            """,
+            user_id,
+            int(row["points"]),
+            int(row["drops"]),
+            int(row["spins"]),
+        )
+        if int(row["cases"]):
+            await con.execute(
+                "insert into cases (user_id, source) "
+                "select $1, 'kopilka' from generate_series(1, $2)",
+                user_id,
+                int(row["cases"]),
+            )
+        cards = as_list(row["cards"])
+        for card_id in cards:
+            await con.execute(
+                """
+                insert into collection (user_id, card_id, count) values ($1, $2, 1)
+                on conflict (user_id, card_id)
+                do update set count = collection.count + 1
+                """,
+                user_id,
+                card_id,
+            )
+        totals["points"] += int(row["points"])
+        totals["drops"] += int(row["drops"])
+        totals["spins"] += int(row["spins"])
+        totals["cases"] += int(row["cases"])
+        totals["cards"] += len(cards)
+
+    await con.execute("update kopilka set granted = true where granted = false")
+    await con.execute(
+        "update game_event set active = false, happy_until = null where id = 1"
+    )
+    return totals

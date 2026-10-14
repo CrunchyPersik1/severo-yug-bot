@@ -1843,15 +1843,28 @@ def render_boss_victory(
 
 
 def clicker_hud(
-    me: dict[str, Any], top: list[dict[str, Any]], running: bool
+    me: dict[str, Any],
+    top: list[dict[str, Any]],
+    running: bool,
+    last: str = "",
 ) -> tuple[str, InlineKeyboardMarkup]:
     lines = [
         "🎮 <b>Копилка ивента</b>",
         "",
         f"👆 Кликов: <b>{me['clicks']}</b>",
-        f"💰 В копилке: <b>{me['points']}</b> очков",
-        f"🏆 Место: <b>#{me['rank']}</b> из {me['players']}",
+        f"💰 Очков: <b>{me['points']}</b>",
     ]
+    if int(me.get("drops", 0)):
+        lines.append(f"🎴 Круток «Северо-Юг»: <b>{int(me['drops'])}</b>")
+    if int(me.get("spins", 0)):
+        lines.append(f"🎰 Спинов рулетки: <b>{int(me['spins'])}</b>")
+    if int(me.get("cases", 0)):
+        lines.append(f"📦 Кейсов: <b>{int(me['cases'])}</b>")
+    if me.get("cards"):
+        lines.append(f"🃏 Карт: <b>{len(me['cards'])}</b>")
+    lines.append(f"🏆 Место: <b>#{me['rank']}</b> из {me['players']}")
+    if last:
+        lines += ["", f"Последний клик: {last}"]
     if top:
         lines += ["", "<b>Топ кликеров</b>"]
         for index, row in enumerate(top):

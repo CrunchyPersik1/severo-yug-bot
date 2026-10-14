@@ -21,6 +21,20 @@ log = logging.getLogger(__name__)
 _STRIP_PARAMS = {"sslmode", "pgbouncer", "connection_limit", "ssl", "application_name"}
 
 
+def _json_list(value: Any) -> list[str]:
+    """asyncpg отдаёт jsonb строкой — достаём список карт."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
 def as_json_dict(value: Any) -> dict[str, Any]:
     """asyncpg отдаёт jsonb строкой — приводим к словарю безопасно."""
     if not value:
@@ -1064,26 +1078,62 @@ class Database:
         async with self._p().acquire() as con:
             async with con.transaction():
                 rows = await con.fetch(
-                    "select user_id, points from kopilka "
-                    "where points > 0 and granted = false for update"
+                    """
+                    select * from kopilka
+                     where granted = false
+                       and (points > 0 or drops > 0 or spins > 0 or cases > 0
+                            or cards <> '[]'::jsonb)
+                     for update
+                    """
                 )
+                totals = {"points": 0, "drops": 0, "spins": 0, "cases": 0, "cards": 0}
                 for row in rows:
+                    user_id = int(row["user_id"])
                     await con.execute(
-                        "update players set bonus_points = bonus_points + $2 "
-                        "where user_id = $1",
-                        row["user_id"],
+                        """
+                        update players
+                           set bonus_points = bonus_points + $2,
+                               drop_limit = drop_limit + $3,
+                               roulette_limit = roulette_limit + $4
+                         where user_id = $1
+                        """,
+                        user_id,
                         int(row["points"]),
+                        int(row["drops"]),
+                        int(row["spins"]),
                     )
+                    if int(row["cases"]):
+                        await con.execute(
+                            """
+                            insert into cases (user_id, source)
+                            select $1, 'kopilka' from generate_series(1, $2)
+                            """,
+                            user_id,
+                            int(row["cases"]),
+                        )
+                    for card_id in _json_list(row["cards"]):
+                        await con.execute(
+                            """
+                            insert into collection (user_id, card_id, count)
+                            values ($1, $2, 1)
+                            on conflict (user_id, card_id)
+                            do update set count = collection.count + 1
+                            """,
+                            user_id,
+                            str(card_id),
+                        )
+                    totals["points"] += int(row["points"])
+                    totals["drops"] += int(row["drops"])
+                    totals["spins"] += int(row["spins"])
+                    totals["cases"] += int(row["cases"])
+                    totals["cards"] += len(_json_list(row["cards"]))
                 await con.execute(
                     "update kopilka set granted = true where granted = false"
                 )
                 await con.execute(
                     "update game_event set active = false, happy_until = null where id = 1"
                 )
-        return {
-            "players": len(rows),
-            "total": sum(int(row["points"]) for row in rows),
-        }
+        return {"players": len(rows), **totals}
 
     async def set_clicker(self, on: bool) -> None:
         async with self._p().acquire() as con:
@@ -1099,39 +1149,70 @@ class Database:
                 float(boost),
             )
 
-    async def kopilka_tap(self, user_id: int, points: int) -> dict[str, int]:
+    async def kopilka_tap(
+        self,
+        user_id: int,
+        points: int = 0,
+        drops: int = 0,
+        spins: int = 0,
+        cases: int = 0,
+        cards: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Один клик. Всё складывается, ничего не выдаётся."""
+        payload = json.dumps([str(card) for card in (cards or [])])
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
-                insert into kopilka (user_id, clicks, points) values ($1, 1, $2)
+                insert into kopilka (user_id, clicks, points, drops, spins, cases, cards)
+                values ($1, 1, $2, $3, $4, $5, $6::jsonb)
                 on conflict (user_id) do update
                    set clicks = kopilka.clicks + 1,
                        points = kopilka.points + $2,
+                       drops = kopilka.drops + $3,
+                       spins = kopilka.spins + $4,
+                       cases = kopilka.cases + $5,
+                       cards = kopilka.cards || $6::jsonb,
                        granted = false,
                        updated_at = now()
-                returning clicks, points
+                returning clicks, points, drops, spins, cases, cards
                 """,
                 user_id,
                 int(points),
+                int(drops),
+                int(spins),
+                int(cases),
+                payload,
             )
-        return {"clicks": int(row["clicks"]), "points": int(row["points"])}
+        result = {key: row[key] for key in ("clicks", "points", "drops", "spins", "cases")}
+        result["cards"] = _json_list(row["cards"])
+        return result
 
     async def kopilka_me(self, user_id: int) -> dict[str, int]:
         async with self._p().acquire() as con:
             row = await con.fetchrow(
-                "select clicks, points from kopilka where user_id = $1", user_id
+                "select * from kopilka where user_id = $1", user_id
             )
             points = int(row["points"]) if row else 0
             rank = await con.fetchval(
                 "select count(*) + 1 from kopilka where points > $1", points
             )
             total = await con.fetchval("select count(*) from kopilka")
-        return {
-            "clicks": int(row["clicks"]) if row else 0,
-            "points": points,
-            "rank": int(rank or 1),
-            "players": int(total or 0),
-        }
+        if row is None:
+            return {
+                "clicks": 0,
+                "points": 0,
+                "drops": 0,
+                "spins": 0,
+                "cases": 0,
+                "cards": [],
+                "rank": 1,
+                "players": int(total or 0),
+            }
+        data = {key: int(row[key]) for key in ("clicks", "points", "drops", "spins", "cases")}
+        data["cards"] = _json_list(row["cards"])
+        data["rank"] = int(rank or 1)
+        data["players"] = int(total or 0)
+        return data
 
     async def kopilka_top(self, limit: int = 5) -> list[dict[str, Any]]:
         async with self._p().acquire() as con:

@@ -67,24 +67,15 @@ async def act_event(con: asyncpg.Connection, args: list[str]) -> str:
         )
 
     async with con.transaction():
-        rows = await con.fetch(
-            "select user_id, points from kopilka where points > 0 and granted = false for update"
-        )
-        for item in rows:
-            await con.execute(
-                "update players set bonus_points = bonus_points + $2 where user_id = $1",
-                item["user_id"],
-                int(item["points"]),
-            )
-        await con.execute("update kopilka set granted = true where granted = false")
-        await con.execute(
-            "update game_event set active = false, happy_until = null where id = 1"
-        )
-    total = sum(int(item["points"]) for item in rows)
+        result = await event.payout(con)
     return (
-        f"[ok] Ивент остановлен.\n"
-        f"  · выдано {total} очков\n"
-        f"  · игроков с наградой: {len(rows)}\n"
+        "[ok] Ивент остановлен, копилка роздана.\n"
+        f"  · игроков с наградой: {result['players']}\n"
+        f"  · очков: {result['points']}\n"
+        f"  · круток «Северо-Юг»: {result['drops']}\n"
+        f"  · спинов рулетки: {result['spins']}\n"
+        f"  · кейсов: {result['cases']}\n"
+        f"  · карт: {result['cards']}\n"
         "Шансы вернулись к обычным."
     )
 
