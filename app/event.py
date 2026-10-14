@@ -85,6 +85,29 @@ def describe_boost(value: float) -> str:
 def happy_until(moment: datetime | None = None) -> datetime:
     return (moment or datetime.now(timezone.utc)) + timedelta(seconds=MINUTE_SECONDS)
 
+
+async def tick(bot: Any, db: Any) -> None:
+    """Сообщает в чат, что счастливая минута закончилась."""
+    row = await db.event_row()
+    until = row.get("happy_until")
+    if until is None or until > datetime.now(timezone.utc):
+        return
+    if row.get("happy_announced"):
+        return
+
+    await db.mark_happy_done()
+    chat_id = row.get("happy_chat")
+    if not chat_id:
+        return
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        await bot.send_message(
+            chat_id,
+            "🍀 <b>Счастливая минута закончилась</b>\n"
+            "Шансы вернулись к обычным.",
+        )
+
 async def payout(con: Any) -> dict[str, int]:
     """Раздаёт ВСЁ, что накопилось в копилке, и закрывает ивент.
 

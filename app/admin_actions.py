@@ -84,7 +84,8 @@ async def act_minuta(con: asyncpg.Connection, args: list[str]) -> str:
     """Счастливая минута: шансы ×N на 60 секунд."""
     boost = event.roll_happy_boost()
     await con.execute(
-        "update game_event set happy_until = $1, happy_boost = $2 where id = 1",
+        "update game_event set happy_until = $1, happy_boost = $2, "
+        "happy_chat = null, happy_announced = false where id = 1",
         event.happy_until(),
         boost,
     )

@@ -1034,6 +1034,10 @@ async def cb_clicker(callback: CallbackQuery, db: Database) -> None:
 
 UPDATE_ANNOUNCE = (
     "🚀 <b>ОБНОВЛЕНИЕ!</b>\n\n"
+    "♻️ <b>Апгрейдер карт</b> — как в CS:GO. Кладёшь свою карту в первый слот, "
+    "выбираешь желаемую во второй, и крутится рулетка с шансом.\n"
+    "С эпика на мифика ~20%, а с обычного Олега на ультра-Леру — 0.1%. "
+    "Только карты, ничего другого.\n\n"
     "📦 Кейсы теперь открываются как в CS:GO — крутится лента, и видно, что выпало.\n"
     "🎡 Рулетка стала настоящим колесом с призами и шансами.\n\n"
     "Всё это — в мини-аппке, жми кнопку ниже."
@@ -2577,3 +2581,52 @@ async def cb_kopilka(callback: CallbackQuery, db: Database) -> None:
         log.warning("кликер: Telegram просит подождать %.1f сек", error.retry_after)
     except Exception:  # noqa: BLE001
         log.exception("кликер: не смог перерисовать HUD")
+
+
+
+# --------------------------------------------------------------------------- #
+# Апгрейдер карт
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("upgrader", "апгрейдер"))
+@router.message(NormalizedText("апгрейдер", "апгрейд"))
+async def cmd_upgrader(message: Message) -> None:
+    base = _base_url()
+    if not base:
+        await message.answer("⚠️ Апгрейдер не настроен: нет PUBLIC_URL.")
+        return
+    if message.chat.type != "private":
+        await message.answer(
+            "♻️ Апгрейдер открывается в личке со мной — там кнопка.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="♻️ Открыть бота",
+                            url=f"https://t.me/{await _bot_username(message.bot)}",
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+    from aiogram.types import WebAppInfo
+
+    await message.answer(
+        "♻️ <b>Апгрейдер карт</b>\n\n"
+        "Кладёшь свою карту в первый слот, выбираешь желаемую во второй — "
+        "и крутится рулетка с шансом.\n"
+        "Чем жаднее апгрейд, тем он реже: с эпика на мифика ~20%, "
+        "а с Олега на Леру — 0.1%.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="♻️ Открыть апгрейдер",
+                        web_app=WebAppInfo(url=f"{base}/upgrader"),
+                    )
+                ]
+            ]
+        ),
+    )

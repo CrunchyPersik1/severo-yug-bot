@@ -466,3 +466,19 @@ alter table kopilka add column if not exists drops integer not null default 0;
 alter table kopilka add column if not exists spins integer not null default 0;
 alter table kopilka add column if not exists cases integer not null default 0;
 alter table kopilka add column if not exists cards jsonb not null default '[]'::jsonb;
+
+-- Лаки-минута: куда сообщить, когда она закончится.
+alter table game_event add column if not exists happy_chat bigint;
+alter table game_event add column if not exists happy_announced boolean not null default true;
+
+-- Апгрейдер: журнал круток, чтобы видеть, что и на что меняли.
+create table if not exists upgrader_log (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    from_card  text not null,
+    to_card    text not null,
+    chance     real not null,
+    won        boolean not null,
+    created_at timestamptz not null default now()
+);
+create index if not exists upgrader_log_user_idx on upgrader_log (user_id, created_at desc);

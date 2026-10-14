@@ -1141,12 +1141,102 @@ class Database:
                 "update game_event set clicker = $1 where id = 1", bool(on)
             )
 
-    async def start_happy(self, boost: float, until: Any) -> None:
+    async def start_happy(self, boost: float, until: Any, chat_id: Any = None) -> None:
         async with self._p().acquire() as con:
             await con.execute(
-                "update game_event set happy_until = $1, happy_boost = $2 where id = 1",
+                "update game_event set happy_until = $1, happy_boost = $2, "
+                "happy_chat = $3, happy_announced = false where id = 1",
                 until,
                 float(boost),
+                chat_id,
+            )
+
+    async def set_happy_chat(self, chat_id: int) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update game_event set happy_chat = $1 where id = 1", chat_id
+            )
+
+    async def mark_happy_done(self) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update game_event set happy_announced = true where id = 1"
+            )
+
+    async def take_card(self, user_id: int, card_id: str) -> bool:
+        """Забирает одну копию карты. False — карты не было."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "update collection set count = count - 1 "
+                    "where user_id = $1 and card_id = $2 and count > 0 returning count",
+                    user_id,
+                    card_id,
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "delete from collection where user_id = $1 and card_id = $2 "
+                    "and count <= 0",
+                    user_id,
+                    card_id,
+                )
+        return True
+
+    async def run_upgrade(
+        self, user_id: int, from_card: str, to_card: str, chance: float, won: bool
+    ) -> bool:
+        """Одна транзакция: забрать карту, при удаче выдать новую, записать в журнал."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "update collection set count = count - 1 "
+                    "where user_id = $1 and card_id = $2 and count > 0 returning count",
+                    user_id,
+                    from_card,
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "delete from collection where user_id = $1 and card_id = $2 "
+                    "and count <= 0",
+                    user_id,
+                    from_card,
+                )
+                if won:
+                    await con.execute(
+                        """
+                        insert into collection (user_id, card_id, count)
+                        values ($1, $2, 1)
+                        on conflict (user_id, card_id)
+                        do update set count = collection.count + 1
+                        """,
+                        user_id,
+                        to_card,
+                    )
+                await con.execute(
+                    "insert into upgrader_log "
+                    "(user_id, from_card, to_card, chance, won) values ($1,$2,$3,$4,$5)",
+                    user_id,
+                    from_card,
+                    to_card,
+                    float(chance),
+                    bool(won),
+                )
+        return True
+
+    async def log_upgrade(
+        self, user_id: int, from_card: str, to_card: str, chance: float, won: bool
+    ) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into upgrader_log (user_id, from_card, to_card, chance, won) "
+                "values ($1, $2, $3, $4, $5)",
+                user_id,
+                from_card,
+                to_card,
+                float(chance),
+                bool(won),
             )
 
     async def kopilka_tap(

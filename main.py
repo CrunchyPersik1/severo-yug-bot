@@ -20,6 +20,7 @@ from app.boss_repo import BossRepo
 from app.cards import CARDS, card_rows
 from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
+from app import event
 from app.db import Database
 from app.handlers import router
 from app.market_repo import MarketRepo
@@ -92,6 +93,8 @@ async def _ticker(
             await asyncio.sleep(15)
             await _safe_tick("бои", service.tick)
             await _safe_tick("командные бои", team.tick)
+            # сообщаем в чат, когда счастливая минута закончилась
+            await _safe_tick("счастливая минута", lambda: event.tick(bot, db))
             # Живой курс биржи: шаг каждые 15 секунд + оповещения о росте.
             alerts = await _safe_tick("биржа", stocks.tick)
             if alerts:

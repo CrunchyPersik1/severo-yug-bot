@@ -21,7 +21,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import cases as cases_mod
 from . import roulette as roulette_mod
-from .cards import get_card, image_url, rarity_name
+from . import upgrader
+from .cards import CARDS, CARDS_BY_ID, get_card, image_url, rarity_name
 from .cases import roll_case_card
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .items import ACCESSORIES
@@ -1124,6 +1125,338 @@ async function act(kind, id, btn){
   }catch(e){ toast("Связь потерялась", "bad"); }
   await load();
 }
+if(tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Апгрейдер карт — мини-аппка
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/api/upgrader")
+async def api_upgrader(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    counts = await state.db.get_collection(user_id)
+    mine = [
+        upgrader.card_payload(get_card(card_id), counts[card_id])
+        for card_id in counts
+        if card_id in CARDS_BY_ID
+    ]
+    mine.sort(key=lambda item: (-item["points"], item["name"]))
+    targets = [upgrader.card_payload(card) for card in CARDS]
+    targets.sort(key=lambda item: (-item["points"], item["name"]))
+    return JSONResponse(
+        {
+            "me": {
+                "name": user.get("first_name") or "игрок",
+                "balance": await state.market.balance(user_id),
+            },
+            "mine": mine,
+            "targets": targets,
+            "ladder": list(upgrader.LADDER),
+            "steps": {str(key): value for key, value in upgrader.STEP_CHANCE.items()},
+        }
+    )
+
+
+@router.post("/api/upgrader/spin")
+async def api_upgrader_spin(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    try:
+        body = await request.json()
+        from_id = str(body.get("from", ""))
+        to_id = str(body.get("to", ""))
+        if from_id not in CARDS_BY_ID or to_id not in CARDS_BY_ID:
+            raise ValueError("Такой карты нет.")
+        if from_id == to_id:
+            raise ValueError("Поставь и выбери разные карты.")
+
+        source = get_card(from_id)
+        target = get_card(to_id)
+        odd = upgrader.chance(source, target)
+        won = upgrader.roll(source, target)
+
+        user_id = int(user["id"])
+        ok = await state.db.run_upgrade(user_id, from_id, to_id, odd, won)
+        if not ok:
+            raise ValueError("Этой карты у тебя уже нет.")
+    except Exception as error:  # noqa: BLE001
+        return JSONResponse({"error": str(error)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "won": won,
+            "chance": odd,
+            "from": upgrader.card_payload(source),
+            "to": upgrader.card_payload(target),
+            "balance": await state.market.balance(user_id),
+        }
+    )
+
+
+@router.get("/upgrader", response_class=HTMLResponse)
+async def upgrader_app() -> HTMLResponse:
+    return HTMLResponse(UPGRADER_PAGE)
+
+
+UPGRADER_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Северо-Юг · Апгрейдер</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0e1116; --panel:#161b22; --panel2:#1c232c; --line:#262d38;
+  --ink:#e8ecf1; --muted:#8b95a3; --accent:#f0a30a; --accent2:#ffcc4d;
+  --ok:#20c05c; --bad:#e5484d;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:radial-gradient(120% 80% at 50% 0%,#1b2330 0%,var(--bg) 60%);
+  color:var(--ink);min-height:100vh;padding-bottom:110px
+}
+header{padding:16px 18px 10px;text-align:center}
+h1{margin:0;font-size:20px;letter-spacing:.3px}
+.sub{font-size:12px;color:var(--muted);margin-top:4px}
+.slots{display:flex;gap:12px;align-items:stretch;padding:14px 16px 6px}
+.slot{
+  flex:1;background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:12px;min-height:150px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;gap:6px
+}
+.slot.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.slot .ph{color:var(--muted);font-size:12px;line-height:1.5}
+.slot img{width:64px;height:64px;border-radius:12px;object-fit:cover}
+.slot .ic{font-size:34px}
+.slot .nm{font-weight:700;font-size:13px;line-height:1.2}
+.slot .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.vs{
+  align-self:center;font-weight:800;color:var(--accent);font-size:13px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px 8px
+}
+.chance{
+  text-align:center;padding:14px 16px 6px
+}
+.chance .big{font-size:38px;font-weight:800;letter-spacing:-1px}
+.chance .lbl{font-size:12px;color:var(--muted);margin-top:2px}
+.bar{height:8px;background:var(--panel2);border-radius:99px;margin:12px 18px 0;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s}
+.picker{padding:14px 16px}
+.ptitle{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.cards{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
+.cards::-webkit-scrollbar{display:none}
+.card{
+  flex:0 0 auto;width:82px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:7px;text-align:center
+}
+.card.on{border-color:var(--accent);background:var(--panel2)}
+.card img{width:100%;height:52px;object-fit:cover;border-radius:8px}
+.card .ic{font-size:24px;line-height:52px}
+.card .nm{font-size:10px;font-weight:600;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .ct{font-size:9px;color:var(--muted)}
+.card .rr{font-size:9px;color:var(--muted)}
+.go{
+  position:fixed;left:14px;right:14px;bottom:16px;border:0;border-radius:14px;
+  padding:17px;font-size:16px;font-weight:800;letter-spacing:.4px;color:#1a1204;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  box-shadow:0 8px 22px rgba(240,163,10,.28)
+}
+.go[disabled]{background:#2a313c;color:#6c7683;box-shadow:none}
+.flying{
+  position:fixed;inset:0;background:rgba(10,13,18,.94);display:none;
+  align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:20
+}
+.flying.on{display:flex}
+.flying .roll{font-size:22px;font-weight:800;color:var(--accent2)}
+.flying .hint{font-size:13px;color:var(--muted)}
+.result{position:fixed;inset:0;background:rgba(10,13,18,.95);display:none;
+  align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:21;padding:24px;text-align:center}
+.result.on{display:flex}
+.result .big{font-size:52px}
+.result .ttl{font-size:22px;font-weight:800}
+.result .txt{font-size:14px;color:var(--muted);line-height:1.5}
+.result .close{margin-top:8px;border:1px solid var(--line);background:var(--panel);
+  color:var(--ink);border-radius:12px;padding:13px 26px;font-size:15px;font-weight:700}
+#toast{position:fixed;left:14px;right:14px;bottom:96px;background:#2a313c;color:#fff;
+  border-radius:12px;padding:13px 15px;font-size:13px;transform:translateY(160%);
+  transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+#toast.bad{background:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Апгрейдер</h1>
+  <div class="sub" id="sub">ставка картой · только карты</div>
+</header>
+
+<div class="slots">
+  <div class="slot" id="slotA"><div class="ph">Слот 1<br>твоя карта</div></div>
+  <div class="vs">→</div>
+  <div class="slot" id="slotB"><div class="ph">Слот 2<br>что хочешь</div></div>
+</div>
+
+<div class="chance">
+  <div class="big" id="chance">—</div>
+  <div class="lbl" id="chanceLbl">выбери карты</div>
+</div>
+<div class="bar"><i id="bar"></i></div>
+
+<div class="picker">
+  <div class="ptitle">Твои карты</div>
+  <div class="cards" id="mine"></div>
+</div>
+<div class="picker">
+  <div class="ptitle">Что хочешь получить</div>
+  <div class="cards" id="targets"></div>
+</div>
+
+<button class="go" id="go" disabled>АПГРЕЙД</button>
+
+<div class="flying" id="flying">
+  <div class="roll" id="roll">…</div>
+  <div class="hint">крутится…</div>
+</div>
+
+<div class="result" id="result">
+  <div class="big" id="rIcon">🎉</div>
+  <div class="ttl" id="rTitle"></div>
+  <div class="txt" id="rText"></div>
+  <button class="close" id="rClose">Забрать</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let state = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, busy: false};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function toast(text, bad){
+  const el = document.getElementById("toast");
+  el.textContent = text; el.className = "on" + (bad ? " bad" : "");
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3000);
+}
+function chanceOf(a, b){
+  const d = state.ladder.indexOf(b.rarity_key) - state.ladder.indexOf(a.rarity_key);
+  if (d in state.steps) return state.steps[d];
+  return d > 7 ? 0.0002 : 0.95;
+}
+function pct(v){
+  const p = v * 100;
+  if (p >= 1) return p.toFixed(0) + "%";
+  if (p >= 0.1) return p.toFixed(1) + "%";
+  return p.toFixed(2) + "%";
+}
+function slotHtml(card, which){
+  if (!card) return '<div class="ph">Слот ' + which + '<br>' + (which === 1 ? "твоя карта" : "что хочешь") + '</div>';
+  const art = card.image ? '<img src="' + card.image + '" alt="">' : '<div class="ic">' + card.emoji + '</div>';
+  return art + '<div class="nm">' + esc(card.name) + '</div><div class="rr">' + esc(card.rarity) + '</div>';
+}
+function cardHtml(card, side){
+  const on = side === "A" ? (state.A && state.A.id === card.id) : (state.B && state.B.id === card.id);
+  const art = card.image ? '<img src="' + card.image + '" alt="">' : '<div class="ic">' + card.emoji + '</div>';
+  const count = side === "A" ? '<div class="ct">×' + (card.count || 1) + '</div>' : '';
+  return '<div class="card' + (on ? " on" : "") + '" data-side="' + side + '" data-id="' + card.id + '">' +
+    art + '<div class="nm">' + esc(card.name) + '</div>' + count + '</div>';
+}
+function render(){
+  document.getElementById("slotA").innerHTML = slotHtml(state.A, 1);
+  document.getElementById("slotB").innerHTML = slotHtml(state.B, 2);
+  document.getElementById("slotA").className = "slot" + (state.A ? " on" : "");
+  document.getElementById("slotB").className = "slot" + (state.B ? " on" : "");
+  document.getElementById("mine").innerHTML = state.mine.length
+    ? state.mine.map(c => cardHtml(c, "A")).join("")
+    : '<div class="ph" style="padding:14px">Пусто. Выбей карту: «Северо-Юг» в боте.</div>';
+  document.getElementById("targets").innerHTML = state.targets.map(c => cardHtml(c, "B")).join("");
+
+  const odd = state.A && state.B ? chanceOf(state.A, state.B) : null;
+  document.getElementById("chance").textContent = odd === null ? "—" : pct(odd);
+  document.getElementById("chanceLbl").textContent = odd === null ? "выбери карты" : "шанс получить вторую";
+  document.getElementById("bar").style.width = odd === null ? "0" : Math.max(2, odd * 100) + "%";
+  document.getElementById("go").disabled = !(state.A && state.B) || state.busy;
+
+  document.querySelectorAll("[data-side]").forEach(el => {
+    el.onclick = () => {
+      const side = el.dataset.side, id = el.dataset.id;
+      if (side === "A"){
+        state.A = state.mine.find(c => c.id === id) || null;
+      } else {
+        state.B = state.targets.find(c => c.id === id) || null;
+      }
+      render();
+    };
+  });
+}
+async function load(){
+  try{
+    const r = await fetch("/api/upgrader", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error, true); return; }
+    state.mine = d.mine; state.targets = d.targets; state.ladder = d.ladder; state.steps = d.steps;
+    document.getElementById("sub").textContent = "ставка картой · " + d.mine.length + " карт у тебя";
+    if (!state.A && state.mine.length) state.A = state.mine[0];
+    render();
+    return true;
+  }catch(e){ toast("Не смог загрузить", true); return false; }
+}
+async function spin(){
+  if (state.busy) return;
+  state.busy = true; render();
+  const flying = document.getElementById("flying");
+  const roll = document.getElementById("roll");
+  flying.classList.add("on");
+  const names = state.targets.slice(0, 40).map(c => c.emoji + " " + c.name);
+  let tick = 0;
+  const timer = setInterval(() => { roll.textContent = names[(tick++) % names.length]; }, 60);
+  try{
+    const r = await fetch("/api/upgrader/spin", {method:"POST", headers,
+      body: JSON.stringify({from: state.A.id, to: state.B.id})});
+    const d = await r.json();
+    await new Promise(res => setTimeout(res, 1400));
+    clearInterval(timer);
+    flying.classList.remove("on");
+    if (d.error){ toast(d.error, true); state.busy = false; await load(); return; }
+    document.getElementById("rIcon").textContent = d.won ? "🎉" : "💀";
+    document.getElementById("rTitle").textContent = d.won ? esc(d.to.name) + " — твоя!" : "Не повезло";
+    document.getElementById("rText").textContent = d.won
+      ? "Шанс был " + pct(d.chance) + ". " + d.from.name + " превратился в " + d.to.name + "."
+      : "Шанс был " + pct(d.chance) + ". " + d.from.name + " сгорел.";
+    document.getElementById("result").classList.add("on");
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(d.won ? "success" : "error");
+  }catch(e){
+    clearInterval(timer); flying.classList.remove("on"); toast("Связь потерялась", true);
+  }
+  state.busy = false;
+}
+document.getElementById("go").onclick = spin;
+document.getElementById("rClose").onclick = async () => {
+  document.getElementById("result").classList.remove("on");
+  state.A = null; state.B = null;
+  await load();
+};
 if(tg){ tg.ready(); tg.expand(); }
 load();
 </script>
