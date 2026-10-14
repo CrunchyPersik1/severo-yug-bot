@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
@@ -686,6 +686,8 @@ async def _safe_edit(callback: CallbackQuery, text: str, keyboard) -> None:
     message = callback.message
     if message is None:
         return
+    # Ничего страшного: Telegram просто просит сбавить темп.
+    _ = text
     # Фото нельзя превратить в текст: если предыдущий экран был с артом,
     # убираем его и шлём новое сообщение. Иначе старая картинка оставалась
     # и «карточка» открывалась под чужим артом (например, Гузель).
@@ -2478,6 +2480,28 @@ async def cb_extra_spin(
 
 
 _KOPILKA_TAPS: dict[int, float] = {}
+# Сколько секунд между перерисовками HUD: три человека, тапающие одно сообщение,
+# иначе упираются во флуд-лимит Telegram.
+KOPILKA_REDRAW_SECONDS = 2.5
+_KOPILKA_REDRAW: dict[int, float] = {}
+
+
+# Сколько секунд между перерисовками HUD. Иначе три человека, тапающие одно
+# сообщение, упираются во флуд-лимит Telegram.
+KOPILKA_REDRAW_SECONDS = 2.5
+
+_KOPILKA_STATE: dict[str, tuple[float, object]] = {}
+
+
+async def _clicker_state(db: Database):
+    """Состояние ивента с кешем на 2 секунды — не дёргаем базу на каждый тап."""
+    cached = _KOPILKA_STATE.get("state")
+    moment = time.monotonic()
+    if cached is not None and moment - cached[0] < 2.0:
+        return cached[1]
+    state = await event.state(db)
+    _KOPILKA_STATE["state"] = (moment, state)
+    return state
 
 
 async def _clicker_view(db: Database, user_id: int, running: bool, last: str = ""):
@@ -2508,7 +2532,7 @@ async def cb_kopilka(callback: CallbackQuery, db: Database) -> None:
     assert callback.data is not None
     action = callback.data.split(":", 1)[1]
     user_id = callback.from_user.id
-    state = await event.state(db)
+    state = await _clicker_state(db)
     if not state.clicker:
         await callback.answer("Кликер выключен", show_alert=True)
         return
@@ -2519,16 +2543,36 @@ async def cb_kopilka(callback: CallbackQuery, db: Database) -> None:
             await callback.answer("Слишком быстро 🐢")
             return
         _KOPILKA_TAPS[user_id] = moment
+
         kind, value = kopilka.roll()
-        await db.kopilka_tap(
-            user_id,
-            points=int(value) if kind == kopilka.POINTS else 0,
-            drops=1 if kind == kopilka.DROP else 0,
-            spins=1 if kind == kopilka.SPIN else 0,
-            cases=1 if kind == kopilka.CASE else 0,
-            cards=[value.card_id] if kind == kopilka.CARD else None,
-        )
-        last = kopilka.label(kind, value)
-    text, keyboard = await _clicker_view(db, user_id, state.active, last)
-    await _safe_edit(callback, text, keyboard)
-    await callback.answer(last or "Обновлено")
+        try:
+            await db.kopilka_tap(
+                user_id,
+                points=int(value) if kind == kopilka.POINTS else 0,
+                drops=1 if kind == kopilka.DROP else 0,
+                spins=1 if kind == kopilka.SPIN else 0,
+                cases=1 if kind == kopilka.CASE else 0,
+                cards=[value.card_id] if kind == kopilka.CARD else None,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("копилка: тап не записался")
+            await callback.answer("Заминка, стукни ещё раз")
+            return
+
+        # Награду показываем тостиком — ради этого сообщение править не нужно.
+        await callback.answer(kopilka.label(kind, value))
+
+        chat_id = callback.message.chat.id if callback.message else user_id
+        if moment - _KOPILKA_REDRAW.get(chat_id, 0.0) < KOPILKA_REDRAW_SECONDS:
+            return
+        _KOPILKA_REDRAW[chat_id] = moment
+    else:
+        await callback.answer()
+
+    try:
+        text, keyboard = await _clicker_view(db, user_id, state.active, last)
+        await _safe_edit(callback, text, keyboard)
+    except TelegramRetryAfter as error:
+        log.warning("кликер: Telegram просит подождать %.1f сек", error.retry_after)
+    except Exception:  # noqa: BLE001
+        log.exception("кликер: не смог перерисовать HUD")
