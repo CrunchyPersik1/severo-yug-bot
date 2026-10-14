@@ -1216,6 +1216,8 @@ async def upgrader_app() -> HTMLResponse:
     return HTMLResponse(UPGRADER_PAGE)
 
 
+
+
 UPGRADER_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
@@ -1225,122 +1227,156 @@ UPGRADER_PAGE = r"""<!doctype html>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --bg:#0e1116; --panel:#161b22; --panel2:#1c232c; --line:#262d38;
-  --ink:#e8ecf1; --muted:#8b95a3; --accent:#f0a30a; --accent2:#ffcc4d;
-  --ok:#20c05c; --bad:#e5484d;
+  --bg:#0b0d12; --panel:#12151d; --panel2:#171b25; --line:#232936;
+  --ink:#e9edf5; --muted:#7d8798; --acc:#f59e0b; --acc2:#ffb020;
+  --ok:#22c55e; --bad:#e5484d; --warn:#eab308;
+  --rare:#6b7280; --superrare:#3b82f6; --epic:#a855f7; --mythic:#ef4444;
+  --legendary:#eab308; --secret:#4b5563; --ultra:#e879f9; --teacher:#b45309;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:radial-gradient(120% 80% at 50% 0%,#1b2330 0%,var(--bg) 60%);
-  color:var(--ink);min-height:100vh;padding-bottom:110px
+  background:var(--bg);
+  background-image:radial-gradient(90% 50% at 50% -10%,rgba(229,72,77,.18),transparent 70%);
+  color:var(--ink);min-height:100vh;padding-bottom:24px
 }
-header{padding:16px 18px 10px;text-align:center}
-h1{margin:0;font-size:20px;letter-spacing:.3px}
-.sub{font-size:12px;color:var(--muted);margin-top:4px}
-.slots{display:flex;gap:12px;align-items:stretch;padding:14px 16px 6px}
-.slot{
-  flex:1;background:var(--panel);border:1px solid var(--line);border-radius:16px;
-  padding:12px;min-height:150px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;text-align:center;gap:6px
+.top{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:14px 16px;border-bottom:1px solid var(--line);background:rgba(11,13,18,.85);
+  position:sticky;top:0;z-index:6;backdrop-filter:blur(10px)
 }
-.slot.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.slot .ph{color:var(--muted);font-size:12px;line-height:1.5}
-.slot img{width:64px;height:64px;border-radius:12px;object-fit:cover}
-.slot .ic{font-size:34px}
-.slot .nm{font-weight:700;font-size:13px;line-height:1.2}
-.slot .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
-.vs{
-  align-self:center;font-weight:800;color:var(--accent);font-size:13px;
-  background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px 8px
-}
-.chance{
-  text-align:center;padding:14px 16px 6px
-}
-.chance .big{font-size:38px;font-weight:800;letter-spacing:-1px}
-.chance .lbl{font-size:12px;color:var(--muted);margin-top:2px}
-.bar{height:8px;background:var(--panel2);border-radius:99px;margin:12px 18px 0;overflow:hidden}
-.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s}
-.picker{padding:14px 16px}
-.ptitle{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
-.cards{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none}
-.cards::-webkit-scrollbar{display:none}
+.logo{font-weight:900;letter-spacing:2px;font-size:16px}
+.logo span{color:var(--bad)}
+.bal{font-weight:700;font-size:14px;color:var(--acc2)}
+.wrap{max-width:900px;margin:0 auto;padding:14px 14px 0}
+.grid3{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:760px){ .grid3{grid-template-columns:1fr 1.1fr 1fr} }
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.btitle{font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:330px;overflow-y:auto;padding-right:2px}
+.cards::-webkit-scrollbar{width:5px}
+.cards::-webkit-scrollbar-thumb{background:#2a3140;border-radius:9px}
 .card{
-  flex:0 0 auto;width:82px;background:var(--panel);border:1px solid var(--line);
-  border-radius:12px;padding:7px;text-align:center
+  position:relative;background:var(--panel2);border:1px solid var(--line);
+  border-radius:10px;padding:6px;text-align:center;cursor:pointer;transition:.12s
 }
-.card.on{border-color:var(--accent);background:var(--panel2)}
-.card img{width:100%;height:52px;object-fit:cover;border-radius:8px}
-.card .ic{font-size:24px;line-height:52px}
-.card .nm{font-size:10px;font-weight:600;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card .ct{font-size:9px;color:var(--muted)}
-.card .rr{font-size:9px;color:var(--muted)}
+.card:active{transform:scale(.97)}
+.card.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset,0 0 14px rgba(245,158,11,.25)}
+.card img{width:100%;height:46px;object-fit:cover;border-radius:7px;display:block}
+.card .ic{font-size:26px;line-height:46px}
+.card .nm{font-size:9.5px;font-weight:600;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .pr{font-size:9px;color:var(--acc2);font-weight:700;margin-top:2px}
+.card .ct{position:absolute;top:3px;right:4px;font-size:9px;color:#cbd5e1;background:rgba(0,0,0,.55);border-radius:5px;padding:0 4px}
+.r-rare{border-color:rgba(107,114,128,.55)} .r-superrare{border-color:rgba(59,130,246,.65)}
+.r-epic{border-color:rgba(168,85,247,.7)} .r-mythic{border-color:rgba(239,68,68,.7)}
+.r-legendary{border-color:rgba(234,179,8,.75)} .r-secret{border-color:rgba(75,85,99,.8)}
+.r-ultra{border-color:rgba(232,121,249,.85)} .r-teacher{border-color:rgba(180,83,9,.85)}
+.center{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 12px}
+.ring{position:relative;width:190px;height:190px}
+.ring svg{transform:rotate(-90deg)}
+.ring .pct{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px
+}
+.ring .val{font-size:34px;font-weight:900;letter-spacing:-1px}
+.ring .word{font-size:10.5px;color:var(--muted);text-align:center;padding:0 22px;line-height:1.35}
+.side{display:flex;flex-direction:column;align-items:center;gap:8px;justify-content:center;min-height:190px}
+.side .bigcard{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.side .bigcard.on{border-color:var(--acc)}
+.side img{width:100%;height:96px;object-fit:cover;border-radius:10px}
+.side .ic{font-size:52px;line-height:96px}
+.side .nm{font-weight:700;font-size:13px;margin-top:8px}
+.side .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+.side .pr{font-size:13px;font-weight:800;color:var(--acc2);margin-top:5px}
+.mults{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.mult{
+  border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+  border-radius:9px;padding:7px 11px;font-size:12px;font-weight:700
+}
+.mult:active{transform:scale(.96)}
+.mult.on{background:var(--acc);color:#1a1204;border-color:var(--acc)}
 .go{
-  position:fixed;left:14px;right:14px;bottom:16px;border:0;border-radius:14px;
-  padding:17px;font-size:16px;font-weight:800;letter-spacing:.4px;color:#1a1204;
-  background:linear-gradient(135deg,var(--accent2),var(--accent));
-  box-shadow:0 8px 22px rgba(240,163,10,.28)
+  width:100%;max-width:340px;border:0;border-radius:12px;padding:15px;
+  font-size:15px;font-weight:900;letter-spacing:.6px;color:#1a1204;
+  background:linear-gradient(135deg,var(--acc2),var(--acc));
+  box-shadow:0 8px 22px rgba(245,158,11,.25)
 }
-.go[disabled]{background:#2a313c;color:#6c7683;box-shadow:none}
-.flying{
-  position:fixed;inset:0;background:rgba(10,13,18,.94);display:none;
-  align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:20
-}
+.go[disabled]{background:#242a36;color:#5f6877;box-shadow:none}
+.empty{color:var(--muted);font-size:12.5px;line-height:1.6;padding:18px 6px;text-align:center}
+.spin .val{color:var(--acc2)}
+.flying{position:fixed;inset:0;background:rgba(8,10,14,.95);display:none;
+  align-items:center;justify-content:center;flex-direction:column;gap:16px;z-index:20}
 .flying.on{display:flex}
-.flying .roll{font-size:22px;font-weight:800;color:var(--accent2)}
-.flying .hint{font-size:13px;color:var(--muted)}
-.result{position:fixed;inset:0;background:rgba(10,13,18,.95);display:none;
-  align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:21;padding:24px;text-align:center}
+.result{position:fixed;inset:0;background:rgba(8,10,14,.96);display:none;
+  align-items:center;justify-content:center;flex-direction:column;gap:10px;z-index:21;padding:24px;text-align:center}
 .result.on{display:flex}
-.result .big{font-size:52px}
-.result .ttl{font-size:22px;font-weight:800}
-.result .txt{font-size:14px;color:var(--muted);line-height:1.5}
-.result .close{margin-top:8px;border:1px solid var(--line);background:var(--panel);
-  color:var(--ink);border-radius:12px;padding:13px 26px;font-size:15px;font-weight:700}
-#toast{position:fixed;left:14px;right:14px;bottom:96px;background:#2a313c;color:#fff;
-  border-radius:12px;padding:13px 15px;font-size:13px;transform:translateY(160%);
+.result .big{font-size:56px}
+.result .ttl{font-size:23px;font-weight:900}
+.result .txt{font-size:13.5px;color:var(--muted);line-height:1.6;max-width:420px}
+.result img{width:120px;height:120px;object-fit:cover;border-radius:14px}
+.result .close{margin-top:10px;border:0;background:linear-gradient(135deg,var(--acc2),var(--acc));
+  color:#1a1204;border-radius:11px;padding:13px 30px;font-size:15px;font-weight:800}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:#222835;color:#fff;
+  border-radius:11px;padding:13px 15px;font-size:13px;transform:translateY(180%);
   transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
 #toast.bad{background:var(--bad)}
 </style>
 </head>
 <body>
-<header>
-  <h1>Апгрейдер</h1>
-  <div class="sub" id="sub">ставка картой · только карты</div>
-</header>
-
-<div class="slots">
-  <div class="slot" id="slotA"><div class="ph">Слот 1<br>твоя карта</div></div>
-  <div class="vs">→</div>
-  <div class="slot" id="slotB"><div class="ph">Слот 2<br>что хочешь</div></div>
+<div class="top">
+  <div class="logo">UP<span>GRADER</span></div>
+  <div class="bal" id="bal">…</div>
 </div>
 
-<div class="chance">
-  <div class="big" id="chance">—</div>
-  <div class="lbl" id="chanceLbl">выбери карты</div>
-</div>
-<div class="bar"><i id="bar"></i></div>
+<div class="wrap">
+  <div class="grid3">
+    <div class="box">
+      <div class="btitle"><span>Мои карты</span><span id="myCount">0</span></div>
+      <div class="cards" id="mine"></div>
+    </div>
 
-<div class="picker">
-  <div class="ptitle">Твои карты</div>
-  <div class="cards" id="mine"></div>
-</div>
-<div class="picker">
-  <div class="ptitle">Что хочешь получить</div>
-  <div class="cards" id="targets"></div>
+    <div class="center">
+      <div class="side" id="slotA"><div class="empty">Выбери карту слева</div></div>
+
+      <div class="ring" id="ring">
+        <svg width="190" height="190" viewBox="0 0 190 190">
+          <circle cx="95" cy="95" r="82" fill="none" stroke="#1d2230" stroke-width="14"/>
+          <circle id="arc" cx="95" cy="95" r="82" fill="none" stroke="#22c55e" stroke-width="14"
+                  stroke-linecap="round" stroke-dasharray="515" stroke-dashoffset="515"/>
+        </svg>
+        <div class="pct"><div class="val" id="pct">—</div><div class="word" id="word">выбери карты</div></div>
+      </div>
+
+      <div class="mults" id="mults"></div>
+      <button class="go" id="go" disabled>УЛУЧШИТЬ</button>
+    </div>
+
+    <div class="box">
+      <div class="btitle"><span>Ты получишь</span></div>
+      <div class="side" id="slotB"><div class="empty">Выбери цель снизу</div></div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="btitle"><span>Вы получите</span><span id="tgtCount">0</span></div>
+    <div class="cards" id="targets" style="grid-template-columns:repeat(4,1fr);max-height:290px"></div>
+  </div>
 </div>
 
-<button class="go" id="go" disabled>АПГРЕЙД</button>
-
-<div class="flying" id="flying">
-  <div class="roll" id="roll">…</div>
-  <div class="hint">крутится…</div>
-</div>
+<div class="flying" id="flying"><div class="ring">
+  <svg width="190" height="190" viewBox="0 0 190 190">
+    <circle cx="95" cy="95" r="82" fill="none" stroke="#1d2230" stroke-width="14"/>
+    <circle id="arc2" cx="95" cy="95" r="82" fill="none" stroke="#f59e0b" stroke-width="14"
+            stroke-linecap="round" stroke-dasharray="515" stroke-dashoffset="0"/>
+  </svg>
+  <div class="pct"><div class="val" id="flyVal">0%</div><div class="word">крутится…</div></div>
+</div></div>
 
 <div class="result" id="result">
   <div class="big" id="rIcon">🎉</div>
+  <div id="rArt"></div>
   <div class="ttl" id="rTitle"></div>
   <div class="txt" id="rText"></div>
   <button class="close" id="rClose">Забрать</button>
@@ -1351,110 +1387,159 @@ h1{margin:0;font-size:20px;letter-spacing:.3px}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-let state = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, busy: false};
+const CIRC = 515;
+const MULT = ["x2", "x5", "x10", "30%", "50%", "70%"];
+let S = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, busy: false, mult: null};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
-function toast(text, bad){
+function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t, bad){
   const el = document.getElementById("toast");
-  el.textContent = text; el.className = "on" + (bad ? " bad" : "");
-  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3000);
+  el.textContent = t; el.className = "on" + (bad ? " bad" : "");
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3200);
 }
 function chanceOf(a, b){
-  const d = state.ladder.indexOf(b.rarity_key) - state.ladder.indexOf(a.rarity_key);
-  if (d in state.steps) return state.steps[d];
+  const d = S.ladder.indexOf(b.rarity_key) - S.ladder.indexOf(a.rarity_key);
+  if (d in S.steps) return S.steps[d];
   return d > 7 ? 0.0002 : 0.95;
 }
 function pct(v){
   const p = v * 100;
-  if (p >= 1) return p.toFixed(0) + "%";
-  if (p >= 0.1) return p.toFixed(1) + "%";
-  return p.toFixed(2) + "%";
+  if (p >= 10) return p.toFixed(0) + "%";
+  if (p >= 1) return p.toFixed(1) + "%";
+  if (p >= 0.1) return p.toFixed(2) + "%";
+  return p.toFixed(3) + "%";
 }
-function slotHtml(card, which){
-  if (!card) return '<div class="ph">Слот ' + which + '<br>' + (which === 1 ? "твоя карта" : "что хочешь") + '</div>';
-  const art = card.image ? '<img src="' + card.image + '" alt="">' : '<div class="ic">' + card.emoji + '</div>';
-  return art + '<div class="nm">' + esc(card.name) + '</div><div class="rr">' + esc(card.rarity) + '</div>';
+function words(v){
+  if (v >= 0.6) return "Очень высокий шанс";
+  if (v >= 0.3) return "Высокий шанс";
+  if (v >= 0.12) return "Средний шанс";
+  if (v >= 0.04) return "Низкий шанс";
+  if (v >= 0.005) return "Очень низкий шанс";
+  return "Почти нереально";
 }
-function cardHtml(card, side){
-  const on = side === "A" ? (state.A && state.A.id === card.id) : (state.B && state.B.id === card.id);
+function tone(v){
+  if (v >= 0.5) return "#22c55e";
+  if (v >= 0.2) return "#a3e635";
+  if (v >= 0.05) return "#eab308";
+  if (v >= 0.01) return "#f97316";
+  return "#ef4444";
+}
+function cardEl(card, side){
+  const on = side === "A" ? (S.A && S.A.id === card.id) : (S.B && S.B.id === card.id);
   const art = card.image ? '<img src="' + card.image + '" alt="">' : '<div class="ic">' + card.emoji + '</div>';
-  const count = side === "A" ? '<div class="ct">×' + (card.count || 1) + '</div>' : '';
-  return '<div class="card' + (on ? " on" : "") + '" data-side="' + side + '" data-id="' + card.id + '">' +
-    art + '<div class="nm">' + esc(card.name) + '</div>' + count + '</div>';
+  const cnt = side === "A" ? '<div class="ct">×' + (card.count || 1) + '</div>' : '';
+  return '<div class="card r-' + card.rarity_key + (on ? " on" : "") +
+    '" data-side="' + side + '" data-id="' + card.id + '">' + cnt + art +
+    '<div class="nm">' + esc(card.name) + '</div><div class="pr">' + money(card.price) + '</div></div>';
+}
+function bigSlot(card, which){
+  if (!card) return '<div class="empty">' + (which === "A" ? "Выбери карту слева" : "Выбери цель снизу") + '</div>';
+  const art = card.image ? '<img src="' + card.image + '" alt="">' : '<div class="ic">' + card.emoji + '</div>';
+  return '<div class="bigcard on">' + art + '<div class="nm">' + esc(card.name) + '</div>' +
+    '<div class="rr">' + esc(card.rarity) + '</div><div class="pr">' + money(card.price) + '</div></div>';
+}
+function setRing(v){
+  const arc = document.getElementById("arc");
+  const odd = v === null ? 0 : v;
+  arc.style.stroke = tone(odd);
+  arc.style.strokeDashoffset = CIRC - CIRC * Math.max(odd, v === null ? 0 : 0.012);
+  document.getElementById("pct").textContent = v === null ? "—" : pct(v);
+  document.getElementById("word").textContent = v === null ? "выбери карты" : words(v);
 }
 function render(){
-  document.getElementById("slotA").innerHTML = slotHtml(state.A, 1);
-  document.getElementById("slotB").innerHTML = slotHtml(state.B, 2);
-  document.getElementById("slotA").className = "slot" + (state.A ? " on" : "");
-  document.getElementById("slotB").className = "slot" + (state.B ? " on" : "");
-  document.getElementById("mine").innerHTML = state.mine.length
-    ? state.mine.map(c => cardHtml(c, "A")).join("")
-    : '<div class="ph" style="padding:14px">Пусто. Выбей карту: «Северо-Юг» в боте.</div>';
-  document.getElementById("targets").innerHTML = state.targets.map(c => cardHtml(c, "B")).join("");
-
-  const odd = state.A && state.B ? chanceOf(state.A, state.B) : null;
-  document.getElementById("chance").textContent = odd === null ? "—" : pct(odd);
-  document.getElementById("chanceLbl").textContent = odd === null ? "выбери карты" : "шанс получить вторую";
-  document.getElementById("bar").style.width = odd === null ? "0" : Math.max(2, odd * 100) + "%";
-  document.getElementById("go").disabled = !(state.A && state.B) || state.busy;
-
+  document.getElementById("mine").innerHTML = S.mine.length
+    ? S.mine.map(c => cardEl(c, "A")).join("")
+    : '<div class="empty" style="grid-column:1/-1">Пусто. Выбей карту командой «Северо-Юг».</div>';
+  document.getElementById("targets").innerHTML = S.targets.map(c => cardEl(c, "B")).join("");
+  document.getElementById("myCount").textContent = S.mine.length;
+  document.getElementById("tgtCount").textContent = S.targets.length;
+  document.getElementById("slotA").innerHTML = bigSlot(S.A, "A");
+  document.getElementById("slotB").innerHTML = bigSlot(S.B, "B");
+  setRing(S.A && S.B ? chanceOf(S.A, S.B) : null);
+  document.getElementById("go").disabled = !(S.A && S.B) || S.busy;
+  document.getElementById("mults").innerHTML = MULT.map(m =>
+    '<button class="mult' + (S.mult === m ? " on" : "") + '" data-m="' + m + '">' + m + '</button>').join("");
+  document.querySelectorAll("[data-m]").forEach(b => b.onclick = () => pickMult(b.dataset.m));
   document.querySelectorAll("[data-side]").forEach(el => {
     el.onclick = () => {
       const side = el.dataset.side, id = el.dataset.id;
-      if (side === "A"){
-        state.A = state.mine.find(c => c.id === id) || null;
-      } else {
-        state.B = state.targets.find(c => c.id === id) || null;
-      }
+      if (side === "A") S.A = S.mine.find(c => c.id === id) || null;
+      else { S.B = S.targets.find(c => c.id === id) || null; S.mult = null; }
       render();
     };
   });
+}
+function pickMult(m){
+  if (!S.A) { toast("Сначала выбери свою карту", true); return; }
+  const want = m.endsWith("%")
+    ? S.A.price * 100 / parseFloat(m)
+    : S.A.price * parseFloat(m.slice(1));
+  let best = null, diff = Infinity;
+  for (const c of S.targets){
+    if (c.id === S.A.id) continue;
+    const d = Math.abs(c.price - want);
+    if (d < diff){ diff = d; best = c; }
+  }
+  if (!best){ toast("Не нашёл подходящую цель", true); return; }
+  S.B = best; S.mult = m;
+  render();
 }
 async function load(){
   try{
     const r = await fetch("/api/upgrader", {headers});
     const d = await r.json();
     if (d.error){ toast(d.error, true); return; }
-    state.mine = d.mine; state.targets = d.targets; state.ladder = d.ladder; state.steps = d.steps;
-    document.getElementById("sub").textContent = "ставка картой · " + d.mine.length + " карт у тебя";
-    if (!state.A && state.mine.length) state.A = state.mine[0];
+    S.mine = d.mine; S.targets = d.targets; S.ladder = d.ladder; S.steps = d.steps;
+    document.getElementById("bal").textContent = money(d.me.balance) + " очк.";
+    if (S.A && !S.mine.some(c => c.id === S.A.id)) S.A = null;
+    if (S.B && !S.targets.some(c => c.id === S.B.id)) S.B = null;
     render();
-    return true;
-  }catch(e){ toast("Не смог загрузить", true); return false; }
+  }catch(e){ toast("Не смог загрузить", true); }
 }
 async function spin(){
-  if (state.busy) return;
-  state.busy = true; render();
-  const flying = document.getElementById("flying");
-  const roll = document.getElementById("roll");
-  flying.classList.add("on");
-  const names = state.targets.slice(0, 40).map(c => c.emoji + " " + c.name);
-  let tick = 0;
-  const timer = setInterval(() => { roll.textContent = names[(tick++) % names.length]; }, 60);
+  if (S.busy || !S.A || !S.B) return;
+  S.busy = true; render();
+  const odd = chanceOf(S.A, S.B);
+  const fly = document.getElementById("flying");
+  fly.classList.add("on");
+  const arc2 = document.getElementById("arc2"), val = document.getElementById("flyVal");
+  arc2.style.stroke = tone(odd);
+  let stop = false;
+  const cycle = () => {
+    if (stop) return;
+    const fake = Math.random();
+    arc2.style.strokeDashoffset = CIRC - CIRC * Math.max(fake, 0.02);
+    val.textContent = pct(fake);
+    setTimeout(cycle, 70);
+  };
+  cycle();
   try{
     const r = await fetch("/api/upgrader/spin", {method:"POST", headers,
-      body: JSON.stringify({from: state.A.id, to: state.B.id})});
+      body: JSON.stringify({from: S.A.id, to: S.B.id})});
     const d = await r.json();
-    await new Promise(res => setTimeout(res, 1400));
-    clearInterval(timer);
-    flying.classList.remove("on");
-    if (d.error){ toast(d.error, true); state.busy = false; await load(); return; }
+    await new Promise(res => setTimeout(res, 1500));
+    stop = true;
+    fly.classList.remove("on");
+    if (d.error){ toast(d.error, true); S.busy = false; await load(); return; }
     document.getElementById("rIcon").textContent = d.won ? "🎉" : "💀";
+    document.getElementById("rArt").innerHTML = d.won && d.to.image
+      ? '<img src="' + d.to.image + '" alt="">' : "";
     document.getElementById("rTitle").textContent = d.won ? esc(d.to.name) + " — твоя!" : "Не повезло";
     document.getElementById("rText").textContent = d.won
-      ? "Шанс был " + pct(d.chance) + ". " + d.from.name + " превратился в " + d.to.name + "."
+      ? "Шанс был " + pct(d.chance) + ". " + d.from.name + " стал " + d.to.name + "."
       : "Шанс был " + pct(d.chance) + ". " + d.from.name + " сгорел.";
     document.getElementById("result").classList.add("on");
     if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(d.won ? "success" : "error");
   }catch(e){
-    clearInterval(timer); flying.classList.remove("on"); toast("Связь потерялась", true);
+    stop = true; fly.classList.remove("on"); toast("Связь потерялась", true);
   }
-  state.busy = false;
+  S.busy = false;
 }
 document.getElementById("go").onclick = spin;
 document.getElementById("rClose").onclick = async () => {
   document.getElementById("result").classList.remove("on");
-  state.A = null; state.B = null;
+  S.A = null; S.B = null; S.mult = null;
   await load();
 };
 if(tg){ tg.ready(); tg.expand(); }

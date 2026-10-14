@@ -108,6 +108,7 @@ def describe(from_card: Card, to_card: Card) -> str:
 
 def card_payload(card: Card, count: int = 1) -> dict[str, Any]:
     from .cards import image_url
+    from .market import market_price
 
     return {
         "id": card.card_id,
@@ -118,6 +119,7 @@ def card_payload(card: Card, count: int = 1) -> dict[str, Any]:
         "hp": card.hp,
         "atk": card.atk,
         "points": card.points,
+        "price": market_price(card),
         "count": count,
         "image": image_url(card.card_id),
     }
