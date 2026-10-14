@@ -1032,6 +1032,127 @@ class Database:
             )
         return [b for b in (self._row_to_battle(row) for row in rows) if b is not None]
 
+    # ------------------------------------------------------------------ #
+    # Ивент и копилка
+    # ------------------------------------------------------------------ #
+
+    async def event_row(self) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow("select * from game_event where id = 1")
+        return (
+            dict(row)
+            if row
+            else {
+                "active": False,
+                "clicker": False,
+                "happy_until": None,
+                "happy_boost": 1.0,
+                "started_at": None,
+            }
+        )
+
+    async def start_event(self) -> None:
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "update game_event set active = true, started_at = now() where id = 1"
+                )
+                await con.execute("delete from kopilka")
+
+    async def stop_event(self) -> dict[str, Any]:
+        """Выключает ивент и раздаёт всю копилку одной транзакцией."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                rows = await con.fetch(
+                    "select user_id, points from kopilka "
+                    "where points > 0 and granted = false for update"
+                )
+                for row in rows:
+                    await con.execute(
+                        "update players set bonus_points = bonus_points + $2 "
+                        "where user_id = $1",
+                        row["user_id"],
+                        int(row["points"]),
+                    )
+                await con.execute(
+                    "update kopilka set granted = true where granted = false"
+                )
+                await con.execute(
+                    "update game_event set active = false, happy_until = null where id = 1"
+                )
+        return {
+            "players": len(rows),
+            "total": sum(int(row["points"]) for row in rows),
+        }
+
+    async def set_clicker(self, on: bool) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update game_event set clicker = $1 where id = 1", bool(on)
+            )
+
+    async def start_happy(self, boost: float, until: Any) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update game_event set happy_until = $1, happy_boost = $2 where id = 1",
+                until,
+                float(boost),
+            )
+
+    async def kopilka_tap(self, user_id: int, points: int) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                insert into kopilka (user_id, clicks, points) values ($1, 1, $2)
+                on conflict (user_id) do update
+                   set clicks = kopilka.clicks + 1,
+                       points = kopilka.points + $2,
+                       granted = false,
+                       updated_at = now()
+                returning clicks, points
+                """,
+                user_id,
+                int(points),
+            )
+        return {"clicks": int(row["clicks"]), "points": int(row["points"])}
+
+    async def kopilka_me(self, user_id: int) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select clicks, points from kopilka where user_id = $1", user_id
+            )
+            points = int(row["points"]) if row else 0
+            rank = await con.fetchval(
+                "select count(*) + 1 from kopilka where points > $1", points
+            )
+            total = await con.fetchval("select count(*) from kopilka")
+        return {
+            "clicks": int(row["clicks"]) if row else 0,
+            "points": points,
+            "rank": int(rank or 1),
+            "players": int(total or 0),
+        }
+
+    async def kopilka_top(self, limit: int = 5) -> list[dict[str, Any]]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                """
+                select k.user_id, k.clicks, k.points, p.first_name, p.username
+                  from kopilka k join players p on p.user_id = k.user_id
+                 order by k.points desc limit $1
+                """,
+                int(limit),
+            )
+        return [dict(row) for row in rows]
+
+    async def kopilka_total(self) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select coalesce(sum(points), 0) as points, count(*) as players "
+                "from kopilka where points > 0 and granted = false"
+            )
+        return {"points": int(row["points"]), "players": int(row["players"])}
+
     async def claim_casino(self, user_id: int, day: Any, limit: int = 25) -> int | None:
         """Списывает крутку казино. None — на сегодня круток не осталось."""
         async with self._p().acquire() as con:

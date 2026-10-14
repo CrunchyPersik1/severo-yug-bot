@@ -38,16 +38,29 @@ def next_reset(moment: datetime | None = None) -> datetime:
     return candidate
 
 
-def roll_rarity(rng: random.Random | None = None) -> str:
-    rng = rng or random
-    keys = list(RARITIES)
-    weights = [RARITIES[key].weight for key in keys]
-    return rng.choices(keys, weights=weights, k=1)[0]
+def rarity_weights(boost: float = 1.0) -> dict[str, float]:
+    """Веса редкостей. boost > 1 поднимает всё, кроме «редкого»."""
+    base = {key: item.weight for key, item in RARITIES.items()}
+    if boost <= 1.0:
+        return base
+    lifted = {
+        key: (value * boost if key != "rare" else value)
+        for key, value in base.items()
+    }
+    total = sum(lifted.values())
+    return {key: value / total for key, value in lifted.items()}
 
 
-def roll_card(rng: random.Random | None = None) -> Card:
+def roll_rarity(rng: random.Random | None = None, boost: float = 1.0) -> str:
     rng = rng or random
-    rarity = roll_rarity(rng)
+    weights = rarity_weights(boost)
+    keys = list(weights)
+    return rng.choices(keys, weights=[weights[key] for key in keys], k=1)[0]
+
+
+def roll_card(rng: random.Random | None = None, boost: float = 1.0) -> Card:
+    rng = rng or random
+    rarity = roll_rarity(rng, boost)
     pool = [
         card
         for card in CARDS_BY_RARITY[rarity]

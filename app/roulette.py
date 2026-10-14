@@ -57,10 +57,22 @@ def next_roulette_reset(moment: datetime | None = None) -> datetime:
     return candidate
 
 
-def roll_prize_kind(rng: random.Random | None = None) -> str:
+def prize_weights(boost: float = 1.0) -> dict[str, float]:
+    """Веса призов. boost > 1 поднимает кейс и карту, очки придавливает."""
+    weights = dict(PRIZE_WEIGHTS)
+    if boost <= 1.0:
+        return weights
+    weights[PRIZE_CASE] *= boost
+    weights[PRIZE_CARD] *= boost
+    total = sum(weights.values())
+    return {key: value / total for key, value in weights.items()}
+
+
+def roll_prize_kind(rng: random.Random | None = None, boost: float = 1.0) -> str:
     rng = rng or random
-    keys = list(PRIZE_WEIGHTS)
-    return rng.choices(keys, weights=[PRIZE_WEIGHTS[k] for k in keys], k=1)[0]
+    weights = prize_weights(boost)
+    keys = list(weights)
+    return rng.choices(keys, weights=[weights[k] for k in keys], k=1)[0]
 
 
 def roll_points(rng: random.Random | None = None) -> int:

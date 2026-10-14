@@ -436,3 +436,27 @@ create table if not exists boss_hits (
     updated_at timestamptz not null default now(),
     primary key (boss_id, user_id)
 );
+
+-- ===================================================================== --
+-- Ивент, счастливые минуты и кликер-копилка
+-- ===================================================================== --
+
+create table if not exists game_event (
+    id          integer primary key default 1,
+    active      boolean not null default false,
+    clicker     boolean not null default false,
+    happy_until timestamptz,
+    happy_boost real not null default 1,
+    started_at  timestamptz,
+    constraint game_event_single check (id = 1)
+);
+insert into game_event (id) values (1) on conflict (id) do nothing;
+
+-- Копилка: клики и накопленные очки. Выдаются разом в конце ивента.
+create table if not exists kopilka (
+    user_id    bigint primary key references players(user_id) on delete cascade,
+    clicks     integer not null default 0,
+    points     integer not null default 0,
+    granted    boolean not null default false,
+    updated_at timestamptz not null default now()
+);

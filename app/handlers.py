@@ -21,6 +21,7 @@ from . import (
     casino,
     clicker,
     dice_casino,
+    event,
     promo,
     referrals,
     render,
@@ -2467,3 +2468,48 @@ async def cb_extra_spin(
         f"🎰 Крутка куплена! Осталось на сегодня: {left}. "
         f"Очков: {await market.balance(user_id)}"
     )
+
+
+
+# --------------------------------------------------------------------------- #
+# Кликер-копилка
+# --------------------------------------------------------------------------- #
+
+
+async def _clicker_view(db: Database, user_id: int, running: bool):
+    me = await db.kopilka_me(user_id)
+    top = await db.kopilka_top(5)
+    return render.clicker_hud(me, top, running)
+
+
+@router.message(Command("kopilka", "копилка"))
+@router.message(NormalizedText("копилка", "кликер"))
+async def cmd_kopilka(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    state = await event.state(db)
+    if not state.clicker:
+        await message.answer(
+            "🎮 Кликер сейчас выключен. Его включает админ командой /admin kopilka."
+        )
+        return
+    text, keyboard = await _clicker_view(db, user.id, state.active)
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("kl:"))
+async def cb_kopilka(callback: CallbackQuery, db: Database) -> None:
+    assert callback.data is not None
+    action = callback.data.split(":", 1)[1]
+    user_id = callback.from_user.id
+    state = await event.state(db)
+    if not state.clicker:
+        await callback.answer("Кликер выключен", show_alert=True)
+        return
+    if action == "c":
+        await db.kopilka_tap(user_id, event.CLICK_POINTS)
+    text, keyboard = await _clicker_view(db, user_id, state.active)
+    await _safe_edit(callback, text, keyboard)
+    await callback.answer()

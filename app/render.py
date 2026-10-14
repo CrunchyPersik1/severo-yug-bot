@@ -1835,3 +1835,36 @@ def render_boss_victory(
                 f"{_money(int(row['damage']))} урона"
             )
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Кликер-копилка
+# --------------------------------------------------------------------------- #
+
+
+def clicker_hud(
+    me: dict[str, Any], top: list[dict[str, Any]], running: bool
+) -> tuple[str, InlineKeyboardMarkup]:
+    lines = [
+        "🎮 <b>Копилка ивента</b>",
+        "",
+        f"👆 Кликов: <b>{me['clicks']}</b>",
+        f"💰 В копилке: <b>{me['points']}</b> очков",
+        f"🏆 Место: <b>#{me['rank']}</b> из {me['players']}",
+    ]
+    if top:
+        lines += ["", "<b>Топ кликеров</b>"]
+        for index, row in enumerate(top):
+            name = row.get("first_name") or row.get("username") or "игрок"
+            lines.append(f"  {index + 1}. {esc(name)} — {row['points']}")
+    lines.append("")
+    lines.append(
+        "⏳ Награды копятся и выдадутся все разом, когда закончится ивент."
+        if running
+        else "🎁 Ивент закончился — награды уже раздали."
+    )
+    rows = [
+        [InlineKeyboardButton(text="👆 КЛИК", callback_data="kl:c")],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="kl:r")],
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)

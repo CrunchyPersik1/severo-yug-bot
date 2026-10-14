@@ -12,6 +12,7 @@ from typing import Any
 
 import asyncpg
 
+from . import event
 from .cards import CARDS_BY_ID, get_card
 from .db import Database
 from .gacha import day_key
@@ -23,6 +24,9 @@ HELP = """Админ-команды:
 
 status                     сводка по всей базе
 soo текст                  разослать текст во все группы, где есть бот
+event                      запустить/остановить ивент (при остановке — раздача)
+minuta                     счастливая минута: шансы ×случайное на 60 секунд
+kopilka                    включить/выключить кликер-копилку
 player @ник                что у игрока: баланс, карты, копии, кейсы
 limits 2 2                 выдать ВСЕМ по 2 карты и по 2 спина на сегодня
 limits                     вернуть всем обычные лимиты (1 и 1)
@@ -42,6 +46,76 @@ stock fix                  вылечить биржу, если курс зам
 Игрока можно указывать как @username, так и числовым id.
 give начисляет очки за карту, take списывает их же.
 Биржа: монеты — syug, uchitel, misha, ludoman, kartofan."""
+
+
+async def act_event(con: asyncpg.Connection, args: list[str]) -> str:
+    """Включает ивент, а при выключении раздаёт всю копилку."""
+    row = await con.fetchrow("select active from game_event where id = 1")
+    active = bool(row["active"]) if row else False
+
+    if not active:
+        await con.execute(
+            "update game_event set active = true, started_at = now() where id = 1"
+        )
+        await con.execute("delete from kopilka")
+        return (
+            "[ok] Ивент запущен!\n"
+            "  · шансы «Северо-Юг» и рулетки подняты в 3 раза\n"
+            "  · копилка обнулена и открыта\n"
+            "  · кейсы и казино не тронуты\n"
+            "Выключу ивент — раздам всё, что накликали."
+        )
+
+    async with con.transaction():
+        rows = await con.fetch(
+            "select user_id, points from kopilka where points > 0 and granted = false for update"
+        )
+        for item in rows:
+            await con.execute(
+                "update players set bonus_points = bonus_points + $2 where user_id = $1",
+                item["user_id"],
+                int(item["points"]),
+            )
+        await con.execute("update kopilka set granted = true where granted = false")
+        await con.execute(
+            "update game_event set active = false, happy_until = null where id = 1"
+        )
+    total = sum(int(item["points"]) for item in rows)
+    return (
+        f"[ok] Ивент остановлен.\n"
+        f"  · выдано {total} очков\n"
+        f"  · игроков с наградой: {len(rows)}\n"
+        "Шансы вернулись к обычным."
+    )
+
+
+async def act_minuta(con: asyncpg.Connection, args: list[str]) -> str:
+    """Счастливая минута: шансы ×N на 60 секунд."""
+    boost = event.roll_happy_boost()
+    await con.execute(
+        "update game_event set happy_until = $1, happy_boost = $2 where id = 1",
+        event.happy_until(),
+        boost,
+    )
+    return (
+        f"[ok] 🍀 Счастливая минута!\n"
+        f"  · шансы ×{boost} — {event.describe_boost(boost)}\n"
+        f"  · действует {event.MINUTE_SECONDS} секунд"
+    )
+
+
+async def act_kopilka(con: asyncpg.Connection, args: list[str]) -> str:
+    """Включает и выключает кликер-копилку."""
+    row = await con.fetchrow("select clicker from game_event where id = 1")
+    now_on = not bool(row["clicker"]) if row else True
+    await con.execute("update game_event set clicker = $1 where id = 1", now_on)
+    if now_on:
+        return (
+            "[ok] 🎮 Кликер включён.\n"
+            "Игроки пишут «копилка» и кликают.\n"
+            "Награды копятся и выдадутся, когда выключишь ивент."
+        )
+    return "[ok] Кликер выключен."
 
 
 async def _resolve_player(con: asyncpg.Connection, target: str) -> dict[str, Any]:
@@ -563,6 +637,9 @@ async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
 
 
 COMMANDS = {
+    "event": act_event,
+    "minuta": act_minuta,
+    "kopilka": act_kopilka,
     "limits": act_limits,
     "points": act_points,
     "case": act_case,
