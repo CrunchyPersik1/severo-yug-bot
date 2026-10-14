@@ -1214,6 +1214,34 @@ class Database:
         data["players"] = int(total or 0)
         return data
 
+    async def kopilka_common(self) -> dict[str, Any]:
+        """Общая копилка: сколько натапали ВСЕ вместе. Столько получит каждый."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                select coalesce(sum(clicks), 0) as clicks,
+                       coalesce(sum(points), 0) as points,
+                       coalesce(sum(drops), 0) as drops,
+                       coalesce(sum(spins), 0) as spins,
+                       coalesce(sum(cases), 0) as cases,
+                       count(*) as players
+                  from kopilka
+                """
+            )
+            cards = await con.fetch("select cards from kopilka")
+        all_cards: list[str] = []
+        for item in cards:
+            all_cards.extend(_json_list(item["cards"]))
+        return {
+            "clicks": int(row["clicks"]),
+            "points": int(row["points"]),
+            "drops": int(row["drops"]),
+            "spins": int(row["spins"]),
+            "cases": int(row["cases"]),
+            "cards": all_cards,
+            "players": int(row["players"]),
+        }
+
     async def kopilka_top(self, limit: int = 5) -> list[dict[str, Any]]:
         async with self._p().acquire() as con:
             rows = await con.fetch(

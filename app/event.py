@@ -102,16 +102,31 @@ async def payout(con: Any) -> dict[str, int]:
                 return []
         return [str(item) for item in value] if isinstance(value, list) else []
 
-    rows = await con.fetch(
-        """
-        select * from kopilka
-         where granted = false
-           and (points > 0 or drops > 0 or spins > 0 or cases > 0
-                or cards <> '[]'::jsonb)
-         for update
-        """
-    )
-    totals = {"players": len(rows), "points": 0, "drops": 0, "spins": 0, "cases": 0, "cards": 0}
+    rows = await con.fetch("select * from kopilka for update")
+    if not rows:
+        await con.execute("update kopilka set granted = true where granted = false")
+        await con.execute(
+            "update game_event set active = false, happy_until = null where id = 1"
+        )
+        return {
+            "players": 0,
+            "points": 0,
+            "drops": 0,
+            "spins": 0,
+            "cases": 0,
+            "cards": 0,
+        }
+
+    # Копилка ОБЩАЯ: считаем, сколько натапали все вместе, и столько же
+    # получает каждый участник — а не каждый своё.
+    pool_points = sum(int(row["points"]) for row in rows)
+    pool_drops = sum(int(row["drops"]) for row in rows)
+    pool_spins = sum(int(row["spins"]) for row in rows)
+    pool_cases = sum(int(row["cases"]) for row in rows)
+    pool_cards: list[str] = []
+    for row in rows:
+        pool_cards.extend(as_list(row["cards"]))
+
     for row in rows:
         user_id = int(row["user_id"])
         await con.execute(
@@ -123,19 +138,18 @@ async def payout(con: Any) -> dict[str, int]:
              where user_id = $1
             """,
             user_id,
-            int(row["points"]),
-            int(row["drops"]),
-            int(row["spins"]),
+            pool_points,
+            pool_drops,
+            pool_spins,
         )
-        if int(row["cases"]):
+        if pool_cases:
             await con.execute(
                 "insert into cases (user_id, source) "
                 "select $1, 'kopilka' from generate_series(1, $2)",
                 user_id,
-                int(row["cases"]),
+                pool_cases,
             )
-        cards = as_list(row["cards"])
-        for card_id in cards:
+        for card_id in pool_cards:
             await con.execute(
                 """
                 insert into collection (user_id, card_id, count) values ($1, $2, 1)
@@ -145,14 +159,16 @@ async def payout(con: Any) -> dict[str, int]:
                 user_id,
                 card_id,
             )
-        totals["points"] += int(row["points"])
-        totals["drops"] += int(row["drops"])
-        totals["spins"] += int(row["spins"])
-        totals["cases"] += int(row["cases"])
-        totals["cards"] += len(cards)
 
     await con.execute("update kopilka set granted = true where granted = false")
     await con.execute(
         "update game_event set active = false, happy_until = null where id = 1"
     )
-    return totals
+    return {
+        "players": len(rows),
+        "points": pool_points,
+        "drops": pool_drops,
+        "spins": pool_spins,
+        "cases": pool_cases,
+        "cards": len(pool_cards),
+    }

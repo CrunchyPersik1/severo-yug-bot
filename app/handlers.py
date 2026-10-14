@@ -2506,8 +2506,9 @@ async def _clicker_state(db: Database):
 
 async def _clicker_view(db: Database, user_id: int, running: bool, last: str = ""):
     me = await db.kopilka_me(user_id)
+    common = await db.kopilka_common()
     top = await db.kopilka_top(5)
-    return render.clicker_hud(me, top, running, last)
+    return render.clicker_hud(me, common, top, running, last)
 
 
 @router.message(Command("kopilka", "копилка"))

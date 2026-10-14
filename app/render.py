@@ -1844,6 +1844,7 @@ def render_boss_victory(
 
 def clicker_hud(
     me: dict[str, Any],
+    common: dict[str, Any],
     top: list[dict[str, Any]],
     running: bool,
     last: str = "",
@@ -1851,20 +1852,24 @@ def clicker_hud(
     lines = [
         "🎮 <b>Копилка ивента</b>",
         "",
-        f"👆 Кликов: <b>{me['clicks']}</b>",
-        f"💰 Очков: <b>{me['points']}</b>",
+        f"👆 Твоих кликов: <b>{me['clicks']}</b>",
+        f"🏆 Ты <b>#{me['rank']}</b> из {me['players']}",
+        "",
+        "🎁 <b>Общая копилка</b> — столько получит каждый:",
+        f"💰 <b>{common['points']}</b> очков",
     ]
-    if int(me.get("drops", 0)):
-        lines.append(f"🎴 Круток «Северо-Юг»: <b>{int(me['drops'])}</b>")
-    if int(me.get("spins", 0)):
-        lines.append(f"🎰 Спинов рулетки: <b>{int(me['spins'])}</b>")
-    if int(me.get("cases", 0)):
-        lines.append(f"📦 Кейсов: <b>{int(me['cases'])}</b>")
-    if me.get("cards"):
-        lines.append(f"🃏 Карт: <b>{len(me['cards'])}</b>")
-    lines.append(f"🏆 Место: <b>#{me['rank']}</b> из {me['players']}")
+    if int(common.get("drops", 0)):
+        lines.append(f"🎴 круток «Северо-Юг»: <b>{int(common['drops'])}</b>")
+    if int(common.get("spins", 0)):
+        lines.append(f"🎰 спинов рулетки: <b>{int(common['spins'])}</b>")
+    if int(common.get("cases", 0)):
+        lines.append(f"📦 кейсов: <b>{int(common['cases'])}</b>")
+    if common.get("cards"):
+        lines.append(f"🃏 карт: <b>{len(common['cards'])}</b>")
+    lines.append("")
+    lines.append(f"Всего натапали: <b>{common.get('clicks', 0)}</b> кликов")
     if last:
-        lines += ["", f"Последний клик: {last}"]
+        lines.append(f"Твой последний клик: {last}")
     if top:
         lines += ["", "<b>Топ кликеров</b>"]
         for index, row in enumerate(top):
@@ -1872,9 +1877,10 @@ def clicker_hud(
             lines.append(f"  {index + 1}. {esc(name)} — {row['points']}")
     lines.append("")
     lines.append(
-        "⏳ Награды копятся и выдадутся все разом, когда закончится ивент."
+        "⏳ Копилка общая. Всё выдадут разом, когда закончится ивент — "
+        "и каждый получит вот эти числа."
         if running
-        else "🎁 Ивент закончился — награды уже раздали."
+        else "🎁 Ивент закончился — общую копилку уже раздали всем."
     )
     rows = [
         [InlineKeyboardButton(text="👆 КЛИК", callback_data="kl:c")],
