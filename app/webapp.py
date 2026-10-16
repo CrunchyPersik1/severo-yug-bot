@@ -131,6 +131,17 @@ def _entry_payload(entry) -> dict[str, Any]:
     elif entry.kind == "accessory":
         item_id = int(entry.payload["item_id"])
         data["icon"] = ACCESSORIES[item_id - 1].name and "🎁"
+    elif entry.kind == "theme":
+        theme = themes.get(str(entry.payload["theme_id"]))
+        data["theme"] = {
+            "id": theme.id,
+            "bg": theme.bg,
+            "panel": theme.panel,
+            "panel2": theme.panel2,
+            "acc": theme.acc,
+            "acc2": theme.acc2,
+            "particles": theme.particles,
+        }
     return data
 
 
@@ -275,7 +286,7 @@ main{padding:0 16px}
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : ""};
 let state = {items: [], tab: "card", balance: 0};
-const TABS = [["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"]];
+const TABS = [["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
 
 function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 
@@ -304,12 +315,18 @@ function cardHtml(it){
   const pack = it.pack ? '<div class="pack">' + it.pack.map(p =>
     p.emoji + " " + p.name + " — ❤️" + p.hp + " ⚔️" + p.atk).join("<br>") + '</div>' : "";
   const enough = state.balance >= it.price;
+  const swatch = it.theme
+    ? '<div style="display:flex;gap:5px;margin-top:9px">' +
+      ['bg','panel2','acc','acc2'].map(k =>
+        '<span style="flex:1;height:16px;border-radius:5px;background:' + it.theme[k] +
+        ';border:1px solid rgba(255,255,255,.14)"></span>').join("") + '</div>'
+    : "";
   return '<div class="card">' +
     '<div class="row"><div><div class="name">' + it.title + '</div>' +
-    '<div class="rar">' + (c ? c.emoji + " " + c.rarity : "набор") + '</div>' +
+    '<div class="rar">' + (c ? c.emoji + " " + c.rarity : (it.theme ? "стиль" : "набор")) + '</div>' +
     '<div class="role">' + it.subtitle + '</div></div>' +
     '<div class="price">' + money(it.price) + '</div></div>' +
-    stats + pack +
+    stats + pack + swatch +
     '<button class="buy" data-sku="' + it.sku + '"' + (enough ? "" : " disabled") + '>' +
     (enough ? "Купить" : "Не хватает очков") + '</button></div>';
 }
