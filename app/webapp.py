@@ -35,7 +35,7 @@ from .cards import (
     image_url,
     rarity_name,
 )
-from .casino_repo import CasinoError, CasinoRepo
+from .casino_repo import CasinoRepo
 from .cases import roll_case_card
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
