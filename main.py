@@ -159,27 +159,41 @@ async def lifespan(app: FastAPI):
         boss_repo=boss_repo,
     )
 
-    me = await bot.get_me()
-    log.info("Бот: @%s (%s)", me.username, me.id)
+    # Telegram иногда не отвечает минутами. Раньше из-за этого падал ВЕСЬ
+    # сервис и деплой откатывался: мини-аппки не обновлялись. Теперь просто
+    # поднимаемся без меню команд, а / и аппки работают как обычно.
+    me = None
+    for attempt in range(1, 6):
+        try:
+            me = await bot.get_me()
+            break
+        except Exception as error:  # noqa: BLE001
+            log.warning("Telegram не ответил (попытка %d/5): %s", attempt, error)
+            await asyncio.sleep(4)
+    if me is not None:
+        log.info("Бот: @%s (%s)", me.username, me.id)
 
-    await setup_commands(bot)
+    try:
+        await setup_commands(bot)
 
-    url = settings.webhook_url()
-    if url:
-        # Ставим вебхук только если он изменился: иначе каждый холодный старт
-        # после сна Render стирал бы очередь апдейтов и терял сообщения.
-        info = await bot.get_webhook_info()
-        if info.url != url:
-            await bot.set_webhook(
-                url=url,
-                secret_token=settings.webhook_token,
-                allowed_updates=dp.resolve_used_update_types(),
-            )
-            log.info("Webhook установлен: %s", url)
+        url = settings.webhook_url()
+        if url:
+            # Ставим вебхук только если он изменился: иначе каждый холодный старт
+            # после сна Render стирал бы очередь апдейтов и терял сообщения.
+            info = await bot.get_webhook_info()
+            if info.url != url:
+                await bot.set_webhook(
+                    url=url,
+                    secret_token=settings.webhook_token,
+                    allowed_updates=dp.resolve_used_update_types(),
+                )
+                log.info("Webhook установлен: %s", url)
+            else:
+                log.info("Webhook уже настроен: %s", url)
         else:
-            log.info("Webhook уже настроен: %s", url)
-    else:
-        log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
+            log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
+    except Exception:  # noqa: BLE001
+        log.exception("Не настроил Telegram — сервис всё равно поднимается")
 
     base = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
     if base:
