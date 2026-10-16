@@ -1971,6 +1971,8 @@ async def api_hub(request: Request) -> JSONResponse:
                         "emoji": item["emoji"],
                         "price": item["price"],
                         "change": item["change"],
+                        "buy_price": item["buy_price"],
+                        "sell_price": item["sell_price"],
                         "pump": item["pump"],
                     }
                 )
@@ -1979,9 +1981,9 @@ async def api_hub(request: Request) -> JSONResponse:
 
     counts = await state.db.get_collection(user_id)
     cards = []
-    for card_id in cards_sorted_for_user(list(counts)):
-        payload = upgrader.card_payload(get_card(card_id), counts[card_id])
-        payload["ref"] = f"card:{card_id}"
+    for card in cards_sorted_for_user(list(counts)):
+        payload = upgrader.card_payload(card, counts[card.card_id])
+        payload["ref"] = f"card:{card.card_id}"
         cards.append(payload)
 
     profile = await state.db.player_profile(user_id) or {}
@@ -2058,21 +2060,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 
 .wrap{padding:14px 15px 0;max-width:560px;margin:0 auto}
 
-.tickwrap{margin-bottom:14px}
-.tickhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;padding:0 2px}
-.tickhead b{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:800}
-.tickhead span{font-size:11.5px;color:var(--muted)}
-.ticker{display:flex;gap:9px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;scrollbar-width:none}
-.ticker::-webkit-scrollbar{display:none}
-.coin{flex:0 0 auto;scroll-snap-align:start;min-width:132px;background:var(--panel);border:1px solid var(--line);
-  border-radius:13px;padding:11px 12px;position:relative;overflow:hidden}
-.coin::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
-.coin.down::after{background:#c9454e}
-.coin.pump::after{background:#9dc941;width:100%;opacity:.14}
-.coin .cn{font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.coin .cp{font-size:17px;font-weight:900;margin-top:5px}
-.coin .cc{font-size:12px;font-weight:800;margin-top:2px;color:#7fd0a0}
-.coin.down .cc{color:#e28d92}
+.tickwrap{margin:2px 0 20px;position:relative;padding-bottom:16px}
+.tickwrap::after{content:"";position:absolute;left:-15px;right:-15px;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--acc) 22%,var(--acc2) 50%,var(--acc) 78%,transparent);
+  opacity:.55}
+.tickwrap::before{content:"";position:absolute;left:0;right:0;bottom:-14px;height:28px;
+  background:radial-gradient(60% 100% at 50% 0%,color-mix(in srgb,var(--acc) 16%,transparent),transparent 72%);
+  pointer-events:none}
+.market{display:flex;flex-direction:column;gap:6px;transition:opacity .5s ease,transform .5s ease}
+.market.out{opacity:0;transform:translateY(-9px)}
+.mk-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mk-side{display:flex;flex-direction:column;gap:2px;min-width:74px}
+.mk-side:last-child{align-items:flex-end;text-align:right}
+.mk-side b{font-size:22px;font-weight:900;letter-spacing:-.5px;line-height:1}
+.mk-side span{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.mk-name{flex:1;text-align:center;font-size:21px;font-weight:900;letter-spacing:-.3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mk-rate{text-align:center;font-size:19px;font-weight:900;letter-spacing:.2px;color:#7fd0a0}
+.mk-rate.down{color:#e28d92}
+.mk-dots{display:flex;gap:5px;justify-content:center;margin-top:7px}
+.mk-dots i{width:16px;height:3px;border-radius:99px;background:var(--line);display:block;transition:.3s}
+.mk-dots i.on{background:var(--acc);width:26px}
 
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px 13px;
@@ -2134,8 +2142,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 <div class="wrap">
   <section class="panel on" id="p-home">
     <div class="tickwrap">
-      <div class="tickhead"><b>Биржа</b><span id="tickNote">курс обновляется каждый час</span></div>
-      <div class="ticker" id="ticker"></div>
+      <div class="market" id="market"></div>
+      <div class="mk-dots" id="mkDots"></div>
     </div>
     <div class="grid" id="tiles"></div>
   </section>
@@ -2184,18 +2192,39 @@ function show(id){
   document.getElementById(id).classList.add("on");
   window.scrollTo({top:0, behavior:"smooth"});
 }
-function renderTicker(){
-  const box = document.getElementById("ticker");
+let mkIndex = 0, mkTimer = null;
+function paintCoin(){
   const list = S.data.stocks;
+  const box = document.getElementById("market");
   if (!list.length){ box.innerHTML = '<div class="empty">Биржа молчит</div>'; return; }
-  box.innerHTML = list.map(s => {
-    const down = s.change < 0;
-    return '<div class="coin' + (down ? " down" : "") + (s.pump ? " pump" : "") + '">' +
-      '<div class="cn">' + esc(s.name) + '</div>' +
-      '<div class="cp">' + money(s.price) + '</div>' +
-      '<div class="cc">' + (down ? "" : "+") + s.change + '%</div></div>';
-  }).join("");
-  document.getElementById("tickNote").textContent = list.length + " курсов · листай вбок";
+  const s = list[mkIndex % list.length];
+  const down = s.change < 0;
+  box.innerHTML =
+    '<div class="mk-top">' +
+      '<div class="mk-side"><b>' + money(s.buy_price) + '</b><span>покупка</span></div>' +
+      '<div class="mk-name">' + esc(s.name) + '</div>' +
+      '<div class="mk-side"><b>' + money(s.sell_price) + '</b><span>продажа</span></div>' +
+    '</div>' +
+    '<div class="mk-rate' + (down ? " down" : "") + '">' +
+      (down ? "" : "+") + s.change + '%' +
+      (s.pump ? "  ▲" : "") + '</div>';
+  document.getElementById("mkDots").innerHTML = list.map((_, i) =>
+    '<i class="' + (i === mkIndex % list.length ? "on" : "") + '"></i>').join("");
+}
+function renderTicker(){
+  paintCoin();
+  clearInterval(mkTimer);
+  mkTimer = setInterval(() => {
+    const list = S.data.stocks;
+    if (!list.length) return;
+    const box = document.getElementById("market");
+    box.classList.add("out");
+    setTimeout(() => {
+      mkIndex = (mkIndex + 1) % list.length;
+      paintCoin();
+      box.classList.remove("out");
+    }, 500);
+  }, 5000);
 }
 function renderTiles(){
   document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>

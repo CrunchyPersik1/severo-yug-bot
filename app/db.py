@@ -1217,21 +1217,28 @@ class Database:
             )
 
     async def level_top(self, limit: int = 10) -> list[dict[str, Any]]:
-        """Топ по уровням: уровень, опыт и карт собрано."""
+        """Топ по уровням. Уровень не хранится — считается из опыта."""
+        from . import levels as levels_mod
+
         async with self._p().acquire() as con:
             rows = await con.fetch(
                 """
                 select p.user_id, p.first_name, p.username,
-                       coalesce(p.level, 1) as level,
                        coalesce(p.xp, 0) as xp,
-                       (select count(*) from collection c where c.user_id = p.user_id) as cards
+                       (select count(*) from collection c
+                         where c.user_id = p.user_id) as cards
                   from players p
-                 order by coalesce(p.level, 1) desc, coalesce(p.xp, 0) desc
+                 order by coalesce(p.xp, 0) desc
                  limit $1
                 """,
                 int(limit),
             )
-        return [dict(row) for row in rows]
+        out = []
+        for row in rows:
+            item = dict(row)
+            item["level"] = levels_mod.level_from_xp(int(item["xp"]))
+            out.append(item)
+        return out
 
     # ------------------------------------------------------------------ #
     # Скупщик
