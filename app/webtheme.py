@@ -1,38 +1,109 @@
-"""Общий стиль мини-аппок: тема игрока + падающие частицы.
+"""Общий стиль мини-аппок: тема игрока, частицы и единый дизайн элементов.
 
-Страницы не переписываются. К каждой подмешивается маленький скрипт: он
-спрашивает активную тему и подменяет CSS-переменные прямо на месте.
+Страницы не переписываются. К каждой подмешивается слой оформления: он
+подменяет CSS-переменные и приводит кнопки, карточки и заголовки к одному
+аккуратному виду — только через переменные темы, без вшитых цветов.
 """
 
 from __future__ import annotations
 
 POLISH = r"""<style>
-  html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-  body{background:var(--bg);color:var(--ink)}
-  .card,.item,.lot,.box,.slot,.tile,.unit,.cell{
-    animation:__rise .5s cubic-bezier(.2,.8,.25,1) both;
-    transition:transform .16s cubic-bezier(.2,.8,.25,1),box-shadow .2s ease,border-color .2s ease;
+  :root{ --radius:14px; --edge:0 6px 20px rgba(0,0,0,.20); }
+  *{ -webkit-tap-highlight-color:transparent }
+  html{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility }
+  body{
+    background:var(--bg)!important;
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   }
-  .card:nth-child(2n),.item:nth-child(2n),.lot:nth-child(2n){animation-delay:.035s}
-  .card:nth-child(3n),.item:nth-child(3n),.lot:nth-child(3n){animation-delay:.07s}
-  .card:nth-child(5n),.item:nth-child(5n),.lot:nth-child(5n){animation-delay:.11s}
-  @keyframes __rise{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
-  .card:active,.item:active,.lot:active{transform:scale(.975)}
-  button,.go,.btn,.buy,.sell,.mult,.tab{
-    transition:transform .13s ease,filter .13s ease,box-shadow .22s ease,background .2s ease;
+
+  /* Мягкое свечение вместо пустой черноты */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(115% 52% at 50% -18%,
+        color-mix(in srgb, var(--acc) 20%, transparent), transparent 72%),
+      radial-gradient(75% 42% at 88% 108%,
+        color-mix(in srgb, var(--acc2) 11%, transparent), transparent 70%);
   }
-  button:active,.go:active,.btn:active,.buy:active,.sell:active,.mult:active,.tab:active{transform:scale(.972)}
-  button:not([disabled]):hover,td:not([disabled]):hover{filter:brightness(1.07)}
-  .go,.buy,.sell,.btn:not(.ghost):not(.close){
-    background-image:linear-gradient(135deg,var(--acc2),var(--acc));
-    background-size:100% 100%;
+  body>*{ position:relative; z-index:1 }
+
+  /* Шапки */
+  header,.top{
+    background:color-mix(in srgb, var(--bg) 88%, transparent)!important;
+    border-color:var(--line)!important;
   }
-  ::-webkit-scrollbar{width:6px;height:6px}
-  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
-  ::-webkit-scrollbar-track{background:transparent}
-  header,.top{border-color:var(--line)}
-  .price,.pr,.bal,.wallet{color:var(--acc2)}
-  a,button{-webkit-tap-highlight-color:transparent}
+
+  /* Карточки и панели */
+  .card,.item,.lot,.box,.slot,.tile,.unit,.panel,.stat{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--edge);
+    animation:__rise .46s cubic-bezier(.2,.8,.25,1) both;
+    transition:transform .16s cubic-bezier(.2,.8,.25,1),
+               box-shadow .22s ease, border-color .22s ease;
+  }
+  .card:nth-child(2n),.item:nth-child(2n),.lot:nth-child(2n){ animation-delay:.03s }
+  .card:nth-child(3n),.item:nth-child(3n),.lot:nth-child(3n){ animation-delay:.06s }
+  .card:nth-child(5n),.item:nth-child(5n),.lot:nth-child(5n){ animation-delay:.1s }
+  .card:active,.item:active,.lot:active{ transform:scale(.975) }
+  @keyframes __rise{ from{opacity:0;transform:translateY(11px) scale(.986)} to{opacity:1;transform:none} }
+
+  /* Кнопки: плоский акцент, тонкая внутренняя подсветка, без шаблонных градиентов */
+  button,.go,.buy,.sell,.btn,.mult,.tab,.act{
+    border:0!important;
+    border-radius:12px!important;
+    background:var(--acc)!important;
+    background-image:none!important;
+    color:var(--acc-ink)!important;
+    font-weight:800!important;
+    letter-spacing:.35px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16),
+               0 4px 14px color-mix(in srgb, var(--acc) 28%, transparent)!important;
+    transition:transform .13s ease, filter .13s ease, box-shadow .2s ease;
+  }
+  button:active,.go:active,.buy:active,.sell:active,.btn:active,.mult:active,.tab:active{
+    transform:scale(.968); filter:brightness(.96);
+  }
+  button:not([disabled]):hover,.go:not([disabled]):hover,.buy:not([disabled]):hover{
+    filter:brightness(1.06);
+  }
+  button[disabled],.go[disabled],.buy[disabled],.sell[disabled]{
+    background:var(--panel2)!important;
+    color:var(--muted)!important;
+    box-shadow:none!important;
+  }
+  /* Второстепенные кнопки — контурные, не сплошные */
+  .btn.ghost,.ghost,.tab:not(.on),.mult:not(.on){
+    background:transparent!important;
+    color:var(--muted)!important;
+    border:1px solid var(--line)!important;
+    box-shadow:none!important;
+  }
+  .tab.on,.mult.on{
+    background:var(--acc)!important;
+    color:var(--acc-ink)!important;
+    border-color:transparent!important;
+  }
+
+  /* Цены и суммы */
+  .price,.pr,.bal,.wallet,.money{ color:var(--acc2)!important }
+
+  /* Пустые состояния */
+  .empty,.ph,.noart{
+    color:var(--muted);
+    background:color-mix(in srgb, var(--panel) 60%, transparent);
+    border:1px dashed var(--line);
+    border-radius:var(--radius);
+  }
+
+  /* Скроллбары */
+  ::-webkit-scrollbar{ width:6px; height:6px }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:99px }
+  ::-webkit-scrollbar-track{ background:transparent }
+
+  img{ transition:opacity .3s ease }
 </style>
 """
 
@@ -43,7 +114,6 @@ BOOTSTRAP = POLISH + r"""<script>
   function apply(vars){
     var r = document.documentElement.style;
     for (var k in vars) r.setProperty("--" + k, vars[k]);
-    document.body.style.background = "var(--bg)";
   }
   function particles(kind){
     var glyphs = {
@@ -57,18 +127,17 @@ BOOTSTRAP = POLISH + r"""<script>
     var box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0";
     document.body.appendChild(box);
-    for (var i = 0; i < 24; i++){
+    for (var i = 0; i < 22; i++){
       var s = document.createElement("span");
       s.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
-      s.style.cssText = "position:absolute;top:-48px;opacity:" + (0.10 + Math.random() * 0.38) +
-        ";font-size:" + (9 + Math.random() * 14) + "px;color:" + colors[i % colors.length] +
-        ";left:" + (Math.random() * 100) + "vw;animation:__fall " + (7 + Math.random() * 11) +
-        "s linear " + (Math.random() * 9) + "s infinite";
+      s.style.cssText = "position:absolute;top:-48px;opacity:" + (0.08 + Math.random() * 0.3) +
+        ";font-size:" + (9 + Math.random() * 13) + "px;color:" + colors[i % colors.length] +
+        ";left:" + (Math.random() * 100) + "vw;animation:__fall " + (8 + Math.random() * 12) +
+        "s linear " + (Math.random() * 10) + "s infinite";
       box.appendChild(s);
     }
     var st = document.createElement("style");
-    st.textContent = "@keyframes __fall{to{transform:translateY(118vh) rotate(420deg);opacity:0}}" +
-      " body>*{position:relative;z-index:1} .top,header{position:sticky;z-index:9}";
+    st.textContent = "@keyframes __fall{to{transform:translateY(118vh) rotate(400deg);opacity:0}}";
     document.head.appendChild(st);
   }
   fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
@@ -81,7 +150,7 @@ BOOTSTRAP = POLISH + r"""<script>
 
 
 def inject(html: str) -> str:
-    """Подмешивает тему и частицы в любую мини-аппку."""
+    """Подмешивает тему, новый стиль и частицы в любую мини-аппку."""
     if "</body>" in html:
         return html.replace("</body>", BOOTSTRAP + "</body>", 1)
     return html + BOOTSTRAP
