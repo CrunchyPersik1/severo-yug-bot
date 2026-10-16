@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from . import buyer
 from . import cases as cases_mod
 from . import roulette as roulette_mod
 from . import upgrader
@@ -1534,6 +1535,299 @@ document.getElementById("rClose").onclick = async () => {
   S.A = null; S.B = null; S.tab = "mine";
   await load();
 };
+if(tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Скупщик — мини-аппка
+# --------------------------------------------------------------------------- #
+
+
+async def _buyer_items(state, user_id: int) -> tuple[list[dict[str, Any]], int, int]:
+    """Все карты игрока с ценой скупщика + итог по лишним копиям."""
+    items: list[dict[str, Any]] = []
+    dup_count = 0
+    dup_total = 0
+
+    counts = await state.db.get_collection(user_id)
+    for card_id, count in counts.items():
+        if card_id not in CARDS_BY_ID:
+            continue
+        card = get_card(card_id)
+        payload = buyer.card_payload(card, count)
+        payload.update(ref=f"card:{card_id}", kind="card", key=f"c{card_id}")
+        items.append(payload)
+        if count > 1:
+            extra = count - 1
+            dup_count += extra
+            dup_total += buyer.price(card) * extra
+
+    for row in await state.market.user_inventory(user_id):
+        card = get_card(row["card_id"])
+        payload = buyer.card_payload(card, 1, row["bonus"])
+        payload.update(ref=f"inv:{row['id']}", kind="inv", key=f"i{row['id']}")
+        items.append(payload)
+
+    items.sort(key=lambda item: -item["price"])
+    return items, dup_count, dup_total
+
+
+@router.get("/api/buyer")
+async def api_buyer(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    items, dup_count, dup_total = await _buyer_items(state, user_id)
+    return JSONResponse(
+        {
+            "me": {
+                "name": user.get("first_name") or "игрок",
+                "balance": await state.market.balance(user_id),
+            },
+            "rate": int(buyer.BUYER_RATE * 100),
+            "items": items,
+            "dupes": {"count": dup_count, "total": dup_total},
+        }
+    )
+
+
+@router.post("/api/buyer/sell")
+async def api_buyer_sell(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    try:
+        body = await request.json()
+        ref = str(body.get("ref", ""))
+        kind, _, value = ref.partition(":")
+        if kind == "card":
+            if value not in CARDS_BY_ID:
+                raise ValueError("Такой карты нет.")
+            card = get_card(value)
+            # Цену считаем ТОЛЬКО на сервере.
+            amount = buyer.price(card)
+            ok = await state.db.sell_to_buyer(user_id, value, amount)
+            title = card.display_name
+        elif kind == "inv":
+            inventory_id = int(value)
+            row = next(
+                (r for r in await state.market.user_inventory(user_id) if r["id"] == inventory_id),
+                None,
+            )
+            if row is None:
+                raise ValueError("Этой копии у тебя уже нет.")
+            card = get_card(row["card_id"])
+            amount = buyer.price(card, row["bonus"])
+            ok = await state.db.sell_inventory_to_buyer(
+                user_id, inventory_id, card.card_id, amount
+            )
+            title = f"{card.display_name} (улучшенная)"
+        else:
+            raise ValueError("Не понял, что продаём.")
+        if not ok:
+            raise ValueError("Этой карты у тебя уже нет.")
+    except Exception as error:  # noqa: BLE001
+        return JSONResponse({"error": str(error)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "price": amount,
+            "title": title,
+            "balance": await state.market.balance(user_id),
+        }
+    )
+
+
+@router.post("/api/buyer/dupes")
+async def api_buyer_dupes(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    counts = await state.db.get_collection(user_id)
+    entries: list[tuple[str, int, int]] = []
+    for card_id, count in counts.items():
+        if card_id not in CARDS_BY_ID or count <= 1:
+            continue
+        entries.append((card_id, int(count) - 1, buyer.price(get_card(card_id))))
+    if not entries:
+        return JSONResponse({"error": "Лишних копий нет."}, status_code=400)
+
+    paid = await state.db.sell_duplicates(user_id, entries)
+    return JSONResponse(
+        {
+            "ok": True,
+            "price": paid,
+            "balance": await state.market.balance(user_id),
+        }
+    )
+
+
+@router.get("/buyer", response_class=HTMLResponse)
+async def buyer_app() -> HTMLResponse:
+    return HTMLResponse(BUYER_PAGE)
+
+
+BUYER_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Северо-Юг · Скупщик</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#f5f3ee; --card:#fff; --ink:#1c1a17; --muted:#7c7468; --line:#e6e1d7;
+  --gold:#b7791f; --gold2:#d69e2e; --soft:#fdf6e7; --ok:#0f9d58; --bad:#d93025;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:96px}
+header{position:sticky;top:0;z-index:6;background:rgba(245,243,238,.94);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:15px 18px 13px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{margin:0;font-size:19px;letter-spacing:-.2px}
+.sub{font-size:12px;color:var(--muted);margin-top:4px}
+.bal{font-weight:800;font-size:15px;background:var(--soft);color:var(--gold);
+  border-radius:999px;padding:8px 14px;white-space:nowrap}
+.hint{margin:10px 18px 0;background:var(--soft);border:1px solid #f0e2c2;border-radius:12px;
+  padding:11px 13px;font-size:12.5px;color:#7a5c1c;line-height:1.5}
+.dupes{margin:12px 18px 0}
+.dupes button{width:100%;border:0;border-radius:13px;padding:15px;font-size:14.5px;font-weight:800;
+  color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold))}
+.dupes button[disabled]{background:#e3ded3;color:#a49b8c}
+main{padding:14px 18px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:15px;overflow:hidden;
+  display:flex;flex-direction:column}
+.item .pic{height:104px;background:#efece4;display:flex;align-items:center;justify-content:center;font-size:38px}
+.item .pic img{width:100%;height:100%;object-fit:cover}
+.item .body{padding:10px 11px 0}
+.item .nm{font-weight:700;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:3px}
+.item .mk{font-size:11px;color:var(--muted);margin-top:6px;text-decoration:line-through}
+.item .pr{font-size:16px;font-weight:900;color:var(--gold);margin-top:1px}
+.item .sell{margin:9px 10px 10px;border:0;border-radius:11px;padding:11px;font-size:13.5px;
+  font-weight:800;color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold))}
+.item .sell:active{transform:scale(.98)}
+.item .sell[disabled]{background:#e3ded3;color:#a49b8c}
+.item .cnt{font-size:10.5px;color:var(--muted);margin-top:2px}
+.empty{text-align:center;color:var(--muted);padding:54px 20px;font-size:14px;line-height:1.6}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--ink);color:#fff;
+  border-radius:12px;padding:14px 16px;font-size:13.5px;line-height:1.45;
+  transform:translateY(160%);transition:.26s cubic-bezier(.2,.8,.3,1);z-index:9}
+#toast.on{transform:translateY(0)}
+#toast.ok{background:var(--ok)} #toast.bad{background:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div>
+      <h1>Скупщик</h1>
+      <div class="sub" id="sub">скупаю любые карты</div>
+    </div>
+    <div class="bal" id="bal">…</div>
+  </div>
+</header>
+<div class="hint" id="hint">Плачу 90% от рынка — зато сразу и без комиссии.</div>
+<div class="dupes" id="dupes"></div>
+<main id="list"><div class="empty">Считаю цены…</div></main>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {items: [], balance: 0, busy: false};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t, kind){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on " + (kind || "");
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3400);
+}
+function itemHtml(it){
+  const pic = it.image ? '<img src="' + it.image + '" alt="">' : it.emoji;
+  const cnt = it.count > 1 ? '<div class="cnt">в коллекции ×' + it.count + '</div>' : '';
+  return '<div class="item">' +
+    '<div class="pic">' + pic + '</div>' +
+    '<div class="body"><div class="nm">' + esc(it.name) + '</div>' +
+    '<div class="rr">' + esc(it.rarity) + '</div>' +
+    '<div class="mk">рынок ' + money(it.market) + '</div>' +
+    '<div class="pr">' + money(it.price) + '</div>' + cnt + '</div>' +
+    '<button class="sell" data-ref="' + it.ref + '"' + (S.busy ? " disabled" : "") + '>Продать</button>' +
+    '</div>';
+}
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = S.items.length
+    ? '<div class="grid">' + S.items.map(itemHtml).join("") + '</div>'
+    : '<div class="empty">Продавать нечего.<br>Выбей карту командой «Северо-Юг».</div>';
+  document.querySelectorAll("[data-ref]").forEach(b => b.onclick = () => sell(b.dataset.ref, b));
+  document.getElementById("bal").textContent = money(S.balance) + " очк.";
+}
+async function load(){
+  try{
+    const r = await fetch("/api/buyer", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error, "bad"); return; }
+    S.items = d.items; S.balance = d.me.balance;
+    document.getElementById("hint").textContent =
+      "Плачу " + d.rate + "% от рынка — зато сразу и без комиссии.";
+    const dup = document.getElementById("dupes");
+    if (d.dupes.count){
+      dup.innerHTML = '<button id="dupeBtn">Продать лишние копии (' + d.dupes.count +
+        ') за ' + money(d.dupes.total) + '</button>';
+      document.getElementById("dupeBtn").onclick = sellDupes;
+    } else dup.innerHTML = "";
+    render();
+  }catch(e){ toast("Не смог загрузить", "bad"); }
+}
+async function sell(ref, btn){
+  if (S.busy) return;
+  S.busy = true; btn.disabled = true; btn.textContent = "…";
+  try{
+    const r = await fetch("/api/buyer/sell", {method:"POST", headers, body: JSON.stringify({ref})});
+    const d = await r.json();
+    if (d.error) toast(d.error, "bad");
+    else {
+      toast("💰 " + d.title + " — продано за " + money(d.price), "ok");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    }
+  }catch(e){ toast("Связь потерялась", "bad"); }
+  S.busy = false;
+  await load();
+}
+async function sellDupes(){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const r = await fetch("/api/buyer/dupes", {method:"POST", headers, body: "{}"});
+    const d = await r.json();
+    if (d.error) toast(d.error, "bad");
+    else toast("💰 Лишние копии проданы за " + money(d.price), "ok");
+  }catch(e){ toast("Связь потерялась", "bad"); }
+  S.busy = false;
+  await load();
+}
 if(tg){ tg.ready(); tg.expand(); }
 load();
 </script>

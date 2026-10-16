@@ -482,3 +482,16 @@ create table if not exists upgrader_log (
     created_at timestamptz not null default now()
 );
 create index if not exists upgrader_log_user_idx on upgrader_log (user_id, created_at desc);
+
+-- ===================================================================== --
+-- Скупщик
+-- ===================================================================== --
+
+create table if not exists buyer_log (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    card_id    text,
+    price      integer not null,
+    created_at timestamptz not null default now()
+);
+create index if not exists buyer_log_user_idx on buyer_log (user_id, created_at desc);

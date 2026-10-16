@@ -18,6 +18,7 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from . import (
     admin_actions,
     boss,
+    buyer,
     casino,
     clicker,
     dice_casino,
@@ -2625,6 +2626,56 @@ async def cmd_upgrader(message: Message) -> None:
                     InlineKeyboardButton(
                         text="♻️ Открыть апгрейдер",
                         web_app=WebAppInfo(url=f"{base}/upgrader"),
+                    )
+                ]
+            ]
+        ),
+    )
+
+
+
+# --------------------------------------------------------------------------- #
+# Скупщик
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("buyer", "скупщик"))
+@router.message(NormalizedText("скупщик", "buyer"))
+async def cmd_buyer(message: Message) -> None:
+    base = _base_url()
+    if not base:
+        await message.answer("⚠️ Скупщик не настроен: нет PUBLIC_URL.")
+        return
+    text = (
+        "💰 <b>Скупщик</b>\n\n"
+        f"{buyer.describe()}\n"
+        "Любые карты — и обычные, и улучшенные. Сразу, без комиссии и без ожидания."
+    )
+    if message.chat.type != "private":
+        await message.answer(
+            text + "\n\nОткрывается в личке со мной — там кнопка.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="💰 Открыть бота",
+                            url=f"https://t.me/{await _bot_username(message.bot)}",
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+    from aiogram.types import WebAppInfo
+
+    await message.answer(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💰 Открыть скупщика",
+                        web_app=WebAppInfo(url=f"{base}/buyer"),
                     )
                 ]
             ]

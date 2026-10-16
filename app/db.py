@@ -1183,6 +1183,108 @@ class Database:
                 )
         return True
 
+    # ------------------------------------------------------------------ #
+    # Скупщик
+    # ------------------------------------------------------------------ #
+
+    async def sell_to_buyer(self, user_id: int, card_id: str, price: int) -> bool:
+        """Скупщик забирает одну копию из стака и платит сразу."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "update collection set count = count - 1 "
+                    "where user_id = $1 and card_id = $2 and count > 0 returning count",
+                    user_id,
+                    card_id,
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "delete from collection where user_id = $1 and card_id = $2 "
+                    "and count <= 0",
+                    user_id,
+                    card_id,
+                )
+                await con.execute(
+                    "update players set bonus_points = bonus_points + $2 where user_id = $1",
+                    user_id,
+                    int(price),
+                )
+                await con.execute(
+                    "insert into buyer_log (user_id, card_id, price) values ($1, $2, $3)",
+                    user_id,
+                    card_id,
+                    int(price),
+                )
+        return True
+
+    async def sell_inventory_to_buyer(
+        self, user_id: int, inventory_id: int, card_id: str, price: int
+    ) -> bool:
+        """Скупщик забирает улучшенную копию целиком."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "delete from inventory where id = $1 and user_id = $2 returning id",
+                    int(inventory_id),
+                    user_id,
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "update players set bonus_points = bonus_points + $2 where user_id = $1",
+                    user_id,
+                    int(price),
+                )
+                await con.execute(
+                    "insert into buyer_log (user_id, card_id, price) values ($1, $2, $3)",
+                    user_id,
+                    card_id,
+                    int(price),
+                )
+        return True
+
+    async def sell_duplicates(
+        self, user_id: int, entries: list[tuple[str, int, int]]
+    ) -> int:
+        """Продаёт лишние копии: по одной карте оставляем, остальное скупщику.
+
+        entries — [(card_id, сколько продать, цена за штуку)].
+        """
+        paid = 0
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                for card_id, count, unit in entries:
+                    count = int(count)
+                    if count <= 0:
+                        continue
+                    row = await con.fetchrow(
+                        "update collection set count = count - $3 "
+                        "where user_id = $1 and card_id = $2 and count >= $3 returning count",
+                        user_id,
+                        card_id,
+                        count,
+                    )
+                    if row is None:
+                        continue
+                    total = unit * count
+                    paid += total
+                    await con.execute(
+                        "insert into buyer_log (user_id, card_id, price) "
+                        "values ($1, $2, $3)",
+                        user_id,
+                        card_id,
+                        int(total),
+                    )
+                if paid:
+                    await con.execute(
+                        "update players set bonus_points = bonus_points + $2 "
+                        "where user_id = $1",
+                        user_id,
+                        int(paid),
+                    )
+        return paid
+
     async def run_upgrade(
         self, user_id: int, from_card: str, to_card: str, chance: float, won: bool
     ) -> bool:
