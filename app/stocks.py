@@ -18,8 +18,12 @@ MAX_CATCHUP_TICKS = 8
 FEE = 0.03
 
 # Границы, чтобы курс не улетел в ноль или в космос.
-FLOOR_MULT = 0.15
-CEIL_MULT = 6.0
+FLOOR_MULT = 0.40
+CEIL_MULT = 2.20
+
+# Возврат к базе. Без него курс уходил в пол или потолок и залипал там
+# навсегда: цены «скатывались» и больше не двигались.
+REVERT = 0.05
 
 # Потолок на одну компанию: больше 100 монет держать нельзя.
 MAX_PER_STOCK = 100
@@ -43,6 +47,7 @@ STOCKS: tuple[dict[str, object], ...] = (
     {"slug": "misha", "name": "Миша Inc.", "emoji": "🥔", "base": 1500, "vol": 0.040},
     {"slug": "ludoman", "name": "MusorDelta_Coin", "emoji": "🗑️", "base": 800, "vol": 0.050},
     {"slug": "kartofan", "name": "Карточный_Coin", "emoji": "🃏", "base": 600, "vol": 0.035},
+    {"slug": "zeya", "name": "ЗеяКоин", "emoji": "🌌", "base": 1200, "vol": 0.028},
 )
 
 
@@ -97,9 +102,15 @@ def next_price(
         return int(max(low, min(high, new)))
 
     rng = rng or random
-    change = rng.uniform(-float(volatility), float(volatility))
+    # Тянем курс к базе: чем дальше ушёл, тем сильнее тянет обратно.
+    drift = ((float(base) - float(price)) / float(base)) * REVERT
+    change = rng.uniform(-float(volatility), float(volatility)) + drift
     value = price * (1.0 + change)
-    return int(max(low, min(high, round(value))))
+    new = int(max(low, min(high, round(value))))
+    if new == price and abs(drift) > 0.0005:
+        # На дешёвых курсах шаг округлялся в ноль и монета замирала.
+        new = price + (1 if drift > 0 else -1)
+    return int(max(low, min(high, new)))
 
 
 def alert_due(

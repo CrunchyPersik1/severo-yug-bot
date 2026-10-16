@@ -104,6 +104,25 @@ POLISH = r"""<style>
   ::-webkit-scrollbar-track{ background:transparent }
 
   img{ transition:opacity .3s ease }
+
+  /* Кнопка «Назад» в главное приложение — на всех аппках, кроме самого хаба */
+  #__back{
+    display:flex;align-items:center;gap:10px;padding:11px 15px;
+    background:color-mix(in srgb, var(--bg) 82%, transparent);
+    border-bottom:1px solid var(--line);position:relative;z-index:60;
+    backdrop-filter:blur(10px);
+  }
+  body #__back button{
+    background:var(--panel)!important;color:var(--ink)!important;
+    border:1px solid var(--line)!important;box-shadow:none!important;
+    border-radius:999px!important;padding:9px 17px!important;
+    font-size:13.5px!important;font-weight:800!important;letter-spacing:0;
+  }
+  body #__back button:active{ background:var(--panel2)!important }
+  #__back .__ttl{
+    flex:1;text-align:right;font-size:11.5px;color:var(--muted);
+    letter-spacing:1.2px;text-transform:uppercase;font-weight:800;
+  }
 </style>
 """
 
@@ -140,6 +159,23 @@ BOOTSTRAP = POLISH + r"""<script>
     st.textContent = "@keyframes __fall{to{transform:translateY(118vh) rotate(400deg);opacity:0}}";
     document.head.appendChild(st);
   }
+  function backBar(){
+    if (location.pathname === "/hub") return;
+    if (document.getElementById("__back")) return;
+    var bar = document.createElement("div");
+    bar.id = "__back";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "‹ Назад";
+    btn.onclick = function(){ location.href = "/hub"; };
+    bar.appendChild(btn);
+    var ttl = document.createElement("div");
+    ttl.className = "__ttl";
+    ttl.textContent = "Северо-Юг";
+    bar.appendChild(ttl);
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  backBar();
   fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
     if (d && d.vars) apply(d.vars);
     particles(d && d.particles);
