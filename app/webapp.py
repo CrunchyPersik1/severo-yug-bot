@@ -24,7 +24,14 @@ from . import themes
 from . import cases as cases_mod
 from . import roulette as roulette_mod
 from . import upgrader
-from .cards import CARDS, CARDS_BY_ID, get_card, image_url, rarity_name
+from .cards import (
+    CARDS,
+    CARDS_BY_ID,
+    cards_sorted_for_user,
+    get_card,
+    image_url,
+    rarity_name,
+)
 from .cases import roll_case_card
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
@@ -1922,3 +1929,359 @@ async def api_theme_set(request: Request) -> JSONResponse:
 
     await state.db.set_theme(user_id, theme.id)
     return JSONResponse({"ok": True, "theme": theme.id, "payload": _theme_payload(user_id, theme.id, owned)})
+
+
+# --------------------------------------------------------------------------- #
+# Главное приложение игры
+# --------------------------------------------------------------------------- #
+
+HUB_SECTIONS: tuple[dict[str, Any], ...] = (
+    {"id": "collection", "title": "Коллекция", "note": "все твои карты", "kind": "panel"},
+    {"id": "market", "title": "Рынок", "note": "лоты игроков", "kind": "app", "path": "/market"},
+    {"id": "shop", "title": "Магазин", "note": "учителя и наборы", "kind": "app", "path": "/app"},
+    {"id": "buyer", "title": "Скупщик", "note": "продать сразу", "kind": "app", "path": "/buyer"},
+    {"id": "upgrader", "title": "Апгрейдер", "note": "обмен карт", "kind": "app", "path": "/upgrader"},
+    {"id": "cases", "title": "Кейсы", "note": "открыть кейс", "kind": "app", "path": "/case_app"},
+    {"id": "roulette", "title": "Рулетка", "note": "крутить колесо", "kind": "app", "path": "/roulette_app"},
+    {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
+    {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
+    {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},
+    {"id": "profile", "title": "Профиль", "note": "бои и репутация", "kind": "panel"},
+    {"id": "style", "title": "Стиль", "note": "оформление", "kind": "panel"},
+)
+
+
+@router.get("/api/hub")
+async def api_hub(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    stocks: list[dict[str, Any]] = []
+    if getattr(state, "stocks", None) is not None:
+        try:
+            data = await state.stocks.overview(user_id)
+            for item in data["stocks"]:
+                stocks.append(
+                    {
+                        "name": item["name"],
+                        "emoji": item["emoji"],
+                        "price": item["price"],
+                        "change": item["change"],
+                        "pump": item["pump"],
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            log.exception("Хаб: биржа не ответила")
+
+    counts = await state.db.get_collection(user_id)
+    cards = []
+    for card_id in cards_sorted_for_user(list(counts)):
+        payload = upgrader.card_payload(get_card(card_id), counts[card_id])
+        payload["ref"] = f"card:{card_id}"
+        cards.append(payload)
+
+    profile = await state.db.player_profile(user_id) or {}
+    owned = await state.db.owned_themes(user_id)
+
+    return JSONResponse(
+        {
+            "me": {
+                "name": user.get("first_name") or "игрок",
+                "balance": await state.market.balance(user_id),
+                "level": int(profile.get("level") or 1),
+                "xp": int(profile.get("xp") or 0),
+                "wins": int(profile.get("wins") or 0),
+                "cards": len(cards),
+            },
+            "stocks": stocks,
+            "collection": cards,
+            "top": await state.db.top_players(10),
+            "levels": await state.db.level_top(10),
+            "themes": {
+                "current": themes.get(await state.db.current_theme(user_id)).id,
+                "owned": owned,
+                "all": [
+                    {
+                        "id": theme.id,
+                        "name": theme.name,
+                        "price": theme.price,
+                        "acc": theme.acc,
+                        "bg": theme.bg,
+                        "owned": theme.price == 0 or theme.id in owned,
+                    }
+                    for theme in themes.THEMES
+                ],
+            },
+            "sections": [
+                dict(section, url=f"{request.base_url}".rstrip("/"))
+                for section in HUB_SECTIONS
+            ],
+        }
+    )
+
+
+@router.get("/hub", response_class=HTMLResponse)
+async def hub_app() -> HTMLResponse:
+    return HTMLResponse(inject(HUB_PAGE))
+
+
+HUB_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#1b1613; --panel:#241d19; --panel2:#2e251f; --line:#3d3229;
+  --ink:#f4ece4; --muted:#a8968a; --acc:#dc8a3f; --acc2:#f0b276; --acc-ink:#1b1206;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:28px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:15px 16px 13px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:8;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px)}
+.brand{font-weight:900;letter-spacing:2.5px;font-size:15px}
+.brand i{color:var(--acc);font-style:normal}
+.chips{display:flex;gap:7px;align-items:center}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:7px 12px;font-size:12.5px;font-weight:800;white-space:nowrap}
+.chip.bal{color:var(--acc2)}
+.chip.lvl{color:var(--ink)}
+
+.wrap{padding:14px 15px 0;max-width:560px;margin:0 auto}
+
+.tickwrap{margin-bottom:14px}
+.tickhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;padding:0 2px}
+.tickhead b{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:800}
+.tickhead span{font-size:11.5px;color:var(--muted)}
+.ticker{display:flex;gap:9px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;scrollbar-width:none}
+.ticker::-webkit-scrollbar{display:none}
+.coin{flex:0 0 auto;scroll-snap-align:start;min-width:132px;background:var(--panel);border:1px solid var(--line);
+  border-radius:13px;padding:11px 12px;position:relative;overflow:hidden}
+.coin::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
+.coin.down::after{background:#c9454e}
+.coin.pump::after{background:#9dc941;width:100%;opacity:.14}
+.coin .cn{font-size:12px;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.coin .cp{font-size:17px;font-weight:900;margin-top:5px}
+.coin .cc{font-size:12px;font-weight:800;margin-top:2px;color:#7fd0a0}
+.coin.down .cc{color:#e28d92}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px 13px;
+  text-align:left;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
+.tile::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,var(--acc),transparent 70%);opacity:.75}
+.tile .tt{font-size:14.5px;font-weight:800;letter-spacing:.2px}
+.tile .tn{font-size:11.5px;color:var(--muted)}
+.tile:active{transform:scale(.975)}
+
+.panel{display:none}
+.panel.on{display:block}
+.phead{display:flex;align-items:center;justify-content:space-between;margin:2px 0 12px}
+.phead b{font-size:16px;font-weight:900}
+.back{border:1px solid var(--line)!important;background:transparent!important;color:var(--muted)!important;
+  border-radius:10px!important;padding:9px 14px!important;font-size:12.5px!important;box-shadow:none!important}
+
+.list{display:flex;flex-direction:column;gap:8px}
+.line{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:11px 13px}
+.line .pos{font-size:13px;font-weight:900;color:var(--acc2);min-width:24px}
+.line .nm{flex:1;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.line .vl{font-size:12.5px;font-weight:800;color:var(--muted);white-space:nowrap}
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.cgrid .card{background:var(--panel);border:1.5px solid var(--line);border-radius:12px;padding:7px;text-align:center}
+.cgrid img{width:100%;height:54px;object-fit:cover;border-radius:8px;display:block}
+.cgrid .ic{font-size:29px;line-height:54px}
+.cgrid .nm{font-size:10.5px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cgrid .pr{font-size:9.5px;color:var(--acc2);font-weight:700}
+.r-rare{border-color:rgba(107,114,128,.55)!important} .r-superrare{border-color:rgba(59,130,246,.7)!important}
+.r-epic{border-color:rgba(168,85,247,.75)!important} .r-mythic{border-color:rgba(239,68,68,.75)!important}
+.r-legendary{border-color:rgba(234,179,8,.8)!important} .r-secret{border-color:rgba(100,116,139,.85)!important}
+.r-ultra{border-color:rgba(232,121,249,.9)!important} .r-teacher{border-color:rgba(194,65,12,.9)!important}
+
+.theme{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;padding:11px;width:100%;text-align:left}
+.theme.on{border-color:var(--acc)}
+.sw{display:flex;gap:3px;flex:0 0 auto}
+.sw i{width:15px;height:22px;border-radius:5px;display:block}
+.theme .nm{flex:1;font-weight:700;font-size:13.5px}
+.theme .pc{font-size:12px;font-weight:800;color:var(--acc2)}
+.empty{color:var(--muted);font-size:13px;line-height:1.6;text-align:center;padding:34px 14px;
+  border:1px dashed var(--line);border-radius:14px}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(200%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand">СЕВЕРО<i>/</i>ЮГ</div>
+  <div class="chips">
+    <div class="chip lvl" id="lvl">ур. …</div>
+    <div class="chip bal" id="bal">…</div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="panel on" id="p-home">
+    <div class="tickwrap">
+      <div class="tickhead"><b>Биржа</b><span id="tickNote">курс обновляется каждый час</span></div>
+      <div class="ticker" id="ticker"></div>
+    </div>
+    <div class="grid" id="tiles"></div>
+  </section>
+
+  <section class="panel" id="p-collection">
+    <div class="phead"><b>Коллекция</b><button class="back" data-home>Назад</button></div>
+    <div class="cgrid" id="collGrid"></div>
+  </section>
+
+  <section class="panel" id="p-top">
+    <div class="phead"><b>Топ по очкам</b><button class="back" data-home>Назад</button></div>
+    <div class="list" id="topList"></div>
+  </section>
+
+  <section class="panel" id="p-levels">
+    <div class="phead"><b>Топ по уровням</b><button class="back" data-home>Назад</button></div>
+    <div class="list" id="lvlList"></div>
+  </section>
+
+  <section class="panel" id="p-profile">
+    <div class="phead"><b>Профиль</b><button class="back" data-home>Назад</button></div>
+    <div class="list" id="profList"></div>
+  </section>
+
+  <section class="panel" id="p-style">
+    <div class="phead"><b>Стиль</b><button class="back" data-home>Назад</button></div>
+    <div class="list" id="themeList"></div>
+  </section>
+</div>
+
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {data: null};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2600);
+}
+function show(id){
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("on"));
+  document.getElementById(id).classList.add("on");
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+function renderTicker(){
+  const box = document.getElementById("ticker");
+  const list = S.data.stocks;
+  if (!list.length){ box.innerHTML = '<div class="empty">Биржа молчит</div>'; return; }
+  box.innerHTML = list.map(s => {
+    const down = s.change < 0;
+    return '<div class="coin' + (down ? " down" : "") + (s.pump ? " pump" : "") + '">' +
+      '<div class="cn">' + esc(s.name) + '</div>' +
+      '<div class="cp">' + money(s.price) + '</div>' +
+      '<div class="cc">' + (down ? "" : "+") + s.change + '%</div></div>';
+  }).join("");
+  document.getElementById("tickNote").textContent = list.length + " курсов · листай вбок";
+}
+function renderTiles(){
+  document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>
+    '<div class="tile" data-sec="' + sec.id + '"><div class="tt">' + esc(sec.title) +
+    '</div><div class="tn">' + esc(sec.note) + '</div></div>').join("");
+  document.querySelectorAll("[data-sec]").forEach(el => el.onclick = () => open(el.dataset.sec));
+  document.querySelectorAll("[data-home]").forEach(b => b.onclick = () => show("p-home"));
+}
+function open(id){
+  const sec = S.data.sections.find(s => s.id === id);
+  if (!sec) return;
+  if (sec.kind === "app" && sec.path){
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.selectionChanged();
+    window.location.href = sec.path;
+    return;
+  }
+  if (id === "collection"){
+    const mine = S.data.collection;
+    document.getElementById("collGrid").innerHTML = mine.length
+      ? mine.map(c => '<div class="card r-' + c.rarity_key + '">' +
+          (c.image ? '<img src="' + c.image + '">' : '<div class="ic">' + c.emoji + '</div>') +
+          '<div class="nm">' + esc(c.name) + '</div>' +
+          '<div class="pr">' + money(c.price) + (c.count > 1 ? " ×" + c.count : "") + '</div></div>').join("")
+      : '<div class="empty" style="grid-column:1/-1">Пусто. Выбей карту командой «Северо-Юг».</div>';
+    show("p-collection");
+  } else if (id === "top" || id === "levels"){
+    const rows = id === "top" ? S.data.top : S.data.levels;
+    const box = document.getElementById(id === "top" ? "topList" : "lvlList");
+    box.innerHTML = rows.length ? rows.map((r, i) => {
+      const name = esc(r.first_name || r.username || "игрок");
+      const value = id === "top"
+        ? money(r.points) + " очк."
+        : "ур. " + r.level + " · " + r.xp + " xp";
+      return '<div class="line"><div class="pos">' + (i + 1) + '</div><div class="nm">' + name +
+        '</div><div class="vl">' + value + '</div></div>';
+    }).join("") : '<div class="empty">Пока пусто</div>';
+    show(id === "top" ? "p-top" : "p-levels");
+  } else if (id === "profile"){
+    const m = S.data.me;
+    document.getElementById("profList").innerHTML =
+      [["Имя", esc(m.name)], ["Баланс", money(m.balance) + " очк."], ["Уровень", m.level],
+       ["Опыт", m.xp + " xp"], ["Побед", m.wins], ["Карт", m.cards]]
+      .map(([k, v]) => '<div class="line"><div class="nm">' + k + '</div><div class="vl">' + v + '</div></div>').join("");
+    show("p-profile");
+  } else if (id === "style"){
+    renderThemes();
+    show("p-style");
+  }
+}
+function renderThemes(){
+  const t = S.data.themes;
+  document.getElementById("themeList").innerHTML = t.all.map(th => {
+    const state = th.id === t.current ? " on" : "";
+    const price = th.price === 0 ? "бесплатно" : (th.owned ? "куплен" : money(th.price) + " очк.");
+    return '<button class="theme' + state + '" data-theme="' + th.id + '">' +
+      '<span class="sw"><i style="background:' + th.bg + '"></i>' +
+      '<i style="background:' + th.acc + '"></i></span>' +
+      '<span class="nm">' + esc(th.name) + '</span>' +
+      '<span class="pc">' + price + '</span></button>';
+  }).join("");
+  document.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => pickTheme(b.dataset.theme));
+}
+async function pickTheme(id){
+  try{
+    const r = await fetch("/api/theme/set", {method:"POST", headers, body: JSON.stringify({theme:id})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    toast("Стиль включён");
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    setTimeout(() => window.location.reload(), 400);
+  }catch(e){ toast("Связь потерялась"); }
+}
+async function load(){
+  try{
+    const r = await fetch("/api/hub", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d;
+    document.getElementById("bal").textContent = money(d.me.balance);
+    document.getElementById("lvl").textContent = "ур. " + d.me.level;
+    renderTicker(); renderTiles();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+if(tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""

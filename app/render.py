@@ -1685,15 +1685,26 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
             "🎲 <b>/casino</b> — ставка очками или картой",
         ]
     )
-    rows: list[list[InlineKeyboardButton]] = [
+    rows: list[list[InlineKeyboardButton]] = []
+    if app_url:
+        from aiogram.types import WebAppInfo
+
+        # Главное приложение: тот же интерфейс, но кнопками и с биржей сверху.
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📱 Приложение — вся игра",
+                    web_app=WebAppInfo(url=f"{app_url}/hub"),
+                )
+            ]
+        )
+    rows.append(
         [
             InlineKeyboardButton(text="🎒 Коллекция", callback_data="my:home"),
             InlineKeyboardButton(text="📖 FAQ", callback_data="fq:menu"),
         ]
-    ]
+    )
     if app_url:
-        from aiogram.types import WebAppInfo
-
         rows.append(
             [
                 InlineKeyboardButton(
