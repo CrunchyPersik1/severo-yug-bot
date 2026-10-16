@@ -200,12 +200,14 @@ async def lifespan(app: FastAPI):
         from aiogram.types import MenuButtonWebApp, WebAppInfo
 
         with contextlib.suppress(Exception):
+            # Кнопка слева от поля ввода в личке. Ведёт в главное приложение,
+            # а не сразу в магазин: оттуда уже все разделы.
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
-                    text="Магазин", web_app=WebAppInfo(url=f"{base}/app")
+                    text="Приложение", web_app=WebAppInfo(url=f"{base}/hub")
                 )
             )
-            log.info("Кнопка мини-аппки: %s/app", base)
+            log.info("Кнопка меню: Приложение -> %s/hub", base)
 
     task = asyncio.create_task(_ticker(bot, db, service, team, stocks))
     log.info("Бот запущен: %d карт", len(CARDS))
