@@ -111,9 +111,11 @@ def test_stocks_page_has_chart_and_api():
     from app.webapp import STOCKS_PAGE
 
     assert "/api/stocks" in STOCKS_PAGE
-    assert "lineChart" in STOCKS_PAGE, "график курса должен быть"
-    assert "data-open" in STOCKS_PAGE, "по монете нужно кликать"
-    assert "setInterval" in STOCKS_PAGE
+    assert "candles(" in STOCKS_PAGE, "график курса должен быть"
+    assert "data-slug" in STOCKS_PAGE, "по монете нужно кликать"
+    assert "setInterval" in STOCKS_PAGE, "курс должен обновляться сам"
+    # сделки идут через тот же роутер, что и раньше
+    assert '"/api/stocks/" + kind' in STOCKS_PAGE
 
 
 def test_every_stock_has_required_fields():

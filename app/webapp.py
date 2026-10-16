@@ -715,276 +715,267 @@ STOCKS_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Северо-Юг · Биржа</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --bg:#0f1117; --card:#171a23; --line:#252a38; --ink:#e8ebf2; --muted:#8b93a7;
-  --up:#22c55e; --down:#ef4444; --accent:#4f46e5; --accent-soft:#1e2140;
+  --bg:#12100e; --panel:#1b1815; --panel2:#231f1a; --line:#332d26;
+  --ink:#f2ece5; --muted:#9c9086; --acc:#dc8a3f; --acc2:#f0b276; --acc-ink:#1b1206;
+  --up:#9dc941; --down:#e0407a;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:100px}
-header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);
-  backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
-  padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-h1{margin:0;font-size:19px;letter-spacing:-.2px}
-.wallet{font-weight:700;font-size:15px;background:var(--accent-soft);color:#c7c9ff;
-  border-radius:999px;padding:7px 14px;white-space:nowrap}
-main{padding:12px 14px}
-.pf{background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--muted)}
-.pf b{color:var(--ink)}
-.pf.warn{color:#fecaca;border-color:#7f1d1d;background:#2a1416}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;
-  padding:12px;margin-bottom:12px}
-.top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-.name{font-weight:700;font-size:15px}
-.price{font-size:14px;margin-top:4px;color:var(--muted)}
-.price b,.price .up,.price .down{font-weight:700}
-.buycell{font-size:11px;color:var(--muted);text-align:right;line-height:1.6;white-space:nowrap}
-.bars{display:flex;gap:2px;margin-top:10px;height:30px;align-items:flex-end}
-.bars i{flex:1 1 0;min-width:2px;border-radius:2px;background:#3a4055;height:6px}
-.bars i.up{background:var(--up)}
-.bars i.down{background:var(--down)}
-.bars i.flat{background:#3a4055}
-.row{cursor:pointer}
-.chev{color:var(--muted);font-size:24px;line-height:1;padding-left:6px}
-.back{background:transparent;border:1px solid var(--line);color:var(--muted);
-  border-radius:10px;padding:9px 12px;font-size:13px;margin-bottom:12px}
-.name.big{font-size:18px}
-.price.big{font-size:16px}
-.chart{width:100%;height:170px;display:block;margin-top:12px}
-.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
-.deals{font-size:12px;color:var(--muted);margin-top:10px}
-.deals b{color:var(--ink)}
-.tag{font-size:11px;color:#c7c9ff;background:var(--accent-soft);border-radius:999px;padding:2px 8px;margin-left:6px}
-.tag.hot{color:#fecaca;background:#7f1d1d}
-.hint{font-size:12px;color:var(--muted);margin-top:12px;height:60px;display:flex;align-items:center}
-.spikes{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.6}
-.btn:disabled{opacity:.45}
-.mine{margin-top:9px;font-size:12px;color:var(--muted)}
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:26px}
+.top{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;z-index:9;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px)}
+.back{background:var(--panel);border:1px solid var(--line);border-radius:999px;color:var(--ink);
+  padding:9px 16px;font-size:14px;font-weight:700}
+.top .ttl{flex:1;text-align:center;font-size:15px;font-weight:800;letter-spacing:.3px}
+.top .sp{width:70px}
+
+.hero{padding:16px 15px 8px}
+.hero .nm{font-size:26px;font-weight:900;letter-spacing:-.6px;line-height:1.1}
+.hero .sub{font-size:12px;color:var(--muted);margin-top:3px}
+.hero .pr{font-size:34px;font-weight:900;letter-spacing:-1.2px;margin-top:12px}
+.hero .ch{font-size:15px;font-weight:800;margin-top:2px}
 .up{color:var(--up)} .down{color:var(--down)}
-.hint-inline{font-size:11px;color:var(--muted)}
-.act{display:flex;gap:8px;margin-top:11px}
-.qty{width:74px;background:#0d0f16;border:1px solid var(--line);color:var(--ink);
-  border-radius:10px;padding:10px;font-size:14px;text-align:center}
-.btn{flex:1;border:0;border-radius:10px;padding:11px;font-size:14px;font-weight:700;color:#fff}
-.btn.buy{background:linear-gradient(135deg,#16a34a,#15803d)}
-.btn.sell{background:linear-gradient(135deg,#dc2626,#b91c1c)}
-.btn:active{transform:scale(.98)}
-#toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;
-  border-radius:12px;padding:14px 16px;font-size:14px;line-height:1.45;
-  transform:translateY(150%);transition:.26s cubic-bezier(.2,.8,.3,1);z-index:9}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:12px 15px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat span{display:block;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.stat b{display:block;font-size:16px;font-weight:900;margin-top:4px}
+
+.bar{display:flex;gap:7px;padding:4px 15px 10px;overflow-x:auto;scrollbar-width:none}
+.bar::-webkit-scrollbar{display:none}
+.tf{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);
+  border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:800}
+.tf.on{background:var(--panel2);color:var(--ink);border-color:var(--muted)}
+
+.chart{padding:0 15px}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 6px 6px;
+  position:relative;overflow:hidden}
+svg{display:block;width:100%;height:230px}
+.axis{position:absolute;right:8px;top:10px;bottom:10px;display:flex;flex-direction:column;
+  justify-content:space-between;font-size:10px;color:var(--muted);pointer-events:none}
+.note{padding:9px 15px 0;font-size:11.5px;color:var(--muted)}
+
+.act{display:flex;gap:9px;padding:14px 15px 0}
+.act button{flex:1;border:0;border-radius:13px;padding:15px;font-size:15px;font-weight:900;letter-spacing:.3px}
+.buy{background:var(--acc);color:var(--acc-ink)}
+.sell{background:var(--panel2);color:var(--ink);border:1px solid var(--line)!important}
+.act button[disabled]{opacity:.45}
+.stepper{display:flex;gap:7px;padding:11px 15px 0;flex-wrap:wrap}
+.stepper button{border:1px solid var(--line);background:transparent;color:var(--muted);
+  border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800}
+.stepper button.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+
+.list{padding:16px 15px 0}
+.lhead{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted);font-weight:800;
+  padding:0 2px 9px}
+.row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);
+  border-radius:13px;padding:12px 13px;margin-bottom:8px}
+.row.on{border-color:var(--acc)}
+.row .av{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:17px;background:var(--panel2)}
+.row .mid{flex:1;min-width:0}
+.row .nm{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .mt{font-size:11px;color:var(--muted);margin-top:2px}
+.row .rt{text-align:right}
+.row .rt b{display:block;font-size:14.5px;font-weight:900}
+.row .rt i{display:block;font-style:normal;font-size:11.5px;font-weight:800;margin-top:2px}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
-#toast.ok{background:#15803d}
-#toast.bad{background:#b91c1c}
 </style>
 </head>
 <body>
-<header>
-  <h1>📈 Биржа</h1>
-  <div class="wallet">💰 <span id="balance">…</span></div>
-</header>
-<main id="list"><div class="pf">Загружаю курсы…</div></main>
+<div class="top">
+  <button class="back" onclick="location.href='/hub'">‹ Назад</button>
+  <div class="ttl">Биржа</div>
+  <div class="sp"></div>
+</div>
+
+<div class="hero">
+  <div class="nm" id="nm">…</div>
+  <div class="sub" id="sub">акция · курс обновляется каждый час</div>
+  <div class="pr" id="pr">…</div>
+  <div class="ch" id="ch"></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><span>Покупка</span><b id="stBuy">…</b></div>
+  <div class="stat"><span>Продажа</span><b id="stSell">…</b></div>
+  <div class="stat"><span>У тебя акций</span><b id="stShares">…</b></div>
+  <div class="stat"><span>Твоя прибыль</span><b id="stPnl">…</b></div>
+</div>
+
+<div class="bar" id="tfBar"></div>
+
+<div class="chart">
+  <div class="chartbox">
+    <svg id="cv" viewBox="0 0 320 230" preserveAspectRatio="none"></svg>
+    <div class="axis" id="axis"></div>
+  </div>
+  <div class="note" id="note"></div>
+</div>
+
+<div class="stepper" id="stepBar"></div>
+<div class="act">
+  <button class="buy" id="buyBtn">Купить</button>
+  <button class="sell" id="sellBtn">Продать</button>
+</div>
+
+<div class="list">
+  <div class="lhead">Все акции</div>
+  <div id="rows"></div>
+</div>
+
 <div id="toast"></div>
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
-const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let state = {stocks: [], portfolio: {}, balance: 0, selected: null, tickAge: 0};
-let maxPerStock = 100;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+const TFS = [["1м", 60], ["5м", 44], ["15м", 30], ["1ч", 18]];
+let S = {data: null, slug: null, tf: 0, shares: 1, busy: false};
 
-function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
-function toast(t,k){ var el=document.getElementById("toast"); el.textContent=t;
-  el.className="on "+(k||""); clearTimeout(el._t); el._t=setTimeout(function(){el.className="";},3200); }
-
-// Мини-столбики в списке: высота зависит от курса, цвет — от шага.
-function bars(hist){
-  if(!hist || hist.length < 2) return "";
-  var min = Math.min.apply(null, hist), max = Math.max.apply(null, hist);
-  var range = Math.max(1, max - min);
-  var out = "";
-  for(var i=0;i<hist.length;i++){
-    var prev = i ? hist[i-1] : hist[i];
-    var h = 6 + Math.round(22 * (hist[i] - min) / range);
-    var cls = hist[i] > prev ? "up" : (hist[i] < prev ? "down" : "flat");
-    out += '<i class="'+cls+'" style="height:'+h+'px" title="'+hist[i]+'"></i>';
-  }
-  return '<div class="bars">'+out+'</div>';
+function money(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3000);
 }
+function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 
-// Настоящий график курса: линия по точкам, масштаб по минимуму и максимуму.
-function lineChart(hist, spikes){
-  if(!hist || hist.length < 2) return '<div class="hint">Мало данных — подожди пару шагов курса…</div>';
-  var W = 320, H = 150, pad = 4;
-  var min = Math.min.apply(null, hist), max = Math.max.apply(null, hist);
-  if(min === max){ min -= 1; max += 1; }
-  var n = hist.length;
-  function px(i){ return pad + i * (W - 2*pad) / (n - 1); }
-  function py(v){ return pad + (max - v) * (H - 2*pad) / (max - min); }
-  var pts = [];
-  for(var i=0;i<n;i++){ pts.push(px(i).toFixed(1)+","+py(hist[i]).toFixed(1)); }
-  var line = pts.join(" ");
-  var up = hist[n-1] >= hist[0];
-  var color = up ? "#22c55e" : "#ef4444";
-  var area = (pad)+","+(H-pad)+" "+line+" "+(W-pad)+","+(H-pad);
-  var grid = "";
-  for(var g=0; g<=4; g++){
-    var gy = (pad + g*(H-2*pad)/4).toFixed(1);
-    grid += '<line x1="0" y1="'+gy+'" x2="'+W+'" y2="'+gy+'" stroke="#232838" stroke-width="1"/>';
+// Свечи: бьём историю на N кусков и считаем OHLC каждого
+function candles(history, count){
+  const out = [];
+  const size = Math.max(1, Math.floor(history.length / count));
+  for (let i = 0; i < history.length; i += size){
+    const chunk = history.slice(i, i + size);
+    if (!chunk.length) continue;
+    out.push({o: chunk[0], c: chunk[chunk.length - 1], h: Math.max.apply(null, chunk), l: Math.min.apply(null, chunk)});
   }
-  // Отмечаем резкие скачки: колечко вокруг точки, зелёное вверх / красное вниз.
-  var marks = "";
-  (spikes || []).forEach(function(sp){
-    var si = Number(sp.i);
-    if(!(si >= 0 && si < n)) return;
-    var sc = Number(sp.change) >= 0 ? "#22c55e" : "#ef4444";
-    marks += '<circle cx="'+px(si).toFixed(1)+'" cy="'+py(hist[si]).toFixed(1)+'" r="3.4" '+
-      'fill="#0f1117" stroke="'+sc+'" stroke-width="2"/>';
+  return out;
+}
+function draw(){
+  const s = cur();
+  if (!s) return;
+  const bars = candles(s.history, TFS[S.tf][1]);
+  const hi = Math.max.apply(null, bars.map(b => b.h));
+  const lo = Math.min.apply(null, bars.map(b => b.l));
+  const pad = (hi - lo) * 0.12 || 1;
+  const top = hi + pad, bot = lo - pad;
+  const n = bars.length, w = 320 / n, bw = Math.max(3, w * 0.62);
+  const y = v => 8 + (1 - (v - bot) / (top - bot)) * 214;
+  let svg = "";
+  // сетка
+  for (let g = 0; g <= 4; g++){
+    const gy = 8 + g * 53.5;
+    svg += '<line x1="0" y1="' + gy + '" x2="320" y2="' + gy + '" stroke="var(--line)" stroke-width="0.5"/>';
+  }
+  bars.forEach((b, i) => {
+    const x = i * w + w / 2;
+    const up = b.c >= b.o;
+    const col = up ? "var(--up)" : "var(--down)";
+    svg += '<line x1="' + x + '" y1="' + y(b.h) + '" x2="' + x + '" y2="' + y(b.l) +
+           '" stroke="' + col + '" stroke-width="1"/>';
+    const y1 = Math.min(y(b.o), y(b.c)), y2 = Math.max(y(b.o), y(b.c));
+    svg += '<rect x="' + (x - bw / 2) + '" y="' + y1 + '" width="' + bw + '" height="' +
+           Math.max(1.6, y2 - y1) + '" fill="' + col + '" rx="1"/>';
   });
-  return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
-    grid +
-    '<polygon points="'+area+'" fill="'+color+'" opacity="0.13"/>'+
-    '<polyline points="'+line+'" fill="none" stroke="'+color+'" stroke-width="2.5" '+
-      'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'+
-    marks +
-    '<circle cx="'+px(n-1).toFixed(1)+'" cy="'+py(hist[n-1]).toFixed(1)+'" r="3" fill="'+color+'"/>'+
-  '</svg>';
+  const last = bars[bars.length - 1];
+  svg += '<line x1="0" y1="' + y(last.c) + '" x2="320" y2="' + y(last.c) +
+         '" stroke="var(--acc)" stroke-width="0.7" stroke-dasharray="3 3"/>';
+  document.getElementById("cv").innerHTML = svg;
+  const a = document.getElementById("axis");
+  a.innerHTML = [top, (top + bot) / 2, bot].map(v => "<span>" + money(v) + "</span>").join("");
 }
-
-function agoText(sec){
-  sec = Number(sec) || 0;
-  if(sec < 60) return "только что";
-  if(sec < 3600) return Math.floor(sec/60)+" мин назад";
-  return Math.floor(sec/3600)+" ч назад";
-}
-
-function spikesLine(spikes){
-  if(!spikes || !spikes.length){
-    return '<div class="spikes">Резких скачков за это время не было.</div>';
-  }
-  var parts = [];
-  var list = spikes.slice(-4).reverse();
-  for(var i=0;i<list.length;i++){
-    var sp = list[i];
-    var up = Number(sp.change) >= 0;
-    parts.push('<span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+
-      Number(sp.change).toFixed(1)+'%</span> '+agoText(sp.ago));
-  }
-  return '<div class="spikes">Скачки: '+parts.join(" · ")+'</div>';
-}
-
-// Строка списка: тапаешь — открывается график монеты.
-function row(s){
-  var up = s.change >= 0;
-  var tag = (s.pump ? '<span class="tag hot">🔥 памп!</span>' : "") +
-    (s.my_shares > 0 ? '<span class="tag">'+s.my_shares+' шт.</span>' : "");
-  return '<div class="card row" data-open="'+s.slug+'">'+
-    '<div class="top"><div><div class="name">'+s.emoji+' '+esc(s.name)+tag+'</div>'+
-    '<div class="price"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span></div></div>'+
-    '<div class="chev">›</div></div>'+
-    bars(s.history)+
-  '</div>';
-}
-
-// Карточка монеты с большим графиком и сделками.
-function detail(s){
-  var up = s.change >= 0;
-  var hist = s.history || [];
-  var min = hist.length ? Math.min.apply(null, hist) : s.price;
-  var max = hist.length ? Math.max.apply(null, hist) : s.price;
-  var mine = "";
-  if(s.my_shares > 0){
-    var pnl = s.my_pnl >= 0 ? '<span class="up">+'+money(s.my_pnl)+'</span>' : '<span class="down">'+money(s.my_pnl)+'</span>';
-    var pct = s.my_spent > 0 ? ' ('+(s.my_pnl/s.my_spent*100).toFixed(1)+'%)' : "";
-    mine = '<div class="mine">У тебя: <b>'+s.my_shares+'</b> шт. · '+money(s.my_value)+' · '+pnl+pct+'</div>';
-  }
-  return '<button class="back" data-back="1">← Все монеты</button>'+
-    '<div class="card">'+
-      '<div class="name big">'+s.emoji+' '+esc(s.name)+(s.pump ? ' <span class="tag hot">🔥 памп!</span>' : '')+'</div>'+
-      '<div class="price big"><b>'+money(s.price)+'</b> <span class="'+(up?"up":"down")+'">'+(up?"▲":"▼")+' '+Number(s.change).toFixed(2)+'%</span> <span class="hint-inline">за 15 мин</span></div>'+
-      lineChart(hist, s.spikes)+
-      '<div class="axis"><span>мин '+money(min)+'</span><span>макс '+money(max)+'</span></div>'+
-      spikesLine(s.spikes)+
-      '<div class="deals">купить <b>'+money(s.buy_price)+'</b> · продать <b>'+money(s.sell_price)+'</b></div>'+
-      '<div class="deals">'+(s.room > 0
-          ? 'Лимит '+maxPerStock+' шт. на монету · можно докупить ещё '+s.room
-          : 'Лимит '+maxPerStock+' шт. достигнут')+'</div>'+
-      mine+
-      '<div class="act"><input class="qty" type="number" min="1" value="1" data-qty="'+s.slug+'">'+
-      '<button class="btn buy" data-buy="'+s.slug+'"'+(s.room > 0 ? "" : " disabled")+'>Купить</button>'+
-      '<button class="btn sell" data-sell="'+s.slug+'">Продать</button></div>'+
-    '</div>';
-}
-
-function render(){
-  document.getElementById("balance").textContent = money(state.balance);
-  var pf = state.portfolio || {};
-  var pnl = (pf.pnl||0) >= 0 ? '<span class="up">+'+money(pf.pnl||0)+'</span>' : '<span class="down">'+money(pf.pnl||0)+'</span>';
-  var head = '<div class="pf">Портфель: <b>'+money(pf.value||0)+'</b> · вложено '+money(pf.spent||0)+' · '+pnl+'</div>';
-  if(state.tickAge > 120){
-    head = '<div class="pf warn">⚠️ Курс не обновлялся уже '+Math.floor(state.tickAge/60)+
-      ' мин. Если так и стоит — напиши админу: <b>/admin stock fix</b></div>' + head;
-  }
-  var box = document.getElementById("list");
-  var stock = null;
-  if(state.selected){
-    for(var i=0;i<state.stocks.length;i++){
-      if(state.stocks[i].slug === state.selected){ stock = state.stocks[i]; break; }
-    }
-  }
-  if(stock){
-    box.innerHTML = head + detail(stock);
-  } else {
-    state.selected = null;
-    box.innerHTML = head + state.stocks.map(row).join("");
-  }
-  bind();
-}
-
-function bind(){
-  document.querySelectorAll("[data-open]").forEach(function(el){
-    el.onclick = function(){ state.selected = el.dataset.open; render(); };
+function paint(){
+  const s = cur();
+  if (!s){ return; }
+  const down = s.change < 0;
+  document.getElementById("nm").textContent = s.name;
+  document.getElementById("sub").textContent = "акция · " + (s.pump ? "идёт памп" : "торги идут");
+  document.getElementById("pr").textContent = money(s.price);
+  const ch = document.getElementById("ch");
+  ch.textContent = (down ? "" : "+") + s.change + "% за сутки";
+  ch.className = "ch " + (down ? "down" : "up");
+  document.getElementById("stBuy").textContent = money(s.buy_price);
+  document.getElementById("stSell").textContent = money(s.sell_price);
+  document.getElementById("stShares").textContent = s.my_shares;
+  const pnl = document.getElementById("stPnl");
+  pnl.textContent = (s.my_pnl >= 0 ? "+" : "") + money(s.my_pnl);
+  pnl.className = s.my_pnl >= 0 ? "up" : "down";
+  document.getElementById("note").textContent = s.my_shares
+    ? "Вложено " + money(s.my_spent) + " · сейчас стоит " + money(s.my_value) +
+      " · свободно " + s.room + " акций"
+    : "Акций нет. Свободно " + s.room + " мест.";
+  document.getElementById("buyBtn").disabled = s.room < S.shares || S.busy;
+  document.getElementById("sellBtn").disabled = s.my_shares < S.shares || S.busy;
+  document.getElementById("rows").innerHTML = S.data.stocks.map(x => {
+    const d = x.change < 0;
+    return '<div class="row' + (x.slug === S.slug ? " on" : "") + '" data-slug="' + x.slug + '">' +
+      '<div class="av">' + x.emoji + '</div>' +
+      '<div class="mid"><div class="nm">' + esc(x.name) + '</div>' +
+      '<div class="mt">у тебя ' + x.my_shares + ' · свободно ' + x.room + '</div></div>' +
+      '<div class="rt"><b>' + money(x.price) + '</b>' +
+      '<i class="' + (d ? "down" : "up") + '">' + (d ? "" : "+") + x.change + '%</i></div></div>';
+  }).join("");
+  document.querySelectorAll("[data-slug]").forEach(el => el.onclick = () => {
+    S.slug = el.dataset.slug; S.shares = 1; paint(); draw(); renderStep();
   });
-  var back = document.querySelector("[data-back]");
-  if(back){ back.onclick = function(){ state.selected = null; render(); }; }
-  document.querySelectorAll("[data-buy]").forEach(function(b){ b.onclick=function(){ trade("buy", b.dataset.buy); }; });
-  document.querySelectorAll("[data-sell]").forEach(function(b){ b.onclick=function(){ trade("sell", b.dataset.sell); }; });
+  draw();
 }
-
-async function load(){
-  try{
-    var r = await fetch("/api/stocks", {headers});
-    var d = await r.json();
-    if(d.error){ toast(d.error,"bad"); return; }
-    state.stocks = d.stocks; state.portfolio = d.portfolio; state.balance = d.me.balance;
-    state.tickAge = d.tick_age || 0;
-    if(d.limits && d.limits.max_per_stock) maxPerStock = d.limits.max_per_stock;
-    render();
-  }catch(e){ toast("Не смог загрузить биржу","bad"); }
+function renderTf(){
+  document.getElementById("tfBar").innerHTML = TFS.map((t, i) =>
+    '<button class="tf' + (i === S.tf ? " on" : "") + '" data-tf="' + i + '">' + t[0] + '</button>').join("");
+  document.querySelectorAll("[data-tf]").forEach(b => b.onclick = () => {
+    S.tf = +b.dataset.tf; renderTf(); draw();
+  });
 }
-
-async function trade(kind, slug){
-  var input = document.querySelector('[data-qty="'+slug+'"]');
-  var shares = Math.max(1, Math.floor(Number(input ? input.value : 1) || 1));
+function renderStep(){
+  const presets = [1, 5, 10, 25];
+  document.getElementById("stepBar").innerHTML = presets.map(n =>
+    '<button class="' + (S.shares === n ? "on" : "") + '" data-n="' + n + '">' + n + ' акц.</button>').join("");
+  document.querySelectorAll("[data-n]").forEach(b => b.onclick = () => {
+    S.shares = +b.dataset.n; renderStep(); paint();
+  });
+}
+async function trade(kind){
+  if (S.busy) return;
+  S.busy = true; paint();
   try{
-    var r = await fetch("/api/stocks/"+kind, {method:"POST", headers, body: JSON.stringify({slug: slug, shares: shares})});
-    var d = await r.json();
-    if(d.error){ toast(d.error,"bad"); }
-    else{
-      toast((kind==="buy"?"Куплено ":"Продано ")+shares+" за "+money(d.total), "ok");
-      if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    const r = await fetch("/api/stocks/" + kind, {method:"POST", headers,
+      body: JSON.stringify({slug: S.slug, shares: S.shares})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); }
+    else {
+      toast((kind === "buy" ? "Куплено " : "Продано ") + S.shares + " акц.");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
     }
-  }catch(e){ toast("Связь потерялась","bad"); }
-  await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+  await load(true);
 }
-
+async function load(keep){
+  try{
+    const r = await fetch("/api/stocks", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d;
+    if (!keep || !S.slug) S.slug = d.stocks.length ? d.stocks[0].slug : null;
+    paint();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+document.getElementById("buyBtn").onclick = () => trade("buy");
+document.getElementById("sellBtn").onclick = () => trade("sell");
+renderTf(); renderStep();
 if(tg){ tg.ready(); tg.expand(); }
-load();
-setInterval(load, 15000);
+load(false);
+setInterval(() => load(true), 20000);
 </script>
 </body>
 </html>
