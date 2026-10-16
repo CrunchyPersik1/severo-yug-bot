@@ -1315,28 +1315,32 @@ body{
 .box .pr{font-size:11px;font-weight:800;color:var(--acc2)}
 .arrow{text-align:center;color:var(--acc);font-size:18px;font-weight:900}
 
-.stage{margin:16px 0 6px;position:relative;display:flex;align-items:center;justify-content:center}
-.wheelbox{position:relative;width:290px;height:290px;max-width:84vw;max-height:84vw}
-.pointer{position:absolute;top:-2px;left:50%;transform:translateX(-50%);z-index:5;
-  width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;
-  border-top:20px solid var(--acc2);filter:drop-shadow(0 2px 6px rgba(0,0,0,.65))}
-.pointer::after{content:"";position:absolute;top:-7px;left:-5px;width:10px;height:10px;border-radius:50%;
-  background:var(--acc2);box-shadow:0 0 10px rgba(255,197,61,.8)}
-.wheel{position:absolute;inset:0;border-radius:50%;
-  background:radial-gradient(circle at 50% 50%,#10141d 58%,#161b26 59%,#161b26 100%);
-  border:5px solid #212836;box-shadow:inset 0 0 40px rgba(0,0,0,.75),0 0 30px rgba(0,0,0,.5);
-  transition:transform 4.6s cubic-bezier(.12,.72,.06,1)}
-.chip{position:absolute;top:50%;left:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
-  border-radius:10px;background:var(--panel2);border:2px solid #2b3446;
-  display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden}
-.chip.win{border-color:var(--acc);box-shadow:0 0 12px rgba(245,158,11,.45)}
-.chip img{width:100%;height:100%;object-fit:cover}
-.hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  width:118px;height:118px;border-radius:50%;background:#0d1119;border:2px solid #232b3c;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;z-index:4}
-.hub .v{font-size:27px;font-weight:900;letter-spacing:-.5px}
-.hub .w{font-size:9.5px;color:var(--muted);text-align:center;padding:0 8px;line-height:1.3}
-.hub .t{font-size:10px;color:var(--muted)}
+.stage{margin:18px 0 2px;position:relative;display:flex;align-items:center;justify-content:center;
+  --up:#3fae6a;--down:#d8434a}
+.drum{position:relative;width:400px;height:400px;max-width:86vw;max-height:86vw}
+/* Стрелка неподвижна: она вне вращающегося циферблата */
+.needle{position:absolute;top:-6px;left:50%;transform:translateX(-50%);z-index:6;
+  width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;
+  border-top:24px solid var(--acc2);filter:drop-shadow(0 3px 9px rgba(0,0,0,.7))}
+.needle::after{content:"";position:absolute;top:-9px;left:-6px;width:12px;height:12px;
+  border-radius:50%;background:var(--acc2);box-shadow:0 0 12px var(--acc2)}
+.dial{position:absolute;inset:0;width:100%;height:100%;
+  transition:transform 6.2s cubic-bezier(.06,.68,.03,1)}
+.dial circle{fill:none;stroke-linecap:butt;transition:stroke-dasharray .35s ease}
+.trk{stroke:rgba(255,255,255,.05);stroke-width:46}
+.zone-red{stroke:var(--down);stroke-width:28}
+.zone-win{stroke:var(--up);stroke-width:28}
+body .hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:48%;height:48%;border:0!important;border-radius:50%!important;
+  background:radial-gradient(circle at 50% 28%,var(--panel2),var(--panel))!important;
+  color:var(--ink)!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 10px 30px rgba(0,0,0,.45)!important;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;z-index:4}
+body .hub:active{transform:translate(-50%,-50%) scale(.97)!important}
+body .hub[disabled]{color:var(--muted)!important;opacity:.7}
+.hub .v{font-size:30px;font-weight:900;letter-spacing:-1.2px;line-height:1}
+.hub .ic{font-size:19px;font-weight:900;color:var(--acc);line-height:1;margin-top:3px}
+.hub .tt{font-size:12px;font-weight:900;letter-spacing:2.4px}
 
 .go{position:fixed;left:14px;right:14px;bottom:16px;max-width:492px;margin:0 auto;
   border:0;border-radius:15px;padding:17px;font-size:16px;font-weight:900;letter-spacing:.5px;
@@ -1396,13 +1400,23 @@ body{
   </div>
 
   <div class="stage">
-    <div class="wheelbox">
-      <div class="pointer"></div>
-      <div class="wheel" id="wheel"></div>
-      <div class="hub">
-        <div class="v" id="pct">—</div>
-        <div class="w" id="word">выбери карты</div>
-      </div>
+    <div class="drum">
+      <div class="needle"></div>
+      <svg class="dial" id="dial" viewBox="0 0 200 200">
+        <g transform="rotate(-90 100 100)">
+          <circle class="trk" cx="100" cy="100" r="80" pathLength="360"/>
+          <circle class="zone-red" id="arcRed" cx="100" cy="100" r="80" pathLength="360"
+                  stroke-dasharray="360 360"/>
+          <circle class="zone-win" id="arcWin" cx="100" cy="100" r="80" pathLength="360"
+                  stroke-dasharray="0 360"/>
+        </g>
+      </svg>
+      <button class="hub" id="go" disabled>
+        <span class="v" id="pct">—</span>
+        <span class="ic">⌃</span>
+        <span class="tt">АПГРЕЙД</span>
+        <span id="word" style="display:none"></span>
+      </button>
     </div>
   </div>
 
@@ -1413,7 +1427,7 @@ body{
   <div class="cards" id="grid"></div>
 </div>
 
-<button class="go" id="go" disabled>УЛУЧШИТЬ</button>
+
 
 <div class="result" id="result">
   <div class="big" id="rIcon">🎉</div>
@@ -1429,7 +1443,7 @@ body{
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 const SEGMENTS = 40;
-let S = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, tab: "mine", busy: false};
+let S = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, tab: "mine", busy: false, rotation: 0};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
 function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -1458,25 +1472,16 @@ function words(v){
   if (v >= 0.005) return "Очень низкий шанс";
   return "Почти нереально";
 }
-// Какие сектора считаются выигрышными: размазаны по кругу, а не кучей.
-function isWin(i, wins){ return wins > 0 && (i * wins) % SEGMENTS < wins; }
-function buildWheel(wins, art){
-  const wheel = document.getElementById("wheel");
-  wheel.style.transition = "none";
-  wheel.style.transform = "rotate(0deg)";
-  let html = "";
-  for (let i = 0; i < SEGMENTS; i++){
-    const angle = i * (360 / SEGMENTS);
-    const win = isWin(i, wins);
-    const inner = win && art
-      ? '<img src="' + art + '" alt="">'
-      : (win ? "🎁" : "💀");
-    html += '<div class="chip' + (win ? " win" : "") + '" style="transform:rotate(' + angle +
-      'deg) translateY(-112px) rotate(' + (-angle) + 'deg)">' + inner + '</div>';
-  }
-  wheel.innerHTML = html;
-  void wheel.offsetWidth;
-  wheel.style.transition = "";
+// Циферблат: зелёная зона = шанс, красная = остальное.
+// Зелёная рисуется от верхней точки по часовой стрелке.
+function paintDial(chance){
+  const valid = typeof chance === "number" && chance > 0;
+  const g = valid ? Math.min(360, Math.max(1.5, chance * 360)) : 0;
+  document.getElementById("arcWin").setAttribute("stroke-dasharray", g + " 360");
+  const red = document.getElementById("arcRed");
+  red.setAttribute("stroke-dasharray", (360 - g) + " 360");
+  red.setAttribute("stroke-dashoffset", -g);
+  document.getElementById("pct").textContent = valid ? pct(chance) : "—";
 }
 function cardEl(card, side){
   const on = side === "A" ? (S.A && S.A.id === card.id) : (S.B && S.B.id === card.id);
@@ -1522,13 +1527,11 @@ function render(){
       if (sd === "A") S.A = S.mine.find(c => c.id === id) || null;
       else S.B = S.targets.find(c => c.id === id) || null;
       render();
-      if (S.A && S.B) buildWheel(winsFor(chanceOf(S.A, S.B)), S.B.image);
-      else buildWheel(0, null);
+      paintDial(S.A && S.B ? chanceOf(S.A, S.B) : 0);
       if (S.tab === "mine" && S.A) { S.tab = "targets"; render(); }
     };
   });
 }
-function winsFor(chance){ return Math.max(1, Math.min(SEGMENTS - 1, Math.round(chance * SEGMENTS))); }
 
 async function load(){
   try{
@@ -1541,7 +1544,7 @@ async function load(){
     if (S.B && !S.targets.some(c => c.id === S.B.id)) S.B = null;
     if (!S.A && S.mine.length) S.A = S.mine[0];
     render();
-    if (S.A && S.B) buildWheel(winsFor(chanceOf(S.A, S.B)), S.B.image); else buildWheel(0, null);
+    paintDial(S.A && S.B ? chanceOf(S.A, S.B) : 0);
   }catch(e){ toast("Не смог загрузить", true); }
 }
 async function spin(){
@@ -1554,20 +1557,22 @@ async function spin(){
     const d = await r.json();
     if (d.error){ toast(d.error, true); S.busy = false; await load(); return; }
 
-    // Собираем барабан под результат: сколько секторов выигрышных.
-    const wins = winsFor(d.chance);
-    buildWheel(wins, d.to.image);
-    const pool = [];
-    for (let i = 0; i < SEGMENTS; i++) if (isWin(i, wins) === d.won) pool.push(i);
-    const seg = pool[Math.floor(Math.random() * pool.length)];
-    const step = 360 / SEGMENTS;
-    const jitter = (Math.random() - 0.5) * step * 0.6;
-    const turns = 5 + Math.floor(Math.random() * 2);
-    const wheel = document.getElementById("wheel");
-    wheel.style.transform = "rotate(" + (360 * turns - seg * step + jitter) + "deg)";
+    // Крутим строго под результат. Зелёная зона идёт от верхней точки,
+    // поэтому остановка на 360-x кладёт под стрелку точку x.
+    paintDial(d.chance);
+    const g = Math.max(1.5, d.chance * 360);
+    let stop;
+    if (d.won){
+      stop = 360 - g * (0.15 + Math.random() * 0.7);
+    } else {
+      stop = 360 - (g + (360 - g) * (0.15 + Math.random() * 0.7));
+    }
+    const need = ((stop - (S.rotation % 360)) + 360) % 360;
+    S.rotation += 360 * (5 + Math.floor(Math.random() * 3)) + need;
+    document.getElementById("dial").style.transform = "rotate(" + S.rotation + "deg)";
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
 
-    await new Promise(res => setTimeout(res, 4800));
+    await new Promise(res => setTimeout(res, 6400));
     document.getElementById("rIcon").textContent = d.won ? "🎉" : "💀";
     document.getElementById("rArt").innerHTML = d.won && d.to.image
       ? '<img src="' + d.to.image + '" alt="">' : "";
