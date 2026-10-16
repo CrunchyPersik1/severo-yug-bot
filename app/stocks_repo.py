@@ -274,7 +274,9 @@ class StocksRepo:
         steps = min(steps, stocks.MAX_CATCHUP_TICKS)
         price = int(row["price"])
         target = row["target_price"]
-        target = int(target) if target is not None else None
+        # Сжимаем цель ЗДЕСЬ, до сравнения с ценой: иначе устаревшая цель
+        # ниже пола навсегда запирала курс на полу.
+        target = stocks.clamp_target(int(target), base) if target is not None else None
         pump_phase = row["pump_phase"]
         pump_peak = int(row["pump_peak"]) if row["pump_peak"] is not None else 0
         pump_home = int(row["pump_home"]) if row["pump_home"] is not None else 0

@@ -69,6 +69,18 @@ def sell_price(price: int) -> int:
     return max(1, round(int(price) * (1 - FEE)))
 
 
+def clamp_target(target: int, base: int) -> int:
+    """Приводит цель к рабочему коридору.
+
+    Цель могла устареть: пол подняли, а цель осталась ниже. Тогда цена
+    упиралась в пол, а сравнение «дошли ли до цели» шло с несжатой целью —
+    она никогда не считалась достигнутой, и курс залипал навсегда.
+    """
+    low = int(int(base) * FLOOR_MULT)
+    high = int(int(base) * CEIL_MULT)
+    return max(low, min(high, int(target)))
+
+
 def next_price(
     price: int,
     base: int,
@@ -88,7 +100,7 @@ def next_price(
     if target is not None and int(target) > 0:
         # Цель тоже держим в коридоре: иначе курс улетал за границы, а график
         # и проценты потом врали.
-        target = max(low, min(high, int(target)))
+        target = clamp_target(target, base)
         if price == target:
             return target
         step = round((target - price) * TARGET_PULL)

@@ -123,3 +123,37 @@ def test_every_stock_has_required_fields():
         assert stock["slug"] and stock["name"] and stock["emoji"]
         assert int(stock["base"]) > 0
         assert 0 < float(stock["vol"]) < 0.5
+
+
+def test_stale_target_below_floor_does_not_stick():
+    """Устаревшая цель ниже пола не должна запирать курс на полу."""
+    from app import stocks
+
+    base = 1000
+    low = int(base * stocks.FLOOR_MULT)
+    # цель осталась с прошлых настроек и лежит ниже пола
+    assert low > 100
+    assert stocks.clamp_target(100, base) == low
+    # ровно так торговый цикл понимает «дошли»: иначе цель не сбросится
+    assert stocks.clamp_target(100, base) == low
+    # а с пола обычный шаг обязан уводить вверх
+    import random
+
+    rng = random.Random(5)
+    price = low
+    for _ in range(80):
+        price = stocks.next_price(price, base, 0.03, rng)
+        if price != low:
+            break
+    assert price != low, "курс не выходит с пола"
+
+
+def test_clamp_target_keeps_inside_corridor():
+    from app import stocks
+
+    base = 1000
+    low = int(base * stocks.FLOOR_MULT)
+    high = int(base * stocks.CEIL_MULT)
+    assert stocks.clamp_target(1, base) == low
+    assert stocks.clamp_target(999999, base) == high
+    assert stocks.clamp_target(1200, base) == 1200
