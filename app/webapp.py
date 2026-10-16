@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import random
 from typing import Any
 from urllib.parse import parse_qsl
 
@@ -20,6 +21,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import buyer
+from . import casino
+from . import dice_casino
 from . import themes
 from . import cases as cases_mod
 from . import roulette as roulette_mod
@@ -32,6 +35,7 @@ from .cards import (
     image_url,
     rarity_name,
 )
+from .casino_repo import CasinoError, CasinoRepo
 from .cases import roll_case_card
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
@@ -1973,6 +1977,7 @@ HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "upgrader", "title": "Апгрейдер", "note": "обмен карт", "kind": "app", "path": "/upgrader"},
     {"id": "cases", "title": "Кейсы", "note": "открыть кейс", "kind": "app", "path": "/case_app"},
     {"id": "roulette", "title": "Рулетка", "note": "крутить колесо", "kind": "app", "path": "/roulette_app"},
+    {"id": "casino", "title": "Казино", "note": "кости и ставки", "kind": "app", "path": "/casino_app"},
     {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
     {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
     {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},
@@ -2340,6 +2345,308 @@ async function load(){
 }
 if(tg){ tg.ready(); tg.expand(); }
 load();
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Казино — мини-аппка
+# --------------------------------------------------------------------------- #
+
+
+def _casino_games() -> list[dict[str, Any]]:
+    dice: list[dict[str, Any]] = [
+        {"id": "even", "label": "Чёт", "mult": 2},
+        {"id": "odd", "label": "Нечёт", "mult": 2},
+    ]
+    dice += [{"id": f"d{i}", "label": str(i), "mult": 3} for i in range(1, 7)]
+    shots = [
+        {"id": "hit", "label": "Попадёт", "mult": 2},
+        {"id": "miss", "label": "Не попадёт", "mult": 2},
+    ]
+    return [
+        {"id": "dice", "title": "Кости", "emoji": "🎲", "faces": 6, "choices": dice},
+        {"id": "football", "title": "Футбол", "emoji": "⚽", "faces": 5, "choices": shots},
+        {"id": "basketball", "title": "Баскетбол", "emoji": "🏀", "faces": 5, "choices": shots},
+    ]
+
+
+@router.get("/api/casino")
+async def api_casino(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    left = await state.db.casino_left(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    return JSONResponse(
+        {
+            "me": {
+                "balance": await state.market.balance(user_id),
+                "left": left,
+                "cap": casino.SPINS_PER_DAY,
+            },
+            "limits": {"min": casino.MIN_BET, "max": casino.MAX_BET},
+            "games": _casino_games(),
+        }
+    )
+
+
+@router.post("/api/casino/play")
+async def api_casino_play(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    game = str(body.get("game", ""))
+    choice = str(body.get("choice", ""))
+    try:
+        bet = int(body.get("bet", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Не понял ставку"}, status_code=400)
+
+    if game not in dice_casino.GAMES or not dice_casino.is_choice_valid(game, choice):
+        return JSONResponse({"error": "Не понял выбор"}, status_code=400)
+    if not casino.MIN_BET <= bet <= casino.MAX_BET:
+        return JSONResponse(
+            {"error": f"Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков"},
+            status_code=400,
+        )
+    balance = await state.market.balance(user_id)
+    if balance < bet:
+        return JSONResponse(
+            {"error": f"Не хватает очков: ставишь {bet}, у тебя {balance}"}, status_code=400
+        )
+
+    left = await state.db.claim_casino(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    if left is None:
+        return JSONResponse(
+            {"error": "Крутки на сегодня кончились"}, status_code=400
+        )
+
+    value = random.randint(1, dice_casino.face_count(game))
+    won = dice_casino.is_win(game, choice, value)
+    mult = dice_casino.multiplier(game, choice)
+    try:
+        await CasinoRepo(state.db, state.market).play_points(
+            user_id, bet, won, mult, game, choice, value
+        )
+    except Exception as error:  # noqa: BLE001
+        return JSONResponse({"error": str(error)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "won": won,
+            "value": value,
+            "mult": mult,
+            "bet": bet,
+            "payout": bet * mult if won else 0,
+            "game": game,
+            "choice": choice,
+            "choice_label": dice_casino.choice_label(game, choice),
+            "balance": await state.market.balance(user_id),
+            "left": await state.db.casino_left(user_id, roulette_day_key(), casino.SPINS_PER_DAY),
+        }
+    )
+
+
+@router.get("/casino_app", response_class=HTMLResponse)
+async def casino_app() -> HTMLResponse:
+    return HTMLResponse(inject(CASINO_PAGE))
+CASINO_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Казино</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--up:#3fae6a;--down:#d8434a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:26px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+
+.plate{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;text-align:center;
+  position:relative;overflow:hidden}
+.plate::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--acc),transparent)}
+.plate .cap{font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:800}
+.plate .big{font-size:76px;line-height:1.05;margin:6px 0 2px;transition:transform .12s}
+.plate .big.roll{animation:shake .28s infinite}
+@keyframes shake{0%{transform:translateY(0) rotate(-7deg)}50%{transform:translateY(-8px) rotate(7deg)}100%{transform:translateY(0) rotate(-7deg)}}
+.plate .val{font-size:15px;font-weight:900;letter-spacing:.4px;min-height:20px}
+.plate .sub{font-size:12px;color:var(--muted);margin-top:5px;min-height:16px}
+.win{color:var(--up)} .lose{color:var(--down)}
+
+.tabs{display:flex;gap:8px;margin:14px 0 10px}
+.tab{flex:1;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:12px;padding:12px 6px;font-size:13px;font-weight:800}
+.tab.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+.tab small{display:block;font-size:10px;font-weight:700;opacity:.75;margin-top:2px}
+
+.block{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:11px}
+.block .t{font-size:10.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted);font-weight:800;margin-bottom:9px}
+.choices{display:flex;flex-wrap:wrap;gap:7px}
+.ch{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;
+  padding:11px 14px;font-size:14px;font-weight:800;min-width:60px}
+.ch.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+.ch i{display:block;font-style:normal;font-size:10px;font-weight:700;opacity:.8}
+.bets{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.bet{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;
+  padding:11px 4px;font-size:13px;font-weight:800}
+.bet.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+.custom{display:flex;gap:7px;margin-top:8px}
+.custom input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+  color:var(--ink);padding:11px 13px;font-size:15px;font-weight:800;font-family:inherit}
+.custom button{border:1px solid var(--line);background:transparent;color:var(--muted);
+  border-radius:11px;padding:0 16px;font-size:13px;font-weight:800}
+
+.spin{width:100%;border:0;border-radius:15px;padding:18px;font-size:17px;font-weight:900;
+  letter-spacing:1px;color:var(--acc-ink);background:var(--acc);margin-top:4px}
+.spin[disabled]{background:var(--panel2);color:var(--muted)}
+.foot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:10px;padding:0 3px}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="plate">
+    <div class="cap" id="cap">Кости</div>
+    <div class="big" id="face">🎲</div>
+    <div class="val" id="val">&nbsp;</div>
+    <div class="sub" id="sub">выбери игру, ставку и жми</div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="block">
+    <div class="t">На что ставим</div>
+    <div class="choices" id="choices"></div>
+  </div>
+
+  <div class="block">
+    <div class="t">Ставка</div>
+    <div class="bets" id="bets"></div>
+    <div class="custom">
+      <input id="betInput" type="number" inputmode="numeric" placeholder="своя сумма">
+      <button id="betSet">ОК</button>
+    </div>
+  </div>
+
+  <button class="spin" id="spin">КРУТИТЬ</button>
+  <div class="foot">
+    <span id="bal">…</span>
+    <span id="left">…</span>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+const PRESETS = [100, 500, 1000, 5000];
+let S = {data: null, game: null, choice: null, bet: 500, busy: false};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function money(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3000);
+}
+function curGame(){ return S.data.games.find(g => g.id === S.game); }
+function render(){
+  const g = curGame();
+  document.getElementById("tabs").innerHTML = S.data.games.map(x =>
+    '<button class="tab' + (x.id === S.game ? " on" : "") + '" data-g="' + x.id + '">' +
+    x.title + '<small>' + x.emoji + '</small></button>').join("");
+  document.getElementById("choices").innerHTML = g.choices.map(c =>
+    '<button class="ch' + (c.id === S.choice ? " on" : "") + '" data-c="' + c.id + '">' +
+    esc(c.label) + '<i>×' + c.mult + '</i></button>').join("");
+  document.getElementById("bets").innerHTML = PRESETS.map(b =>
+    '<button class="bet' + (S.bet === b ? " on" : "") + '" data-b="' + b + '">' + money(b) + '</button>').join("");
+  document.getElementById("cap").textContent = g.title;
+  document.getElementById("face").textContent = g.emoji;
+  document.getElementById("bal").textContent = "Баланс: " + money(S.data.me.balance);
+  document.getElementById("left").textContent = "Круток: " + S.data.me.left + " / " + S.data.me.cap;
+  document.getElementById("spin").disabled = S.busy || !S.choice;
+  document.querySelectorAll("[data-g]").forEach(el => el.onclick = () => {
+    S.game = el.dataset.g; S.choice = curGame().choices[0].id; render();
+  });
+  document.querySelectorAll("[data-c]").forEach(el => el.onclick = () => { S.choice = el.dataset.c; render(); });
+  document.querySelectorAll("[data-b]").forEach(el => el.onclick = () => {
+    S.bet = +el.dataset.b; document.getElementById("betInput").value = ""; render();
+  });
+}
+function setFace(text, cls){
+  const f = document.getElementById("face");
+  f.textContent = text; f.className = "big" + (cls ? " " + cls : "");
+}
+async function spin(){
+  if (S.busy || !S.choice) return;
+  S.busy = true; render();
+  const f = document.getElementById("face");
+  f.classList.add("roll");
+  document.getElementById("val").textContent = "";
+  document.getElementById("sub").textContent = "крутится…";
+  const g = curGame();
+  const faces = g.emoji;
+  const shuffler = setInterval(() => { f.textContent = faces; }, 90);
+  try{
+    const r = await fetch("/api/casino/play", {method:"POST", headers,
+      body: JSON.stringify({game: S.game, choice: S.choice, bet: S.bet})});
+    const d = await r.json();
+    await new Promise(res => setTimeout(res, 1600));
+    clearInterval(shuffler);
+    f.classList.remove("roll");
+    if (d.error){
+      toast(d.error); setFace(faces, ""); document.getElementById("sub").textContent = "выбери ставку и жми";
+      S.busy = false; return;
+    }
+    setFace(g.id === "dice" ? ["", "⚀","⚁","⚂","⚃","⚄","⚅"][d.value] : String(d.value),
+            d.won ? "win" : "lose");
+    document.getElementById("val").textContent = d.won
+      ? "ВЫИГРЫШ  +" + money(d.payout) : "ПРОИГРЫШ  −" + money(d.bet);
+    document.getElementById("val").className = "val " + (d.won ? "win" : "lose");
+    document.getElementById("sub").textContent = "Выпало " + d.value + " · ставка «" + d.choice_label + "»";
+    S.data.me.balance = d.balance; S.data.me.left = d.left;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(d.won ? "success" : "error");
+  }catch(e){
+    clearInterval(shuffler); f.classList.remove("roll"); toast("Связь потерялась");
+  }
+  S.busy = false; render();
+}
+document.getElementById("betSet").onclick = () => {
+  const v = parseInt(document.getElementById("betInput").value, 10);
+  const lim = S.data.limits;
+  if (!v || v < lim.min || v > lim.max){ toast("Ставка от " + money(lim.min) + " до " + money(lim.max)); return; }
+  S.bet = v; render();
+};
+document.getElementById("spin").onclick = spin;
+if(tg){ tg.ready(); tg.expand(); }
+(async () => {
+  try{
+    const r = await fetch("/api/casino", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; S.game = d.games[0].id; S.choice = d.games[0].choices[0].id;
+    S.bet = Math.min(500, d.limits.max);
+    render();
+  }catch(e){ toast("Не смог загрузить"); }
+})();
 </script>
 </body>
 </html>
