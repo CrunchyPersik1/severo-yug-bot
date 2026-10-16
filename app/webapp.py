@@ -20,12 +20,14 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import buyer
+from . import themes
 from . import cases as cases_mod
 from . import roulette as roulette_mod
 from . import upgrader
 from .cards import CARDS, CARDS_BY_ID, get_card, image_url, rarity_name
 from .cases import roll_case_card
 from .games_page import CASE_PAGE, ROULETTE_PAGE
+from .webtheme import inject
 from .items import ACCESSORIES
 from .render import describe_ability
 from .roulette import (
@@ -186,7 +188,7 @@ async def api_buy(request: Request) -> JSONResponse:
 
 @router.get("/app", response_class=HTMLResponse)
 async def mini_app() -> HTMLResponse:
-    return HTMLResponse(PAGE)
+    return HTMLResponse(inject(PAGE))
 
 PAGE = r"""<!doctype html>
 <html lang="ru">
@@ -549,12 +551,12 @@ def _reset_text() -> str:
 
 @router.get("/case_app", response_class=HTMLResponse)
 async def case_app_page() -> HTMLResponse:
-    return HTMLResponse(CASE_PAGE)
+    return HTMLResponse(inject(CASE_PAGE))
 
 
 @router.get("/roulette_app", response_class=HTMLResponse)
 async def roulette_app_page() -> HTMLResponse:
-    return HTMLResponse(ROULETTE_PAGE)
+    return HTMLResponse(inject(ROULETTE_PAGE))
 
 
 async def _games_user(request: Request) -> tuple[int, JSONResponse | None]:
@@ -677,12 +679,12 @@ async def api_roulette_spin(request: Request) -> JSONResponse:
 
 @router.get("/market", response_class=HTMLResponse)
 async def market_app() -> HTMLResponse:
-    return HTMLResponse(MARKET_PAGE)
+    return HTMLResponse(inject(MARKET_PAGE))
 
 
 @router.get("/stocks", response_class=HTMLResponse)
 async def stocks_app() -> HTMLResponse:
-    return HTMLResponse(STOCKS_PAGE)
+    return HTMLResponse(inject(STOCKS_PAGE))
 
 
 STOCKS_PAGE = r"""<!doctype html>
@@ -1214,7 +1216,7 @@ async def api_upgrader_spin(request: Request) -> JSONResponse:
 
 @router.get("/upgrader", response_class=HTMLResponse)
 async def upgrader_app() -> HTMLResponse:
-    return HTMLResponse(UPGRADER_PAGE)
+    return HTMLResponse(inject(UPGRADER_PAGE))
 
 
 
@@ -1682,7 +1684,7 @@ async def api_buyer_dupes(request: Request) -> JSONResponse:
 
 @router.get("/buyer", response_class=HTMLResponse)
 async def buyer_app() -> HTMLResponse:
-    return HTMLResponse(BUYER_PAGE)
+    return HTMLResponse(inject(BUYER_PAGE))
 
 
 BUYER_PAGE = r"""<!doctype html>
@@ -1834,3 +1836,72 @@ load();
 </body>
 </html>
 """
+
+
+
+# --------------------------------------------------------------------------- #
+# Стили мини-аппок
+# --------------------------------------------------------------------------- #
+
+
+def _theme_payload(user_id: int, current: str, owned: list[str]) -> dict[str, Any]:
+    active = themes.get(current)
+    return {
+        "theme": active.id,
+        "vars": active.vars,
+        "particles": active.particles,
+        "owned": owned,
+        "all": [
+            {
+                "id": theme.id,
+                "name": theme.name,
+                "price": theme.price,
+                "acc": theme.acc,
+                "bg": theme.bg,
+                "panel": theme.panel,
+                "owned": theme.price == 0 or theme.id in owned,
+                "active": theme.id == active.id,
+            }
+            for theme in themes.THEMES
+        ],
+    }
+
+
+@router.get("/api/theme")
+async def api_theme(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError:
+        # незнакомому отдаём классику, чтобы страница всё равно оформилась
+        return JSONResponse(_theme_payload(0, "", []))
+
+    user_id = int(user["id"])
+    owned = await state.db.owned_themes(user_id)
+    current = await state.db.current_theme(user_id)
+    return JSONResponse(_theme_payload(user_id, current, owned))
+
+
+@router.post("/api/theme/set")
+async def api_theme_set(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    theme_id = str(body.get("theme", ""))
+    theme = themes.get(theme_id)
+    if theme.id != theme_id:
+        return JSONResponse({"error": "Такого стиля нет."}, status_code=400)
+
+    owned = await state.db.owned_themes(user_id)
+    if theme.price > 0 and theme.id not in owned:
+        return JSONResponse(
+            {"error": f"Стиль «{theme.name}» не куплен — он в магазине."}, status_code=400
+        )
+
+    await state.db.set_theme(user_id, theme.id)
+    return JSONResponse({"ok": True, "theme": theme.id, "payload": _theme_payload(user_id, theme.id, owned)})

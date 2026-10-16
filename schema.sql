@@ -495,3 +495,16 @@ create table if not exists buyer_log (
     created_at timestamptz not null default now()
 );
 create index if not exists buyer_log_user_idx on buyer_log (user_id, created_at desc);
+
+-- ===================================================================== --
+-- Стили мини-аппок
+-- ===================================================================== --
+
+alter table players add column if not exists theme text;
+
+create table if not exists player_themes (
+    user_id    bigint not null references players(user_id) on delete cascade,
+    theme_id   text not null,
+    created_at timestamptz not null default now(),
+    primary key (user_id, theme_id)
+);

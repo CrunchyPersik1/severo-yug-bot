@@ -1184,6 +1184,56 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Стили мини-аппок
+    # ------------------------------------------------------------------ #
+
+    async def owned_themes(self, user_id: int) -> list[str]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select theme_id from player_themes where user_id = $1", user_id
+            )
+        return [str(row["theme_id"]) for row in rows]
+
+    async def grant_theme(self, user_id: int, theme_id: str) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into player_themes (user_id, theme_id) values ($1, $2) "
+                "on conflict do nothing",
+                user_id,
+                theme_id,
+            )
+
+    async def current_theme(self, user_id: int) -> str:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select theme from players where user_id = $1", user_id
+            )
+        return str(value or "")
+
+    async def set_theme(self, user_id: int, theme_id: str) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update players set theme = $2 where user_id = $1", user_id, theme_id
+            )
+
+    async def level_top(self, limit: int = 10) -> list[dict[str, Any]]:
+        """Топ по уровням: уровень, опыт и карт собрано."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                """
+                select p.user_id, p.first_name, p.username,
+                       coalesce(p.level, 1) as level,
+                       coalesce(p.xp, 0) as xp,
+                       (select count(*) from collection c where c.user_id = p.user_id) as cards
+                  from players p
+                 order by coalesce(p.level, 1) desc, coalesce(p.xp, 0) desc
+                 limit $1
+                """,
+                int(limit),
+            )
+        return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------ #
     # Скупщик
     # ------------------------------------------------------------------ #
 

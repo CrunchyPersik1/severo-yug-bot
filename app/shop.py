@@ -17,6 +17,7 @@ from .cards import CARDS, SECRET_CARD_IDS, get_card
 from .db import Database
 from .items import ACCESSORIES, Item
 from .market import market_price
+from . import themes as themes_mod
 from .market_repo import MarketRepo
 
 log = logging.getLogger(__name__)
@@ -99,6 +100,18 @@ def catalog() -> list[ShopEntry]:
                 subtitle=item.summary,
                 price=ACCESSORY_PRICE,
                 payload={"item_id": item.id},
+            )
+        )
+
+    for theme in themes_mod.shop_entries():
+        entries.append(
+            ShopEntry(
+                sku=f"theme:{theme.id}",
+                kind="theme",
+                title=f"Стиль «{theme.name}»",
+                subtitle="Меняет оформление всех мини-аппок",
+                price=theme.price,
+                payload={"theme_id": theme.id},
             )
         )
     return entries
@@ -201,6 +214,20 @@ class ShopRepo:
             item_id = int(entry.payload["accessory"])
             await self._add_accessory(con, user_id, item_id)
             granted.append(accessory_item(item_id).name)
+        elif entry.kind == "theme":
+            theme_id = str(entry.payload["theme_id"])
+            theme = themes_mod.get(theme_id)
+            await con.execute(
+                "insert into player_themes (user_id, theme_id) values ($1, $2) "
+                "on conflict do nothing",
+                user_id,
+                theme_id,
+            )
+            # сразу включаем — купил, значит хочет видеть
+            await con.execute(
+                "update players set theme = $2 where user_id = $1", user_id, theme_id
+            )
+            granted.append(f"стиль «{theme.name}»")
         else:
             item_id = int(entry.payload["item_id"])
             await self._add_accessory(con, user_id, item_id)

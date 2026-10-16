@@ -27,6 +27,7 @@ from . import (
     promo,
     referrals,
     render,
+    themes,
     team_battle,
 )
 from .battle import ability_targets
@@ -2681,3 +2682,49 @@ async def cmd_buyer(message: Message) -> None:
             ]
         ),
     )
+
+
+
+# --------------------------------------------------------------------------- #
+# Стили и уровни
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("style", "стиль", "стили"))
+@router.message(NormalizedText("стиль", "стили", "оформление"))
+async def cmd_style(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    owned = await db.owned_themes(user.id)
+    current = await db.current_theme(user.id)
+    text, keyboard = render.render_themes(current, owned)
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("th:"))
+async def cb_theme(callback: CallbackQuery, db: Database) -> None:
+    assert callback.data is not None
+    user_id = callback.from_user.id
+    theme_id = callback.data.split(":", 1)[1]
+    theme = themes.get(theme_id)
+    if theme.id != theme_id:
+        await callback.answer("Такого стиля нет", show_alert=True)
+        return
+    owned = await db.owned_themes(user_id)
+    if theme.price > 0 and theme.id not in owned:
+        await callback.answer(
+            f"Стиль «{theme.name}» не куплен — он в магазине (/shop)", show_alert=True
+        )
+        return
+    await db.set_theme(user_id, theme.id)
+    text, keyboard = render.render_themes(theme.id, owned)
+    await _safe_edit(callback, text, keyboard)
+    await callback.answer(f"Стиль «{theme.name}» включён")
+
+
+@router.message(Command("levels", "уровни", "lvl", "leveltop"))
+@router.message(NormalizedText("топ уровней", "топ по уровням", "уровни"))
+async def cmd_levels(message: Message, db: Database) -> None:
+    await message.answer(render.render_level_top(await db.level_top(10)))

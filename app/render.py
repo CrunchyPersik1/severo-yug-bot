@@ -1887,3 +1887,49 @@ def clicker_hud(
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="kl:r")],
     ]
     return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# --------------------------------------------------------------------------- #
+# Стили и уровни
+# --------------------------------------------------------------------------- #
+
+
+def render_themes(current: str, owned: list[str]) -> tuple[str, InlineKeyboardMarkup]:
+    from . import themes as themes_mod
+
+    lines = [
+        "🎨 <b>Стили мини-аппок</b>",
+        "",
+        "Выбранный стиль меняет оформление магазина, рынка, скупщика и апгрейдера.",
+        "Новые стили продаются в магазине — /shop.",
+        "",
+    ]
+    rows: list[list[InlineKeyboardButton]] = []
+    for theme in themes_mod.THEMES:
+        has = theme.price == 0 or theme.id in owned
+        mark = "✅" if theme.id == current else ("🎨" if has else "🔒")
+        price = "бесплатно" if not theme.price else _money(theme.price)
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{mark} {theme.name} · {price}",
+                    callback_data=f"th:{theme.id}",
+                )
+            ]
+        )
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def render_level_top(rows: list[dict[str, Any]]) -> str:
+    lines = ["🎖 <b>Топ по уровням</b>", ""]
+    medals = ["🥇", "🥈", "🥉"]
+    for index, row in enumerate(rows):
+        medal = medals[index] if index < len(medals) else f"{index + 1}."
+        name = row.get("first_name") or row.get("username") or "игрок"
+        lines.append(
+            f"{medal} {esc(name)} — ур. <b>{int(row['level'])}</b> · "
+            f"{int(row['xp'])} XP · {int(row['cards'])} карт"
+        )
+    if not rows:
+        lines.append("Пока пусто.")
+    return "\n".join(lines)
