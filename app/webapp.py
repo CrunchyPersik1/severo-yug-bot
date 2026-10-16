@@ -747,6 +747,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .stat span{display:block;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .stat b{display:block;font-size:16px;font-weight:900;margin-top:4px}
 
+.pf{margin:6px 15px 2px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:13px;position:relative;overflow:hidden}
+.pf::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
+.pf .pt{font-size:10.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--muted);
+  font-weight:800;padding-left:8px}
+.pf .pr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;padding-left:8px}
+.pf .pr>div{display:flex;flex-direction:column;gap:3px}
+.pf .pr span{font-size:10px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.pf .pr b{font-size:16px;font-weight:900;letter-spacing:-.3px}
+.pf .sub{font-size:11.5px;color:var(--muted);margin-top:9px;padding-left:8px;line-height:1.5}
 .bar{display:flex;gap:7px;padding:4px 15px 10px;overflow-x:auto;scrollbar-width:none}
 .bar::-webkit-scrollbar{display:none}
 .tf{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--muted);
@@ -810,6 +820,16 @@ svg{display:block;width:100%;height:230px}
   <div class="stat"><span>Продажа</span><b id="stSell">…</b></div>
   <div class="stat"><span>У тебя акций</span><b id="stShares">…</b></div>
   <div class="stat"><span>Твоя прибыль</span><b id="stPnl">…</b></div>
+</div>
+
+<div class="pf" id="pf">
+  <div class="pt">Портфель</div>
+  <div class="pr">
+    <div><span>Вложено</span><b id="pfSpent">…</b></div>
+    <div><span>Сейчас</span><b id="pfValue">…</b></div>
+    <div><span>Прибыль</span><b id="pfPnl">…</b></div>
+  </div>
+  <div class="sub" id="pfSub"></div>
 </div>
 
 <div class="bar" id="tfBar"></div>
@@ -893,9 +913,23 @@ function draw(){
   const a = document.getElementById("axis");
   a.innerHTML = [top, (top + bot) / 2, bot].map(v => "<span>" + money(v) + "</span>").join("");
 }
+function paintPortfolio(){
+  const p = S.data.portfolio;
+  const positions = S.data.stocks.filter(x => x.my_shares > 0);
+  document.getElementById("pfSpent").textContent = money(p.spent);
+  document.getElementById("pfValue").textContent = money(p.value);
+  const pnl = document.getElementById("pfPnl");
+  pnl.textContent = (p.pnl >= 0 ? "+" : "") + money(p.pnl);
+  pnl.className = p.pnl >= 0 ? "up" : "down";
+  document.getElementById("pfSub").textContent = positions.length
+    ? "Позиций: " + positions.length + " · " +
+      positions.map(x => x.name + " ×" + x.my_shares).join(", ")
+    : "Акций нет — портфель пуст.";
+}
 function paint(){
   const s = cur();
   if (!s){ return; }
+  paintPortfolio();
   const down = s.change < 0;
   document.getElementById("nm").textContent = s.name;
   document.getElementById("sub").textContent = "акция · " + (s.pump ? "идёт памп" : "торги идут");
