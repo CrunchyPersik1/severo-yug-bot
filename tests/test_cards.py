@@ -128,7 +128,7 @@ def test_teachers_are_stronger_and_varied():
 
 
 def test_points_match_spec():
-    assert CARDS_BY_ID["valeriya"].points == 15000
+    assert CARDS_BY_ID["valeriya"].points == 21000
     assert CARDS_BY_ID["oleg"].points == 250
     assert CARDS_BY_ID["amir_1"].points == CARDS_BY_ID["amir_2"].points == 5000
 

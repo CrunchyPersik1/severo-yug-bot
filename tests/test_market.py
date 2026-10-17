@@ -105,9 +105,9 @@ def test_effective_stats_never_drop_below_one():
 
 def test_market_price_grows_with_rarity_and_upgrades():
     rare = get_card("oleg")        # 250, редкий
-    ultra = get_card("valeriya")   # 15000, ультра
+    ultra = get_card("valeriya")   # 21000, ультра
     assert market_price(rare) == 250
-    assert market_price(ultra) == 60000
+    assert market_price(ultra) == 84000
     # 50 + 15 = 65 процентных пунктов → множитель 1 + 65*2/100 = 2.3
     assert market_price(rare, {"atk": 50, "def": 15}) == round(250 * 2.3)
 

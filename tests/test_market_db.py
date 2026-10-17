@@ -97,7 +97,7 @@ def test_dumping_marks_lot_and_hurts_rating():
         try:
             seller = 910003
             await reset_users(db, seller)
-            await prepare(db, seller, "Dumper", ["valeriya"])  # 15000 * 4 = 60000
+            await prepare(db, seller, "Dumper", ["valeriya"])  # 21000 * 4 = 84000
 
             unit = await repo.owned_unit(seller, ("card", "valeriya"))
             dirt = await repo.create_lot(seller, unit, 5000)  # 8% от рыночной
