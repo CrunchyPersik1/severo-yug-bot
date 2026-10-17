@@ -1865,12 +1865,17 @@ main{padding:14px 18px}
 }
 /* Две волны: цвет берётся из темы, поэтому у каждого стиля свой оттенок */
 .item .pic .wave{
-  position:absolute;left:0;bottom:-1px;width:200%;height:64%;opacity:.30;z-index:0;
+  position:absolute;left:0;bottom:-1px;width:200%;height:64%;opacity:.38;z-index:0;
   pointer-events:none;animation:buyerWave 14s linear infinite
 }
 .item .pic .wave.b{
-  height:44%;opacity:.20;animation-duration:21s;animation-direction:reverse
+  height:44%;opacity:.26;animation-duration:21s;animation-direction:reverse
 }
+.item .pic .wave path{fill:var(--acc)}
+.item .pic .wave.b path{fill:var(--acc2)}
+/* Лёгкое покачивание голых карточек: заметно, но не мешает */
+.item .pic span.art{animation:buyerBob 4.5s ease-in-out infinite}
+@keyframes buyerBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 @keyframes buyerWave{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .item .pic .art{position:relative;z-index:1;display:flex;align-items:center;justify-content:center}
 .item .pic img.art{width:100%;height:100%;object-fit:cover}
@@ -1881,7 +1886,7 @@ main{padding:14px 18px}
 }
 body .bal{animation:buyerGlow 7s ease-in-out infinite}
 @media (prefers-reduced-motion: reduce){
-  .item .pic .wave,body .bal{animation:none}
+  .item .pic .wave,.item .pic span.art,body .bal{animation:none}
 }
 .item .body{padding:10px 11px 0}
 .item .nm{font-weight:700;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
