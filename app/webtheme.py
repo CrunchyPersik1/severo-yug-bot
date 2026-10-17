@@ -91,12 +91,12 @@ POLISH = r"""<style>
   .price,.pr,.bal,.wallet,.money{ color:var(--acc2)!important }
 
   /* Балансы: знак валюты, ровные цифры и мягкая подложка */
-  .bal,.b.bal{
+  .bal,.b.bal,.wallet{
     font-variant-numeric:tabular-nums;
     letter-spacing:.3px;
     font-weight:900;
   }
-  body .bal,body .b.bal{
+  body .bal,body .b.bal,body .wallet{
     background:color-mix(in srgb, var(--acc) 13%, var(--panel))!important;
     border:1px solid color-mix(in srgb, var(--acc) 28%, var(--line))!important;
     border-radius:999px!important;

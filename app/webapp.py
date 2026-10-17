@@ -292,7 +292,7 @@ main{padding:0 16px}
 <div class="leafbar">🍁 🍂 🍁 🍂 🍁</div>
 <header>
   <h1>Северо-Юг<small>Школьная осень · магазин</small></h1>
-  <div class="wallet">🍁 <span id="balance">…</span></div>
+  <div class="wallet"><span id="balance">…</span></div>
 </header>
 <div class="tabs" id="tabs"></div>
 <main id="list"><div class="empty">Загружаю ассортимент…</div></main>
@@ -361,7 +361,7 @@ async function load(){
     if(data.error){ toast(data.error, "bad"); return; }
     state.items = data.items;
     state.balance = data.me.balance;
-    document.getElementById("balance").textContent = money(state.balance);
+    document.getElementById("balance").textContent = "$ " + money(state.balance);
     renderTabs(); renderList();
   }catch(e){ toast("Не смог загрузить магазин", "bad"); }
 }
@@ -380,7 +380,7 @@ async function buy(btn){
     if(data.error){ toast(data.error, "bad"); }
     else{
       state.balance = data.balance;
-      document.getElementById("balance").textContent = money(state.balance);
+      document.getElementById("balance").textContent = "$ " + money(state.balance);
       toast("🍁 " + data.title + " — твоё! Получено: " + data.granted.join(", "), "ok");
       if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
     }
@@ -1176,7 +1176,7 @@ async function load(){
     const d = await r.json();
     if(d.error){ toast(d.error, "bad"); return; }
     state.lots = d.lots; state.mine = d.mine; state.balance = d.me.balance;
-    document.getElementById("balance").textContent = money(state.balance);
+    document.getElementById("balance").textContent = "$ " + money(state.balance);
     document.getElementById("sub").textContent = "лотов: " + d.me.total + " · репутация " + d.me.rating;
     renderTabs(); renderList();
   }catch(e){ toast("Не смог загрузить рынок", "bad"); }
