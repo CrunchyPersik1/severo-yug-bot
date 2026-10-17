@@ -12,12 +12,12 @@ from app.cards import (
 EXPECTED = {
     "rare": 4,
     "superrare": 4,
-    "epic": 10,
+    "epic": 9,
     "mythic": 9,
     "legendary": 4,
     "secret": 5,
     "ultimate": 2,
-    "ultra": 1,
+    "ultra": 2,
     "teacher": 15,
 }
 

@@ -249,7 +249,7 @@ CARDS: tuple[Card, ...] = (
     _c("amir_1", "Амир", "epic", 5000, 560, 40, "Песчаная буря", 2, surname="Насибуллин", damage=16, poison=14, poison_turns=2),
     _c("amir_2", "Амир", "epic", 5000, 580, 44, "Клинок ветра", 2, surname="Нугуманов", damage=18, hits=2),
     _c("yana", "Яна", "epic", 5000, 540, 38, "Очарование", 3, damage=12, stun=1),
-    _c("daniyar_epic", "Данияр", "epic", 3500, 700, 34, "Стойкость", 3, surname="Садыков", shield=35, heal=20),
+    _c("daniyar_epic", "Данияр", "ultra", 3500, 700, 34, "Стойкость", 3, surname="Садыков", shield=35, heal=20),
     _c("milana", "Милана", "epic", 2500, 520, 36, "Грация", 3, dodge=1, counter=25, counter_turns=2),
     _c("evelina", "Эвелина", "epic", 3500, 560, 42, "Вихрь", 2, damage=12, poison=10, poison_turns=2),
     _c("tamerlan_epic", "Тамерлан", "epic", 4000, 620, 46, "Натиск", 2, surname="Хазиатметов", damage=30, shield=12),

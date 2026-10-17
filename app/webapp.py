@@ -866,7 +866,7 @@ svg{display:block;width:100%;height:230px}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-const TFS = [["1м", 60], ["5м", 44], ["15м", 30], ["1ч", 18]];
+const TFS = [["1м", 30], ["5м", 22], ["15м", 14], ["1ч", 9]];
 let S = {data: null, slug: null, tf: 0, shares: 1, busy: false};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
@@ -881,7 +881,8 @@ function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 // Свечи: бьём историю на N кусков и считаем OHLC каждого
 function candles(history, count){
   const out = [];
-  const size = Math.max(1, Math.floor(history.length / count));
+  // Меньше двух точек на свечу — это не свеча, а палочка: open == close.
+  const size = Math.max(2, Math.ceil(history.length / count));
   for (let i = 0; i < history.length; i += size){
     const chunk = history.slice(i, i + size);
     if (!chunk.length) continue;
@@ -889,6 +890,9 @@ function candles(history, count){
   }
   return out;
 }
+// Цвета свечей. В SVG-атрибутах var() не работает — только конкретный цвет.
+const GREEN = "#9dc941", RED = "#e0407a";
+
 function draw(){
   const s = cur();
   if (!s) return;
@@ -897,7 +901,7 @@ function draw(){
   const lo = Math.min.apply(null, bars.map(b => b.l));
   const pad = (hi - lo) * 0.12 || 1;
   const top = hi + pad, bot = lo - pad;
-  const n = bars.length, w = 320 / n, bw = Math.max(3, w * 0.62);
+  const n = bars.length, w = 320 / n, bw = Math.max(4, w * 0.68);
   const y = v => 8 + (1 - (v - bot) / (top - bot)) * 214;
   let svg = "";
   // сетка
@@ -908,12 +912,12 @@ function draw(){
   bars.forEach((b, i) => {
     const x = i * w + w / 2;
     const up = b.c >= b.o;
-    const col = up ? "var(--up)" : "var(--down)";
+    const col = up ? GREEN : RED;
     svg += '<line x1="' + x + '" y1="' + y(b.h) + '" x2="' + x + '" y2="' + y(b.l) +
            '" stroke="' + col + '" stroke-width="1"/>';
     const y1 = Math.min(y(b.o), y(b.c)), y2 = Math.max(y(b.o), y(b.c));
     svg += '<rect x="' + (x - bw / 2) + '" y="' + y1 + '" width="' + bw + '" height="' +
-           Math.max(1.6, y2 - y1) + '" fill="' + col + '" rx="1"/>';
+           Math.max(2.5, y2 - y1) + '" fill="' + col + '" rx="1.5"/>';
   });
   const last = bars[bars.length - 1];
   svg += '<line x1="0" y1="' + y(last.c) + '" x2="320" y2="' + y(last.c) +
@@ -2125,6 +2129,7 @@ async def api_hub(request: Request) -> JSONResponse:
                         "buy_price": item["buy_price"],
                         "sell_price": item["sell_price"],
                         "pump": item["pump"],
+                        "history": [int(v) for v in item["history"][-60:]],
                     }
                 )
         except Exception:  # noqa: BLE001
@@ -2231,6 +2236,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mk-rate{text-align:center;font-size:19px;font-weight:900;letter-spacing:.2px;color:#7fd0a0}
 .mk-rate.down{color:#e28d92}
+.mkcv{display:block;width:100%;height:84px;margin-top:10px;overflow:visible}
 .mk-dots{display:flex;gap:5px;justify-content:center;margin-top:7px}
 .mk-dots i{width:16px;height:3px;border-radius:99px;background:var(--line);display:block;transition:.3s}
 .mk-dots i.on{background:var(--acc);width:26px}
@@ -2296,6 +2302,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   <section class="panel on" id="p-home">
     <div class="tickwrap">
       <div class="market" id="market"></div>
+      <svg class="mkcv" id="mkcv" viewBox="0 0 320 92" preserveAspectRatio="none"></svg>
       <div class="mk-dots" id="mkDots"></div>
     </div>
     <div class="grid" id="tiles"></div>
@@ -2346,6 +2353,39 @@ function show(id){
   window.scrollTo({top:0, behavior:"smooth"});
 }
 let mkIndex = 0, mkTimer = null;
+function drawMini(s){
+  const el = document.getElementById("mkcv");
+  if (!el) return;
+  const hist = (s && s.history) || [];
+  el.innerHTML = "";
+  if (hist.length < 3) return;
+  const size = Math.max(2, Math.ceil(hist.length / 22));
+  const bars = [];
+  for (let i = 0; i < hist.length; i += size){
+    const ch = hist.slice(i, i + size);
+    if (!ch.length) continue;
+    bars.push({o: ch[0], c: ch[ch.length - 1],
+               h: Math.max.apply(null, ch), l: Math.min.apply(null, ch)});
+  }
+  const hi = Math.max.apply(null, bars.map(b => b.h));
+  const lo = Math.min.apply(null, bars.map(b => b.l));
+  const pad = (hi - lo) * 0.15 || 1;
+  const top = hi + pad, bot = lo - pad;
+  const n = bars.length, w = 320 / n, bw = Math.max(4, w * 0.66);
+  const y = v => 6 + (1 - (v - bot) / (top - bot)) * 80;
+  let svg = "";
+  bars.forEach((b, i) => {
+    const x = i * w + w / 2;
+    const up = b.c >= b.o;
+    const col = up ? "#9dc941" : "#e0407a";
+    svg += '<line x1="' + x + '" y1="' + y(b.h) + '" x2="' + x + '" y2="' + y(b.l) +
+      '" stroke="' + col + '" stroke-width="1"/>';
+    const y1 = Math.min(y(b.o), y(b.c)), y2 = Math.max(y(b.o), y(b.c));
+    svg += '<rect x="' + (x - bw / 2) + '" y="' + y1 + '" width="' + bw + '" height="' +
+      Math.max(2.5, y2 - y1) + '" fill="' + col + '" rx="1.5"/>';
+  });
+  el.innerHTML = svg;
+}
 function paintCoin(){
   const list = S.data.stocks;
   const box = document.getElementById("market");
@@ -2361,6 +2401,7 @@ function paintCoin(){
     '<div class="mk-rate' + (down ? " down" : "") + '">' +
       (down ? "" : "+") + s.change + '%' +
       (s.pump ? "  ▲" : "") + '</div>';
+  drawMini(s);
   document.getElementById("mkDots").innerHTML = list.map((_, i) =>
     '<i class="' + (i === mkIndex % list.length ? "on" : "") + '"></i>').join("");
 }
