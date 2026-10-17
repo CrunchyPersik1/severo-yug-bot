@@ -24,6 +24,7 @@ from . import (
     dice_casino,
     event,
     kopilka,
+    profiles,
     promo,
     referrals,
     render,
@@ -2764,3 +2765,97 @@ async def cmd_event_trigger(message: Message, db: Database) -> None:
         f"собрать нужно <b>{ev.NEED}</b>.\n\n"
         "Заходи в приложение — там кнопка «СОБЫТИЕ»."
     )
+
+
+
+# --------------------------------------------------------------------------- #
+# Награды и теги профиля — выдаёт только админ
+# --------------------------------------------------------------------------- #
+
+
+async def _profile_target(message: Message, market: MarketRepo, parts: list[str]):
+    """Куда вешаем награду: ответ на сообщение, @ник или id."""
+    reply = message.reply_to_message
+    if reply is not None and reply.from_user is not None:
+        return int(reply.from_user.id), reply.from_user.first_name
+    if not parts:
+        return None, None
+    raw = parts[0].lstrip("@")
+    if raw.startswith("id"):
+        raw = raw[2:]
+    if raw.isdigit():
+        return int(raw), None
+    found = await market.find_by_username("@" + raw)
+    if found is None:
+        return None, None
+    return int(found["user_id"]), found["first_name"]
+
+
+@router.message(Command("награда", "reward"))
+async def cmd_reward(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    text = " ".join(parts[2:]).strip() if len(parts) > 2 else ""
+    if target_id is None or not text:
+        await message.answer(
+            "Формат: <code>/reward @ник текст награды</code>\n"
+            "Или ответом на сообщение: <code>/reward текст награды</code>\n"
+            "Эмодзи в начале текста станет иконкой."
+        )
+        return
+    icon = "🏆"
+    first = text.split()[0] if text.split() else ""
+    if first and not first[0].isalnum():
+        icon, text = first, " ".join(text.split()[1:]).strip()
+        if not text:
+            text, icon = icon, "🏆"
+    await db.ensure_player(target_id, None, target_name)
+    await db.profile_reward_add(target_id, icon, text[:80])
+    await message.answer(
+        f"🏆 Награда «{render.esc(icon)} {render.esc(text[:80])}» выдана "
+        f"<b>{render.esc(target_name or target_id)}</b>."
+    )
+
+
+@router.message(Command("тег", "tag"))
+async def cmd_tag_cmd(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    tag = (parts[2] if len(parts) > 2 else "").strip().lower().lstrip("-")
+    if target_id is None:
+        await message.answer("Формат: <code>/tag @ник supporter</code> или ответом на сообщение")
+        return
+    if not tag:
+        await message.answer(
+            "Теги: " + ", ".join(f"<code>{key}</code> — {label}" for key, label in profiles.TAGS.items())
+        )
+        return
+    if tag not in profiles.TAGS:
+        await message.answer("Не знаю такой тег. Доступные: " + ", ".join(profiles.TAGS))
+        return
+    await db.ensure_player(target_id, None, target_name)
+    await db.profile_tag_set(target_id, tag, True)
+    await message.answer(
+        f"Тег {profiles.tag_label(tag)} выдан <b>{render.esc(target_name or target_id)}</b>."
+    )
+
+
+@router.message(Command("снятьтег", "untag"))
+async def cmd_untag(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    tag = (parts[2] if len(parts) > 2 else "").strip().lower()
+    if target_id is None or tag not in profiles.TAGS:
+        await message.answer("Формат: <code>/untag @ник supporter</code>")
+        return
+    await db.profile_tag_set(target_id, tag, False)
+    await message.answer(f"Тег снят с <b>{render.esc(target_name or target_id)}</b>.")
