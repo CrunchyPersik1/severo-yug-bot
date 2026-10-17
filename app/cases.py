@@ -40,7 +40,7 @@ def roll_case_card(rng: random.Random | None = None) -> Card:
 
 
 def case_contents() -> str:
-    return "эпические и выше, вплоть до ультралегендарных"
+    return "эпические и выше, вплоть до ультралегендарных (есть и ультимативные)"
 
 
 # Цвета редкостей для ленты в мини-аппке.
@@ -49,6 +49,7 @@ RARITY_COLORS: dict[str, str] = {
     "mythic": "#ef4444",
     "legendary": "#eab308",
     "secret": "#64748b",
+    "ultimate": "#e879f9",
     "ultra": "#22d3ee",
     "teacher": "#a16207",
     "rare": "#94a3b8",
