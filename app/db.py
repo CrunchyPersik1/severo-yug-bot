@@ -1232,6 +1232,37 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Бан
+    # ------------------------------------------------------------------ #
+
+    async def is_banned(self, user_id: int) -> bool:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select banned from players where user_id = $1", user_id
+            )
+        return bool(value)
+
+    async def set_ban(self, user_id: int, on: bool, reason: str = "") -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update players set banned = $2, ban_reason = $3, "
+                "banned_at = case when $2 then now() else null end "
+                "where user_id = $1",
+                user_id,
+                bool(on),
+                reason[:200],
+            )
+
+    async def ban_info(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select banned, ban_reason, first_name, username from players "
+                "where user_id = $1",
+                user_id,
+            )
+        return dict(row) if row else {}
+
+    # ------------------------------------------------------------------ #
     # Профили
     # ------------------------------------------------------------------ #
 

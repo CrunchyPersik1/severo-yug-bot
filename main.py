@@ -15,6 +15,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import ErrorEvent, Update
 from fastapi import FastAPI, Request, Response
 
+from app.ban import BanMiddleware
 from app.battle_service import BattleService
 from app.boss_repo import BossRepo
 from app.cards import CARDS, card_rows
@@ -121,6 +122,9 @@ async def lifespan(app: FastAPI):
 
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    # Бан: забаненный не доходит ни до одного обработчика.
+    dp.message.middleware(BanMiddleware())
+    dp.callback_query.middleware(BanMiddleware())
 
     @dp.errors()
     async def on_error(event: ErrorEvent) -> bool:

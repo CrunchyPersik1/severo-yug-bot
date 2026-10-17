@@ -2933,3 +2933,71 @@ async def cmd_untag(message: Message, db: Database, market: MarketRepo) -> None:
         return
     await db.profile_tag_set(target_id, tag, False)
     await message.answer(f"Тег снят с <b>{render.esc(target_name or target_id)}</b>.")
+
+
+
+# --------------------------------------------------------------------------- #
+# Бан
+# --------------------------------------------------------------------------- #
+
+
+@router.message(Command("ban", "бан"))
+async def cmd_ban(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    reason = " ".join(parts[2:]).strip() if len(parts) > 2 else "без причины"
+    if target_id is None:
+        await message.answer(
+            "Формат: <code>/ban @ник причина</code>\n"
+            "Или ответом на сообщение: <code>/ban причина</code>"
+        )
+        return
+    if target_id in settings.admin_ids:
+        await message.answer("Себя банить нельзя.")
+        return
+    await db.ensure_player(target_id, None, target_name)
+    await db.set_ban(target_id, True, reason)
+    await message.answer(
+        f"🚫 <b>Забанен:</b> {render.esc(target_name or str(target_id))}\n"
+        f"Причина: {render.esc(reason)}"
+    )
+
+
+@router.message(Command("unban", "разбан"))
+async def cmd_unban(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split(maxsplit=1)
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    if target_id is None:
+        await message.answer("Формат: <code>/unban @ник</code> или ответом на сообщение")
+        return
+    await db.set_ban(target_id, False, "")
+    await message.answer(f"✅ Разбанен: <b>{render.esc(target_name or str(target_id))}</b>")
+
+
+@router.message(Command("bans", "баны"))
+async def cmd_bans(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    async with db.pool.acquire() as con:  # type: ignore[attr-defined]
+        rows = await con.fetch(
+            "select user_id, first_name, username, ban_reason from players "
+            "where banned = true order by banned_at desc limit 30"
+        )
+    if not rows:
+        await message.answer("Забаненных нет.")
+        return
+    lines = ["🚫 <b>Забаненные</b>", ""]
+    for row in rows:
+        nick = f" @{row['username']}" if row["username"] else f" id{row['user_id']}"
+        lines.append(
+            f"· <b>{render.esc(str(row['first_name'] or '?'))}</b>{render.esc(nick)} — "
+            f"{render.esc(str(row['ban_reason'] or 'без причины'))}"
+        )
+    await message.answer("\n".join(lines))

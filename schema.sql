@@ -638,3 +638,8 @@ update players p set drift_granted = true
        select 1 from collection c
         where c.user_id = p.user_id and c.card_id = 'elvira_drift'
    );
+
+-- Бан: забаненный не может ничего делать ни в боте, ни в приложении.
+alter table players add column if not exists banned boolean not null default false;
+alter table players add column if not exists ban_reason text;
+alter table players add column if not exists banned_at timestamptz;
