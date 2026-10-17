@@ -1244,33 +1244,38 @@ class Database:
     async def profile_get(self, user_id: int) -> dict[str, Any]:
         async with self._p().acquire() as con:
             row = await con.fetchrow(
-                "select bio, status, banner, music from profiles where user_id = $1",
+                "select bio, status, banner, music, avatar from profiles "
+                "where user_id = $1",
                 user_id,
             )
         if row is None:
-            return {"bio": "", "status": "", "banner": "sunset", "music": ""}
+            return {"bio": "", "status": "", "banner": "sunset", "music": "", "avatar": ""}
         return {
             "bio": str(row["bio"] or ""),
             "status": str(row["status"] or ""),
             "banner": str(row["banner"] or "sunset"),
             "music": str(row["music"] or ""),
+            "avatar": str(row["avatar"] or ""),
         }
 
     async def profile_save(
-        self, user_id: int, bio: str, status: str, banner: str, music: str
+        self, user_id: int, bio: str, status: str, banner: str, music: str,
+        avatar: str = "",
     ) -> None:
         async with self._p().acquire() as con:
             await con.execute(
-                "insert into profiles (user_id, bio, status, banner, music, updated_at) "
-                "values ($1, $2, $3, $4, $5, now()) "
+                "insert into profiles "
+                "(user_id, bio, status, banner, music, avatar, updated_at) "
+                "values ($1, $2, $3, $4, $5, $6, now()) "
                 "on conflict (user_id) do update set bio = excluded.bio, "
                 "status = excluded.status, banner = excluded.banner, "
-                "music = excluded.music, updated_at = now()",
+                "music = excluded.music, avatar = excluded.avatar, updated_at = now()",
                 user_id,
                 bio,
                 status,
                 banner,
                 music,
+                avatar,
             )
 
     async def profile_rewards(self, user_id: int) -> list[dict[str, Any]]:

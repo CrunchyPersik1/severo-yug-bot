@@ -52,6 +52,17 @@ def tag_label(tag: str) -> str:
     return TAGS.get(tag, tag)
 
 
+def clean_url(text: Any, limit: int = 400) -> str:
+    """Ссылка на картинку: только http(s). Иначе пусто."""
+    value = str(text or "").strip()
+    if not value:
+        return ""
+    low = value.lower()
+    if not (low.startswith("http://") or low.startswith("https://")):
+        return ""
+    return value[:limit]
+
+
 def initial(name: str | None) -> str:
     value = (name or "?").strip()
     return value[:1].upper() if value else "?"

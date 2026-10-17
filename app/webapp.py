@@ -3976,6 +3976,7 @@ async def _profile_payload(state, user_id: int) -> dict[str, Any]:
         "banner_css": profiles.banner_css(prof["banner"]),
         "banner_name": profiles.banner_name(prof["banner"]),
         "music": prof["music"],
+        "avatar": prof["avatar"],
         "rewards": [
             {"id": int(r["id"]), "icon": str(r["icon"]), "text": str(r["text"])}
             for r in rewards
@@ -4013,6 +4014,7 @@ async def api_profile(request: Request) -> JSONResponse:
         "bio": profiles.MAX_BIO,
         "status": profiles.MAX_STATUS,
         "music": profiles.MAX_MUSIC,
+        "avatar": 400,
     }
     return JSONResponse(payload)
 
@@ -4058,7 +4060,8 @@ async def api_profile_save(request: Request) -> JSONResponse:
     bio = profiles.clean(body.get("bio"), profiles.MAX_BIO)
     status_text = profiles.clean(body.get("status"), profiles.MAX_STATUS)
     music = profiles.clean(body.get("music"), profiles.MAX_MUSIC)
-    await state.db.profile_save(user_id, bio, status_text, banner, music)
+    avatar = profiles.clean_url(body.get("avatar"))
+    await state.db.profile_save(user_id, bio, status_text, banner, music, avatar)
     payload = await _profile_payload(state, user_id)
     payload["is_me"] = True
     return JSONResponse({"ok": True, "profile": payload})
@@ -4098,7 +4101,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .banner{height:132px;position:relative}
 .banner .av{position:absolute;left:16px;bottom:-34px;width:82px;height:82px;border-radius:50%;
   border:4px solid var(--panel);display:flex;align-items:center;justify-content:center;
-  font-size:34px;font-weight:900;color:#12100e;box-shadow:0 8px 22px rgba(0,0,0,.4)}
+  font-size:34px;font-weight:900;color:#12100e;box-shadow:0 8px 22px rgba(0,0,0,.4);
+  overflow:hidden}
+.banner .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .body{padding:44px 16px 16px}
 .nm{font-size:21px;font-weight:900;letter-spacing:-.3px;display:flex;align-items:center;
   gap:7px;flex-wrap:wrap}
@@ -4162,7 +4167,10 @@ function cardHtml(d){
     : "";
   return '<div class="card">' +
     '<div class="banner" style="background:' + d.banner_css + '">' +
-      '<div class="av" style="background:' + d.avatar_color + '">' + esc(d.initial) + '</div>' +
+      '<div class="av" style="background:' + d.avatar_color + '">' +
+        '<span>' + esc(d.initial) + '</span>' +
+        (d.avatar ? '<img src="' + esc(d.avatar) + '" alt="" onerror="this.remove()">' : '') +
+      '</div>' +
     '</div>' +
     '<div class="body">' +
       '<div class="nm">' + esc(d.name) + tags + '</div>' +
@@ -4187,6 +4195,9 @@ function editHtml(d){
     '<textarea id="fBio" rows="3" maxlength="' + d.limits.bio + '">' + esc(d.bio) + '</textarea>' +
     '<label>Статус</label>' +
     '<input id="fStatus" maxlength="' + d.limits.status + '" value="' + esc(d.status) + '">' +
+    '<label>Аватарка — ссылка на картинку</label>' +
+    '<input id="fAvatar" maxlength="' + (d.limits.avatar || 400) + '" ' +
+      'placeholder="https://…" value="' + esc(d.avatar || "") + '">' +
     '<label>Музыка</label>' +
     '<input id="fMusic" maxlength="' + d.limits.music + '" value="' + esc(d.music) + '">' +
     '<label>Баннер</label><div class="bans">' + bans + '</div>' +
@@ -4207,6 +4218,7 @@ async function save(){
     bio: document.getElementById("fBio").value,
     status: document.getElementById("fStatus").value,
     music: document.getElementById("fMusic").value,
+    avatar: document.getElementById("fAvatar").value,
     banner: S.banner,
   };
   try{
