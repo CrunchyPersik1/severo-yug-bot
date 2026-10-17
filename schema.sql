@@ -627,3 +627,14 @@ create table if not exists profile_tags (
 
 -- Аватарка профиля: ссылка на картинку.
 alter table profiles add column if not exists avatar text not null default '';
+
+-- Эльвира за дрифт-комбо: строго один раз за всё время.
+alter table players add column if not exists drift_granted boolean not null default false;
+
+-- У кого она уже есть — считаем награду использованной.
+update players p set drift_granted = true
+ where p.drift_granted = false
+   and exists (
+       select 1 from collection c
+        where c.user_id = p.user_id and c.card_id = 'elvira_drift'
+   );

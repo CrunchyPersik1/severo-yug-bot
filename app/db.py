@@ -2109,17 +2109,27 @@ class Database:
                             "update players set drift_streak = 0 where user_id = $1",
                             user_id,
                         )
-                        await con.execute(
-                            """
-                            insert into collection (user_id, card_id, count)
-                            values ($1, $2, 1)
-                            on conflict (user_id, card_id)
-                            do update set count = collection.count + 1
-                            """,
+                        # Эльвира выдаётся РОВНО ОДИН РАЗ за всё время.
+                        # Флаг, а не проверка коллекции: иначе её можно было
+                        # слить скупщику и выбить заново — и так бесконечно.
+                        first_time = await con.fetchrow(
+                            "update players set drift_granted = true "
+                            "where user_id = $1 and drift_granted = false "
+                            "returning user_id",
                             user_id,
-                            dep_mod.DRIFT_CARD_ID,
                         )
-                        granted_drift = True
+                        if first_time is not None:
+                            await con.execute(
+                                """
+                                insert into collection (user_id, card_id, count)
+                                values ($1, $2, 1)
+                                on conflict (user_id, card_id)
+                                do update set count = collection.count + 1
+                                """,
+                                user_id,
+                                dep_mod.DRIFT_CARD_ID,
+                            )
+                            granted_drift = True
                         streak = 0
         return {"ok": True, "streak": streak, "drift": granted_drift}
 
