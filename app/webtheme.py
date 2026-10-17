@@ -90,6 +90,19 @@ POLISH = r"""<style>
   /* Цены и суммы */
   .price,.pr,.bal,.wallet,.money{ color:var(--acc2)!important }
 
+  /* Балансы: знак валюты, ровные цифры и мягкая подложка */
+  .bal,.b.bal{
+    font-variant-numeric:tabular-nums;
+    letter-spacing:.3px;
+    font-weight:900;
+  }
+  body .bal,body .b.bal{
+    background:color-mix(in srgb, var(--acc) 13%, var(--panel))!important;
+    border:1px solid color-mix(in srgb, var(--acc) 28%, var(--line))!important;
+    border-radius:999px!important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 12px rgba(0,0,0,.18);
+  }
+
   /* Пустые состояния */
   .empty,.ph,.noart{
     color:var(--muted);

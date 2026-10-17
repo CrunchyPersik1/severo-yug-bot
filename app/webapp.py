@@ -1611,7 +1611,7 @@ async function load(){
     const d = await r.json();
     if (d.error){ toast(d.error, true); return; }
     S.mine = d.mine; S.targets = d.targets; S.ladder = d.ladder; S.steps = d.steps;
-    document.getElementById("bal").textContent = money(d.me.balance) + " очк.";
+    document.getElementById("bal").textContent = "$ " + money(d.me.balance);
     if (S.A && !S.mine.some(c => c.id === S.A.id)) S.A = null;
     if (S.B && !S.targets.some(c => c.id === S.B.id)) S.B = null;
     if (!S.A && S.mine.length) S.A = S.mine[0];
@@ -1914,7 +1914,7 @@ function render(){
     ? '<div class="grid">' + S.items.map(itemHtml).join("") + '</div>'
     : '<div class="empty">Продавать нечего.<br>Выбей карту командой «Северо-Юг».</div>';
   document.querySelectorAll("[data-ref]").forEach(b => b.onclick = () => sell(b.dataset.ref, b));
-  document.getElementById("bal").textContent = money(S.balance) + " очк.";
+  document.getElementById("bal").textContent = "$ " + money(S.balance);
 }
 async function load(){
   try{
@@ -2412,7 +2412,7 @@ async function load(){
     const d = await r.json();
     if (d.error){ toast(d.error); return; }
     S.data = d;
-    document.getElementById("bal").textContent = money(d.me.balance);
+    document.getElementById("bal").textContent = "$ " + money(d.me.balance);
     document.getElementById("lvl").textContent = "ур. " + d.me.level;
     renderTicker(); renderTiles();
   }catch(e){ toast("Не смог загрузить"); }
@@ -2654,7 +2654,7 @@ function render(){
     '<button class="bet' + (S.bet === b ? " on" : "") + '" data-b="' + b + '">' + money(b) + '</button>').join("");
   document.getElementById("cap").textContent = g.title;
   document.getElementById("face").textContent = g.emoji;
-  document.getElementById("bal").textContent = "Баланс: " + money(S.data.me.balance);
+  document.getElementById("bal").textContent = "Баланс $ " + money(S.data.me.balance);
   document.getElementById("left").textContent = "Круток: " + S.data.me.left + " / " + S.data.me.cap;
   document.getElementById("spin").disabled = S.busy || !S.choice;
   document.querySelectorAll("[data-g]").forEach(el => el.onclick = () => {
@@ -3027,7 +3027,7 @@ function buildWheel(){
 }
 function render(){
   const d = S.data;
-  document.getElementById("bal").textContent = "Баланс " + money(d.me.balance);
+  document.getElementById("bal").textContent = "Баланс $ " + money(d.me.balance);
   document.getElementById("spins").textContent = "Круток " + d.me.left + "/" + d.me.cap;
   document.getElementById("bets").innerHTML = d.bets.map(b =>
     '<button class="ch ' + (b.tone === "red" ? "r" : b.tone === "black" ? "b" : b.tone === "green" ? "g" : "") +
