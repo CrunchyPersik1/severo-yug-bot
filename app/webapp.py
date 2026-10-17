@@ -798,9 +798,14 @@ svg{display:block;width:100%;height:230px}
 .note{padding:9px 15px 0;font-size:11.5px;color:var(--muted)}
 
 .act{display:flex;gap:9px;padding:14px 15px 0}
-.act button{flex:1;border:0;border-radius:13px;padding:15px;font-size:15px;font-weight:900;letter-spacing:.3px}
-.buy{background:var(--acc);color:var(--acc-ink)}
-.sell{background:var(--panel2);color:var(--ink);border:1px solid var(--line)!important}
+.act button{flex:1 1 0;min-width:0;border:0;border-radius:13px;padding:15px;
+  font-size:15px;font-weight:900;letter-spacing:.3px}
+/* .buy из магазина тащит width:100% и margin-top — в бирже это ломало строку:
+   кнопка растягивалась на всю ширину и выдавливала «Продать» за край. */
+.act .buy{background:var(--acc);color:var(--acc-ink);width:auto;margin-top:0;
+  box-shadow:none;transition:none}
+.act .sell{background:var(--panel2);color:var(--ink);width:auto;margin-top:0;
+  box-shadow:none;transition:none;border:1px solid var(--line)!important}
 .act button[disabled]{opacity:.45}
 .stepper{display:flex;gap:7px;padding:11px 15px 0;flex-wrap:wrap}
 .stepper button{border:1px solid var(--line);background:transparent;color:var(--muted);
