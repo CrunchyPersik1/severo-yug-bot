@@ -13,6 +13,7 @@ import json
 import contextlib
 import logging
 import random
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl
 
@@ -24,6 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from . import buyer
 from . import casino
 from . import depcoins
+from . import event_week
 from . import levels
 from . import dice_casino
 from . import themes
@@ -2178,7 +2180,22 @@ async def api_hub(request: Request) -> JSONResponse:
             },
             "sections": [
                 dict(section, url=f"{request.base_url}".rstrip("/"))
-                for section in HUB_SECTIONS
+                for section in (
+                    (
+                        [
+                            {
+                                "id": "event",
+                                "title": "СОБЫТИЕ",
+                                "note": "Звёздочка",
+                                "kind": "app",
+                                "path": "/event",
+                            }
+                        ]
+                        + list(HUB_SECTIONS)
+                    )
+                    if (await state.db.event_state()).get("active")
+                    else HUB_SECTIONS
+                )
             ],
         }
     )
@@ -3585,6 +3602,343 @@ setInterval(() => {
   if (S.data.total > S.data.cap) S.data.total = S.data.cap;
   document.getElementById("bal").textContent = fmt(S.data.balance);
 }, 2000);
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Недельный ивент «Звёздочка»
+# --------------------------------------------------------------------------- #
+
+
+def _event_payload(state_row: dict, day: int, quests: list, player: dict, me: dict) -> dict:
+    ev = event_week
+    claimed = len([q for q in quests if q["claimed"]])
+    done_ready = len([q for q in quests if q["done"] and not q["claimed"]])
+    return {
+        "active": True,
+        "day": day,
+        "days": ev.DAYS,
+        "need": ev.NEED,
+        "done": int(player.get("done_count") or 0),
+        "claimed": claimed,
+        "ready": done_ready,
+        "quests": quests,
+        "me": me,
+        "main": {
+            "unlocked": bool(player.get("main_unlocked")),
+            "done": bool(player.get("main_done")),
+            "drops": int(player.get("main_drops") or 0),
+            "roulette": int(player.get("main_roulette") or 0),
+            "cases": int(player.get("main_cases") or 0),
+            "points": int(player.get("main_points") or 0),
+            "need_drops": ev.MAIN_DROPS,
+            "need_roulette": ev.MAIN_ROULETTE,
+            "need_cases": ev.MAIN_CASES,
+            "need_points": ev.MAIN_POINTS,
+        },
+    }
+
+
+@router.get("/api/event")
+async def api_event(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    row = await state.db.event_state()
+    now = datetime.now(timezone.utc)
+    if not row.get("active"):
+        return JSONResponse({"active": False})
+    if event_week.is_over(row.get("ends_at"), now):
+        await state.db.event_stop()
+        return JSONResponse({"active": False, "ended": True})
+
+    day = event_week.day_of(row.get("started_at"), now) or 1
+    await state.db.event_ensure(user_id, day)
+    granted = await state.db.event_grant_daily(user_id, day)
+    quests = await state.db.event_quests(user_id)
+    player = await state.db.event_player(user_id)
+    async with state.db.pool.acquire() as con:  # type: ignore[attr-defined]
+        prow = await con.fetchrow(
+            "select drop_limit, roulette_limit, bonus_points from players "
+            "where user_id = $1",
+            user_id,
+        )
+        cases_have = int(
+            await con.fetchval(
+                "select count(*) from cases where user_id = $1", user_id
+            )
+            or 0
+        )
+    me = {
+        "balance": int(prow["bonus_points"]) if prow else 0,
+        "drops": int(prow["drop_limit"]) if prow else 0,
+        "roulette": int(prow["roulette_limit"]) if prow else 0,
+        "cases": cases_have,
+        "granted": granted,
+    }
+    return JSONResponse(_event_payload(row, day, quests, player, me))
+
+
+@router.post("/api/event/claim")
+async def api_event_claim(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    try:
+        quest_id = int(body.get("id", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Не понял квест"}, status_code=400)
+
+    result = await state.db.event_claim(user_id, quest_id)
+    if result is None:
+        return JSONResponse({"error": "Квест ещё не готов"}, status_code=400)
+    reward = result["reward"]
+    return JSONResponse(
+        {
+            "ok": True,
+            "reward": reward,
+            "reward_text": event_week.reward_text(reward),
+            "done": result["done"],
+            "unlocked": result["unlocked"],
+            "balance": await state.market.balance(user_id),
+        }
+    )
+
+
+@router.post("/api/event/contribute")
+async def api_event_contribute(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    try:
+        drops = int(body.get("drops", 0))
+        roulette = int(body.get("roulette", 0))
+        cases = int(body.get("cases", 0))
+        points = int(body.get("points", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Не понял, что кладём"}, status_code=400)
+    result = await state.db.event_contribute(user_id, drops, roulette, cases, points)
+    if result is None:
+        return JSONResponse({"error": "Не хватает ресурсов"}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "complete": bool(result.get("complete")),
+            "main": {
+                "drops": int(result["main_drops"]),
+                "roulette": int(result["main_roulette"]),
+                "cases": int(result["main_cases"]),
+                "points": int(result["main_points"]),
+            },
+            "balance": await state.market.balance(user_id),
+        }
+    )
+
+
+@router.get("/event", response_class=HTMLResponse)
+async def event_page() -> HTMLResponse:
+    return HTMLResponse(inject(EVENT_PAGE))
+
+EVENT_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Событие</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--up:#3fae6a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:24px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.hero{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;
+  position:relative;overflow:hidden;text-align:center}
+.hero::before{content:"";position:absolute;inset:-40% -20% auto;height:80%;
+  background:radial-gradient(60% 60% at 50% 0%,color-mix(in srgb,var(--acc) 24%,transparent),transparent 70%);
+  pointer-events:none}
+.hero .star{font-size:44px;line-height:1;animation:tw 3.4s ease-in-out infinite}
+@keyframes tw{0%,100%{transform:scale(1) rotate(0);opacity:.92}50%{transform:scale(1.12) rotate(6deg);opacity:1}}
+.hero h1{margin:8px 0 4px;font-size:20px}
+.hero p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.55}
+.bar{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:14px}
+.bar i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .5s cubic-bezier(.2,.8,.3,1)}
+.nums{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:6px;font-weight:700}
+.sect{margin-top:14px;font-size:11px;letter-spacing:1.4px;text-transform:uppercase;
+  color:var(--muted);font-weight:800;padding:0 2px 8px}
+.q{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:8px;
+  display:flex;align-items:center;gap:11px}
+.q.done{border-color:color-mix(in srgb,var(--up) 55%,var(--line))}
+.q .ic{width:38px;height:38px;flex:0 0 auto;border-radius:11px;background:var(--panel2);
+  display:flex;align-items:center;justify-content:center;font-size:18px}
+.q .mid{flex:1;min-width:0}
+.q .t{font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q .p{font-size:11.5px;color:var(--muted);margin-top:2px}
+.q .pb{height:4px;background:var(--panel2);border-radius:99px;margin-top:6px;overflow:hidden}
+.q .pb i{display:block;height:100%;background:var(--acc);border-radius:99px;transition:width .35s ease}
+.q button{flex:0 0 auto;border:1px solid var(--line)!important;background:transparent!important;
+  color:var(--muted)!important;border-radius:10px!important;padding:10px 13px!important;
+  font-size:12px!important;font-weight:800!important;box-shadow:none!important}
+.q button.ready{background:var(--acc)!important;color:var(--acc-ink)!important;border-color:transparent!important}
+.main{background:var(--panel);border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));
+  border-radius:16px;padding:14px;margin-top:6px}
+.main .row{display:flex;justify-content:space-between;font-size:13px;font-weight:700;padding:5px 0}
+.main .row span{color:var(--muted)}
+.main .row b{color:var(--acc2)}
+.main button{width:100%;margin-top:10px;border:0;border-radius:12px;padding:14px;font-size:14px;
+  font-weight:900;background:var(--acc);color:var(--acc-ink)}
+.main button[disabled]{background:var(--panel2);color:var(--muted)}
+.locked{text-align:center;color:var(--muted);font-size:12.5px;padding:18px;line-height:1.6}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <div class="star">🌟</div>
+    <h1>Звёздочка</h1>
+    <p id="story">Звёздочка упала на школьный двор и рассыпалась на осколки.
+       Каждый осколок — квест. Собери их и помоги ей вернуться домой.</p>
+    <div class="bar"><i id="fill"></i></div>
+    <div class="nums"><span id="left">…</span><span id="day">…</span></div>
+  </div>
+  <div class="sect" id="sect">Квесты дня</div>
+  <div id="list"></div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {data: null, busy: false};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function money(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3200);
+}
+function render(){
+  const d = S.data;
+  if (!d || !d.active){
+    document.getElementById("story").textContent = "Сейчас событие не идёт. Жди запуска.";
+    document.getElementById("sect").textContent = "";
+    document.getElementById("list").innerHTML =
+      '<div class="locked">Звёздочка ещё спит.<br>Скоро она снова упадёт на школьный двор.</div>';
+    return;
+  }
+  document.getElementById("fill").style.width = Math.min(100, d.done / d.need * 100) + "%";
+  document.getElementById("left").textContent = "Собрано " + d.done + " из " + d.need;
+  document.getElementById("day").textContent = "День " + d.day + " из " + d.days;
+  document.getElementById("sect").textContent = "Квесты дня " + d.day;
+  const today = d.quests.filter(q => q.day === d.day && !q.claimed);
+  const older = d.quests.filter(q => q.day < d.day && !q.claimed);
+  const rows = [];
+  today.forEach(q => rows.push(row(q)));
+  if (older.length){
+    rows.push('<div class="sect">Остались с прошлых дней</div>');
+    older.forEach(q => rows.push(row(q)));
+  }
+  if (!today.length && !older.length){
+    rows.push('<div class="locked">Все квесты дня закрыты. Возвращайся завтра — придут новые.</div>');
+  }
+  if (d.main.unlocked) rows.push(mainBlock(d.main));
+  document.getElementById("list").innerHTML = rows.join("");
+  document.querySelectorAll("[data-claim]").forEach(b => b.onclick = () => claim(+b.dataset.claim));
+  const cb = document.getElementById("contribute");
+  if (cb) cb.onclick = contribute;
+}
+function row(q){
+  const pct = Math.min(100, q.progress / q.need * 100);
+  return '<div class="q' + (q.done ? " done" : "") + '">' +
+    '<div class="ic">' + (q.done ? "✅" : "✦") + '</div>' +
+    '<div class="mid"><div class="t">' + esc(q.title) + '</div>' +
+    '<div class="p">' + q.progress + " / " + q.need + '</div>' +
+    '<div class="pb"><i style="width:' + pct + '%"></i></div></div>' +
+    (q.done
+      ? '<button class="ready" data-claim="' + q.id + '">Забрать</button>'
+      : '<button disabled>ждём</button>') + '</div>';
+}
+function mainBlock(m){
+  const line = (label, have, need) =>
+    '<div class="row"><span>' + label + '</span><b>' + money(have) + " / " + money(need) + '</b></div>';
+  return '<div class="main"><div class="sect" style="padding:0 0 8px">Главный квест</div>' +
+    line("Крутки «Северо-Юг»", m.drops, m.need_drops) +
+    line("Крутки рулетки", m.roulette, m.need_roulette) +
+    line("Кейсы", m.cases, m.need_cases) +
+    line("Очки", m.points, m.need_points) +
+    (m.done
+      ? '<button disabled>Собрано — награда уже твоя</button>'
+      : '<button id="contribute">Положить всё</button>') + '</div>';
+}
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers, body: JSON.stringify(body || {})});
+  return await r.json();
+}
+async function claim(id){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await post("/api/event/claim", {id});
+    if (d.error) toast(d.error);
+    else {
+      toast("Награда: " + d.reward_text + " · собрано " + d.done + "/" + S.data.need);
+      if (d.unlocked) toast("Главный квест открыт!");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      await load();
+    }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function contribute(){
+  if (S.busy) return;
+  const m = S.data.main, me = S.data.me;
+  const body = {
+    drops: Math.min(m.need_drops - m.drops, me.drops),
+    roulette: Math.min(m.need_roulette - m.roulette, me.roulette),
+    cases: Math.min(m.need_cases - m.cases, me.cases),
+    points: Math.min(m.need_points - m.points, me.balance),
+  };
+  S.busy = true;
+  try{
+    const d = await post("/api/event/contribute", body);
+    if (d.error) toast("Не хватает ресурсов");
+    else { toast(d.complete ? "Главный квест собран!" : "Положено"); await load(); }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function load(){
+  try{
+    const r = await fetch("/api/event", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; render();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+if(tg){ tg.ready(); tg.expand(); }
+load();
 </script>
 </body>
 </html>

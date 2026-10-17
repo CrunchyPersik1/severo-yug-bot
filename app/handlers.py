@@ -2728,3 +2728,39 @@ async def cb_theme(callback: CallbackQuery, db: Database) -> None:
 @router.message(NormalizedText("топ уровней", "топ по уровням", "уровни"))
 async def cmd_levels(message: Message, db: Database) -> None:
     await message.answer(render.render_level_top(await db.level_top(10)))
+
+
+
+# --------------------------------------------------------------------------- #
+# Триггер ивента: слово «ИВЕНТ!» — только админ
+# --------------------------------------------------------------------------- #
+
+
+def _is_event_word(message: Message) -> bool:
+    """Слово-рубильник: «ИВЕНТ!» в любом регистре."""
+    return bool(message.text) and message.text.strip().upper() == "ИВЕНТ!"
+
+
+@router.message(_is_event_word)
+async def cmd_event_trigger(message: Message, db: Database) -> None:
+    from datetime import timedelta
+
+    from . import event_week as ev
+
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    state = await db.event_state()
+    now = datetime.now(timezone.utc)
+    if state.get("active") and not ev.is_over(state.get("ends_at"), now):
+        await db.event_stop()
+        await message.answer("🛑 <b>Ивент «Звёздочка» остановлен.</b>")
+        return
+    await db.event_start(now, now + timedelta(days=ev.DAYS), "Звёздочка")
+    await message.answer(
+        "🌟 <b>ИВЕНТ!</b>\n\n"
+        "Звёздочка упала на школьный двор и рассыпалась на осколки.\n"
+        f"У тебя <b>{ev.DAYS} дней</b>: каждый день по {ev.QUESTS_PER_DAY} квестов, "
+        f"собрать нужно <b>{ev.NEED}</b>.\n\n"
+        "Заходи в приложение — там кнопка «СОБЫТИЕ»."
+    )

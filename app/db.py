@@ -1184,6 +1184,266 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Недельный ивент «Звёздочка»
+    # ------------------------------------------------------------------ #
+
+    async def event_state(self) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow("select * from event_week where id = 1")
+        return dict(row) if row else {"active": False, "started_at": None, "ends_at": None}
+
+    async def event_start(self, started: Any, ends: Any, title: str = "") -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update event_week set active = true, started_at = $1, ends_at = $2, "
+                "title = $3 where id = 1",
+                started, ends, title,
+            )
+
+    async def event_stop(self) -> None:
+        async with self._p().acquire() as con:
+            await con.execute("update event_week set active = false where id = 1")
+
+    async def event_ensure(self, user_id: int, day: int) -> None:
+        """Создаёт квесты дня. Базовая точка — текущий счётчик игрока."""
+        from . import event_week as ev
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "insert into event_players (user_id) values ($1) on conflict do nothing",
+                    user_id,
+                )
+                have = await con.fetchval(
+                    "select count(*) from event_quests where user_id = $1 and day = $2",
+                    user_id,
+                    day,
+                )
+                if have:
+                    return
+                for slot, source in enumerate(ev.ORDER):
+                    baseline = int(await con.fetchval(ev.SOURCES[source], user_id) or 0)
+                    await con.execute(
+                        "insert into event_quests "
+                        "(user_id, day, slot, source, need, baseline) "
+                        "values ($1,$2,$3,$4,$5,$6) on conflict do nothing",
+                        user_id,
+                        day,
+                        slot,
+                        source,
+                        ev.need_for(source, day),
+                        baseline,
+                    )
+
+    async def event_quests(self, user_id: int) -> list[dict[str, Any]]:
+        from . import event_week as ev
+
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select * from event_quests where user_id = $1 order by day, slot",
+                user_id,
+            )
+            out = []
+            for row in rows:
+                source = str(row["source"])
+                sql = ev.SOURCES.get(source)
+                current = int(await con.fetchval(sql, user_id) or 0) if sql else 0
+                progress = max(0, current - int(row["baseline"]))
+                need = int(row["need"])
+                out.append(
+                    {
+                        "id": int(row["id"]),
+                        "day": int(row["day"]),
+                        "slot": int(row["slot"]),
+                        "source": source,
+                        "title": ev.TITLES.get(source, source),
+                        "need": need,
+                        "progress": min(progress, need),
+                        "done": progress >= need,
+                        "claimed": bool(row["claimed"]),
+                    }
+                )
+            return out
+
+    async def event_claim(self, user_id: int, quest_id: int) -> dict[str, Any] | None:
+        from . import event_week as ev
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select * from event_quests where id = $1 and user_id = $2 "
+                    "for update",
+                    int(quest_id),
+                    user_id,
+                )
+                if row is None or row["claimed"]:
+                    return None
+                sql = ev.SOURCES.get(str(row["source"]))
+                current = int(await con.fetchval(sql, user_id) or 0) if sql else 0
+                if current - int(row["baseline"]) < int(row["need"]):
+                    return None
+                await con.execute(
+                    "update event_quests set claimed = true where id = $1", int(quest_id)
+                )
+                reward = ev.reward_for(int(row["day"]), int(row["slot"]))
+                if reward.get("points"):
+                    await con.execute(
+                        "update players set bonus_points = bonus_points + $2 "
+                        "where user_id = $1",
+                        user_id,
+                        int(reward["points"]),
+                    )
+                if reward.get("cases"):
+                    await con.execute(
+                        "insert into cases (user_id, source) "
+                        "select $1, 'event' from generate_series(1, $2)",
+                        user_id,
+                        int(reward["cases"]),
+                    )
+                done = int(
+                    await con.fetchval(
+                        "update event_players set done_count = done_count + 1 "
+                        "where user_id = $1 returning done_count",
+                        user_id,
+                    )
+                    or 0
+                )
+                unlocked = False
+                if done >= ev.NEED:
+                    row2 = await con.fetchrow(
+                        "update event_players set main_unlocked = true "
+                        "where user_id = $1 and main_unlocked = false returning user_id",
+                        user_id,
+                    )
+                    unlocked = row2 is not None
+        return {"reward": reward, "done": done, "unlocked": unlocked}
+
+    async def event_player(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select * from event_players where user_id = $1", user_id
+            )
+        return dict(row) if row else {
+            "done_count": 0, "main_unlocked": False, "main_done": False,
+            "given_drops": 0, "given_roulette": 0, "last_grant_day": 0,
+            "main_drops": 0, "main_roulette": 0, "main_cases": 0, "main_points": 0,
+        }
+
+    async def event_grant_daily(self, user_id: int, day: int) -> int:
+        """Выдаёт +3/+3 разом, но не чаще раза в день. 0 — уже выдавали."""
+        from . import event_week as ev
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select last_grant_day from event_players where user_id = $1 "
+                    "for update",
+                    user_id,
+                )
+                last = int(row["last_grant_day"]) if row else 0
+                if last >= day:
+                    return 0
+                await con.execute(
+                    "update event_players set last_grant_day = $2, "
+                    "given_drops = given_drops + $3, given_roulette = given_roulette + $4 "
+                    "where user_id = $1",
+                    user_id,
+                    day,
+                    ev.DAILY_DROPS,
+                    ev.DAILY_ROULETTE,
+                )
+                await con.execute(
+                    "update players set drop_limit = drop_limit + $2 where user_id = $1",
+                    user_id,
+                    ev.DAILY_DROPS,
+                )
+        return ev.DAILY_DROPS
+
+    async def event_contribute(
+        self, user_id: int, drops: int, roulette: int, cases: int, points: int
+    ) -> dict[str, Any] | None:
+        """Кладёт ресурсы в копилку Звёздочки. None — не хватило."""
+        from . import event_week as ev
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select * from event_players where user_id = $1 for update", user_id
+                )
+                if row is None or not row["main_unlocked"] or row["main_done"]:
+                    return None
+                need_d = max(0, ev.MAIN_DROPS - int(row["main_drops"]))
+                need_r = max(0, ev.MAIN_ROULETTE - int(row["main_roulette"]))
+                need_c = max(0, ev.MAIN_CASES - int(row["main_cases"]))
+                need_p = max(0, ev.MAIN_POINTS - int(row["main_points"]))
+                take_d = min(max(0, int(drops)), need_d)
+                take_r = min(max(0, int(roulette)), need_r)
+                take_c = min(max(0, int(cases)), need_c)
+                take_p = min(max(0, int(points)), need_p)
+                if not (take_d or take_r or take_c or take_p):
+                    return None
+                player = await con.fetchrow(
+                    "select drop_limit, roulette_limit, bonus_points from players "
+                    "where user_id = $1 for update",
+                    user_id,
+                )
+                if player is None:
+                    return None
+                if take_d > int(player["drop_limit"]):
+                    return None
+                if take_r > int(player["roulette_limit"]):
+                    return None
+                if take_p > int(player["bonus_points"]):
+                    return None
+                have_cases = int(
+                    await con.fetchval(
+                        "select count(*) from cases where user_id = $1", user_id
+                    )
+                    or 0
+                )
+                if take_c > have_cases:
+                    return None
+                await con.execute(
+                    "update players set drop_limit = drop_limit - $2, "
+                    "roulette_limit = roulette_limit - $3, "
+                    "bonus_points = bonus_points - $4 where user_id = $1",
+                    user_id,
+                    take_d,
+                    take_r,
+                    take_p,
+                )
+                if take_c:
+                    await con.execute(
+                        "delete from cases where id in ("
+                        " select id from cases where user_id = $1 order by id limit $2)",
+                        user_id,
+                        take_c,
+                    )
+                updated = await con.fetchrow(
+                    "update event_players set "
+                    "main_drops = main_drops + $2, main_roulette = main_roulette + $3, "
+                    "main_cases = main_cases + $4, main_points = main_points + $5 "
+                    "where user_id = $1 returning *",
+                    user_id,
+                    take_d,
+                    take_r,
+                    take_c,
+                    take_p,
+                )
+                done = (
+                    int(updated["main_drops"]) >= ev.MAIN_DROPS
+                    and int(updated["main_roulette"]) >= ev.MAIN_ROULETTE
+                    and int(updated["main_cases"]) >= ev.MAIN_CASES
+                    and int(updated["main_points"]) >= ev.MAIN_POINTS
+                )
+                if done:
+                    await con.execute(
+                        "update event_players set main_done = true where user_id = $1",
+                        user_id,
+                    )
+        return dict(updated, **{"complete": done})
+
+    # ------------------------------------------------------------------ #
     # Юга-кликер
     # ------------------------------------------------------------------ #
 

@@ -586,3 +586,4 @@ create table if not exists event_players (
     main_points   bigint not null default 0,
     joined_at     timestamptz not null default now()
 );
+alter table event_players add column if not exists last_grant_day integer not null default 0;
