@@ -103,6 +103,12 @@ POLISH = r"""<style>
     box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 12px rgba(0,0,0,.18);
   }
 
+  /* Длинный текст не выпирает за карточку — обрезается с многоточием */
+  .card .nm,.item .nm,.row .nm,.res .nm,.line .nm,.tile .tt,.tile .tn,
+  .stat b,.name,.tname,.cn,.cp{
+    min-width:0;overflow:hidden;text-overflow:ellipsis;
+  }
+
   /* Пустые состояния */
   .empty,.ph,.noart{
     color:var(--muted);

@@ -2259,13 +2259,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   pointer-events:none}
 .market{display:flex;flex-direction:column;gap:6px;transition:opacity .5s ease,transform .5s ease}
 .market.out{opacity:0;transform:translateY(-9px)}
-.mk-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.mk-side{display:flex;flex-direction:column;gap:2px;min-width:74px}
+/* Сетка вместо flex: цены больше не выпирают за края.
+   minmax(0, ...) разрешает блокам сжиматься, а шрифт подстраивается. */
+.mk-top{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr);
+  align-items:center;gap:8px;width:100%}
+.mk-side{display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden}
+.mk-side:first-child{align-items:flex-start;text-align:left}
 .mk-side:last-child{align-items:flex-end;text-align:right}
-.mk-side b{font-size:22px;font-weight:900;letter-spacing:-.5px;line-height:1}
-.mk-side span{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;color:var(--muted);font-weight:700}
-.mk-name{flex:1;text-align:center;font-size:21px;font-weight:900;letter-spacing:-.3px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mk-side b{font-size:clamp(14px,4.3vw,20px);font-weight:900;letter-spacing:-.5px;
+  line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:100%;display:block}
+.mk-side span{font-size:10px;letter-spacing:1.1px;text-transform:uppercase;
+  color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:100%}
+.mk-name{min-width:0;text-align:center;font-size:clamp(15px,4.7vw,21px);font-weight:900;
+  letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mk-rate{text-align:center;font-size:19px;font-weight:900;letter-spacing:.2px;color:#7fd0a0}
 .mk-rate.down{color:#e28d92}
 .mkcv{display:block;width:100%;height:84px;margin-top:10px;overflow:visible}
