@@ -3181,29 +3181,14 @@ async def api_yugi_tap(request: Request) -> JSONResponse:
         count = 1
     count = max(1, min(300, count))
 
-    from datetime import datetime, timezone
-
-    data = await state.db.yugi_load(user_id)
-    now = datetime.now(timezone.utc)
-    # Античит: «лейка» токенов. Человек тапает ~10 раз в секунду, робот —
-    # сотни. Всё сверх нормы не засчитываем и пишем в журнал.
-    available = yugi.tap_bucket(data.get("window_at"), data.get("tokens"), now)
-    accepted, tokens_left, dropped = yugi.tap_take(available, count)
-    if dropped >= yugi.FLAG_FROM:
+    # Всё внутри одной транзакции: параллельный запрос не затрёт начисления.
+    data = await state.db.yugi_tap(user_id, count)
+    if int(data.get("dropped", 0)) >= yugi.FLAG_FROM:
         with contextlib.suppress(Exception):
-            await state.db.yugi_flag(user_id, count, accepted)
-
-    gain = yugi.tap_power(data["upgrades"]) * accepted
-    data["total"], data["balance"] = yugi.add_earned(
-        data["total"], data["balance"], gain
-    )
-    data["taps"] += accepted
-    data["tokens"] = tokens_left
-    data["window_at"] = now
-    await state.db.yugi_write(user_id, data)
+            await state.db.yugi_flag(user_id, count, int(data.get("accepted", 0)))
     payload = _yugi_payload(data)
-    payload["accepted"] = accepted
-    payload["dropped"] = dropped
+    payload["accepted"] = int(data.get("accepted", 0))
+    payload["dropped"] = int(data.get("dropped", 0))
     return JSONResponse(payload)
 
 
@@ -3219,31 +3204,22 @@ async def api_yugi_buy(request: Request) -> JSONResponse:
     target = str(body.get("id", ""))
     data = await state.db.yugi_load(user_id)
 
-    if kind == "building":
-        spec = yugi.BUILDINGS_BY_ID.get(target)
-        if spec is None:
-            return JSONResponse({"error": "Нет такой постройки"}, status_code=400)
-        have = int(data["buildings"].get(target, 0))
-        cost = yugi.building_cost(spec, have)
-        if data["balance"] < cost:
-            return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
-        data["balance"] -= cost
-        data["buildings"][target] = have + 1
-    elif kind == "upgrade":
-        spec = yugi.UPGRADES_BY_ID.get(target)
-        if spec is None:
-            return JSONResponse({"error": "Нет такого улучшения"}, status_code=400)
-        if target in data["upgrades"]:
-            return JSONResponse({"error": "Уже куплено"}, status_code=400)
-        if data["balance"] < float(spec["cost"]):
-            return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
-        data["balance"] -= float(spec["cost"])
-        data["upgrades"].append(target)
-    else:
+    if kind not in ("building", "upgrade"):
         return JSONResponse({"error": "Не понял, что покупаем"}, status_code=400)
+    if kind == "building" and target not in yugi.BUILDINGS_BY_ID:
+        return JSONResponse({"error": "Нет такой постройки"}, status_code=400)
+    if kind == "upgrade" and target not in yugi.UPGRADES_BY_ID:
+        return JSONResponse({"error": "Нет такого улучшения"}, status_code=400)
+    if kind == "upgrade" and target in data["upgrades"]:
+        return JSONResponse({"error": "Уже куплено"}, status_code=400)
 
-    await state.db.yugi_write(user_id, data)
-    return JSONResponse(_yugi_payload(data))
+    bought, cost = await state.db.yugi_spend(
+        user_id, building=target if kind == "building" else "",
+        upgrade=target if kind == "upgrade" else "",
+    )
+    if bought is None:
+        return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
+    return JSONResponse(_yugi_payload(bought))
 
 
 @router.post("/api/yugi/case")
@@ -3260,23 +3236,10 @@ async def api_yugi_case(request: Request) -> JSONResponse:
         count = 1
     count = max(1, min(150, count))
 
-    data = await state.db.yugi_load(user_id)
     cost = yugi.CASE_PRICE * count
-    if data["balance"] < cost:
-        return JSONResponse(
-            {"error": f"Нужно {int(cost)} Югов, а у тебя {int(data['balance'])}"},
-            status_code=400,
-        )
-    data["balance"] -= cost
-    data["cases"] += count
-    await state.db.yugi_write(user_id, data)
-    async with state.db.pool.acquire() as con:  # type: ignore[attr-defined]
-        await con.execute(
-            "insert into cases (user_id, source) "
-            "select $1, 'yugi' from generate_series(1, $2)",
-            user_id,
-            int(count),
-        )
+    data = await state.db.yugi_buy_cases(user_id, count, cost)
+    if data is None:
+        return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
     payload = _yugi_payload(data)
     payload["bought"] = count
     return JSONResponse(payload)
@@ -3457,6 +3420,7 @@ async function post(url, body){
 async function buy(kind, id){
   if (S.busy) return;
   S.busy = true;
+  await flush();          // сначала сохраняем накопленные тапы
   try{
     const d = await post("/api/yugi/buy", {kind, id});
     if (d.error) toast(d.error);
@@ -3470,6 +3434,7 @@ async function buy(kind, id){
 async function buyCase(count){
   if (S.busy) return;
   S.busy = true;
+  await flush();
   try{
     const d = await post("/api/yugi/case", {count});
     if (d.error) toast(d.error);
@@ -3501,10 +3466,13 @@ function doTap(ev){
   clearTimeout(S.timer);
   S.timer = setTimeout(flush, 650);
 }
+let flushing = false;
 async function flush(){
+  if (flushing){ clearTimeout(S.timer); S.timer = setTimeout(flush, 300); return; }
   const count = S.pending;
   S.pending = 0;
   if (!count) return;
+  flushing = true;
   try{
     const d = await post("/api/yugi/tap", {count});
     if (!d.error){
@@ -3512,6 +3480,7 @@ async function flush(){
       if (d.dropped >= 5) toast("Слишком быстро — часть тапов не зачлась");
     }
   }catch(e){ /* вернём при следующем тапе */ S.pending += count; }
+  finally { flushing = false; }
 }
 document.getElementById("tap").onclick = doTap;
 if(tg){ tg.ready(); tg.expand(); }
