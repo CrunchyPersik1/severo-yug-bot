@@ -561,6 +561,30 @@ class StocksRepo:
                     user_id,
                     int(stock["id"]),
                 )
+                spec = stocks.by_slug(slug) or {}
+                if spec.get("pays") == "dep":
+                    # «Компания доДеп»: покупается за очки, а платит деп-коинами.
+                    from . import depcoins as dep_mod
+
+                    paid_dep = dep_mod.from_points(proceeds)
+                    dep_balance = await con.fetchval(
+                        "update players set dep_coins = dep_coins + $2 "
+                        "where user_id = $1 returning dep_coins",
+                        user_id,
+                        float(paid_dep),
+                    )
+                    balance = None
+                    return {
+                        "slug": slug,
+                        "shares": shares,
+                        "price": price,
+                        "total": proceeds,
+                        "pnl": proceeds - spent_out,
+                        "kind": "dep",
+                        "dep": paid_dep,
+                        "dep_balance": float(dep_balance or 0),
+                        "balance": None,
+                    }
                 balance = await con.fetchval(
                     "update players set bonus_points = bonus_points + $2 "
                     "where user_id = $1 returning bonus_points",
@@ -573,5 +597,6 @@ class StocksRepo:
             "price": price,
             "total": proceeds,
             "pnl": proceeds - spent_out,
+            "kind": "points",
             "balance": int(balance),
         }

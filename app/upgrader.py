@@ -20,12 +20,14 @@ LADDER: tuple[str, ...] = (
     "mythic",
     "legendary",
     "secret",
+    "ultimate",
     "ultra",
     "teacher",
 )
 
 # Шанс по разнице ступеней (to - from).
 STEP_CHANCE: dict[int, float] = {
+    -8: 0.94,
     -7: 0.92,
     -6: 0.90,
     -5: 0.88,
@@ -41,6 +43,7 @@ STEP_CHANCE: dict[int, float] = {
     5: 0.003,
     6: 0.001,
     7: 0.0005,
+    8: 0.0002,
 }
 
 MIN_CHANCE = 0.0002
@@ -78,6 +81,12 @@ def chance_percent(from_card: Card, to_card: Card) -> str:
 def roll(from_card: Card, to_card: Card, rng: random.Random | None = None) -> bool:
     rng = rng or random
     return rng.random() < chance(from_card, to_card)
+
+
+def roll_odd(odd: float, rng: random.Random | None = None) -> bool:
+    """Бросок по конкретному шансу — например, улучшенному деп-коинами."""
+    rng = rng or random
+    return rng.random() < max(0.0, min(1.0, float(odd)))
 
 
 def matrix(cards: list[Card]) -> list[dict[str, Any]]:

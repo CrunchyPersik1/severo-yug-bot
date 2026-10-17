@@ -1184,6 +1184,45 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Деп-коины
+    # ------------------------------------------------------------------ #
+
+    async def dep_balance(self, user_id: int) -> float:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select dep_coins from players where user_id = $1", user_id
+            )
+        return float(value or 0)
+
+    async def dep_add(self, user_id: int, amount: float) -> float:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "update players set dep_coins = greatest(0, dep_coins + $2) "
+                "where user_id = $1 returning dep_coins",
+                user_id,
+                float(amount),
+            )
+        return float(value or 0)
+
+    async def dep_spend(self, user_id: int, amount: float) -> float | None:
+        """Списывает деп-коины. None — не хватило."""
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "update players set dep_coins = dep_coins - $2 "
+                "where user_id = $1 and dep_coins >= $2 returning dep_coins",
+                user_id,
+                float(amount),
+            )
+        return float(value) if value is not None else None
+
+    async def drift_state(self, user_id: int) -> int:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select drift_streak from players where user_id = $1", user_id
+            )
+        return int(value or 0)
+
+    # ------------------------------------------------------------------ #
     # Стили мини-аппок
     # ------------------------------------------------------------------ #
 
@@ -1343,11 +1382,35 @@ class Database:
         return paid
 
     async def run_upgrade(
-        self, user_id: int, from_card: str, to_card: str, chance: float, won: bool
-    ) -> bool:
-        """Одна транзакция: забрать карту, при удаче выдать новую, записать в журнал."""
+        self,
+        user_id: int,
+        from_card: str,
+        to_card: str,
+        chance: float,
+        won: bool,
+        boost: int = 0,
+    ) -> dict[str, Any]:
+        """Одна транзакция: списать улучшение, забрать карту, выдать новую.
+
+        Плюс считает дрифт-комбо: три проигрыша подряд выдают Эльвиру.
+        """
+        from . import depcoins as dep_mod
+
+        boost = max(0, min(dep_mod.MAX_BOOSTS, int(boost)))
+        granted_drift = False
+        streak = 0
         async with self._p().acquire() as con:
             async with con.transaction():
+                if boost:
+                    cost = dep_mod.BOOST_PRICE * boost
+                    paid = await con.fetchval(
+                        "update players set dep_coins = dep_coins - $2 "
+                        "where user_id = $1 and dep_coins >= $2 returning dep_coins",
+                        user_id,
+                        float(cost),
+                    )
+                    if paid is None:
+                        return {"ok": False, "error": "Не хватает деп-коинов"}
                 row = await con.fetchrow(
                     "update collection set count = count - 1 "
                     "where user_id = $1 and card_id = $2 and count > 0 returning count",
@@ -1355,7 +1418,7 @@ class Database:
                     from_card,
                 )
                 if row is None:
-                    return False
+                    return {"ok": False, "error": "Этой карты у тебя уже нет."}
                 await con.execute(
                     "delete from collection where user_id = $1 and card_id = $2 "
                     "and count <= 0",
@@ -1382,7 +1445,38 @@ class Database:
                     float(chance),
                     bool(won),
                 )
-        return True
+                # Дрифт-комбо: три проигрыша подряд — и приезжает Эльвира.
+                if won:
+                    await con.execute(
+                        "update players set drift_streak = 0 where user_id = $1", user_id
+                    )
+                else:
+                    streak = int(
+                        await con.fetchval(
+                            "update players set drift_streak = drift_streak + 1 "
+                            "where user_id = $1 returning drift_streak",
+                            user_id,
+                        )
+                        or 0
+                    )
+                    if streak >= dep_mod.DRIFT_NEEDED:
+                        await con.execute(
+                            "update players set drift_streak = 0 where user_id = $1",
+                            user_id,
+                        )
+                        await con.execute(
+                            """
+                            insert into collection (user_id, card_id, count)
+                            values ($1, $2, 1)
+                            on conflict (user_id, card_id)
+                            do update set count = collection.count + 1
+                            """,
+                            user_id,
+                            dep_mod.DRIFT_CARD_ID,
+                        )
+                        granted_drift = True
+                        streak = 0
+        return {"ok": True, "streak": streak, "drift": granted_drift}
 
     async def log_upgrade(
         self, user_id: int, from_card: str, to_card: str, chance: float, won: bool

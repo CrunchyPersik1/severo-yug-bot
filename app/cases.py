@@ -14,11 +14,14 @@ CASE_RARITY_WEIGHTS: dict[str, float] = {
     "epic": 0.60,
     "mythic": 0.28,
     "legendary": 0.08,
-    "secret": 0.03,
+    "secret": 0.015,
+    "ultimate": 0.015,
     "ultra": 0.01,
 }
 
-CASE_RARITY_ORDER: tuple[str, ...] = ("epic", "mythic", "legendary", "secret", "ultra")
+CASE_RARITY_ORDER: tuple[str, ...] = (
+    "epic", "mythic", "legendary", "secret", "ultimate", "ultra",
+)
 
 
 def case_rarities() -> list[str]:

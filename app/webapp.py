@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import buyer
 from . import casino
+from . import depcoins
 from . import dice_casino
 from . import themes
 from . import cases as cases_mod
@@ -30,6 +31,7 @@ from . import upgrader
 from .cards import (
     CARDS,
     CARDS_BY_ID,
+    UPGRADER_EXCLUDED_CARD_IDS,
     cards_sorted_for_user,
     get_card,
     image_url,
@@ -1210,7 +1212,11 @@ async def api_upgrader(request: Request) -> JSONResponse:
         if card_id in CARDS_BY_ID
     ]
     mine.sort(key=lambda item: (-item["points"], item["name"]))
-    targets = [upgrader.card_payload(card) for card in CARDS]
+    targets = [
+        upgrader.card_payload(card)
+        for card in CARDS
+        if card.card_id not in UPGRADER_EXCLUDED_CARD_IDS
+    ]
     targets.sort(key=lambda item: (-item["points"], item["name"]))
     return JSONResponse(
         {
@@ -1222,6 +1228,15 @@ async def api_upgrader(request: Request) -> JSONResponse:
             "targets": targets,
             "ladder": list(upgrader.LADDER),
             "steps": {str(key): value for key, value in upgrader.STEP_CHANCE.items()},
+            "dep": {
+                "balance": await state.db.dep_balance(user_id),
+                "price": depcoins.BOOST_PRICE,
+                "max": depcoins.MAX_BOOSTS,
+                "step": depcoins.BOOST_STEP,
+                "streak": await state.db.drift_state(user_id),
+                "need": depcoins.DRIFT_NEEDED,
+                "card": depcoins.DRIFT_CARD_ID,
+            },
         }
     )
 
@@ -1245,13 +1260,19 @@ async def api_upgrader_spin(request: Request) -> JSONResponse:
 
         source = get_card(from_id)
         target = get_card(to_id)
-        odd = upgrader.chance(source, target)
-        won = upgrader.roll(source, target)
+
+        boost = int(body.get("boost", 0) or 0)
+        boost = max(0, min(depcoins.MAX_BOOSTS, boost))
+        base_odd = upgrader.chance(source, target)
+        odd = min(0.95, base_odd * depcoins.boost_multiplier(boost))
+        won = upgrader.roll_odd(odd)
 
         user_id = int(user["id"])
-        ok = await state.db.run_upgrade(user_id, from_id, to_id, odd, won)
-        if not ok:
-            raise ValueError("Этой карты у тебя уже нет.")
+        outcome = await state.db.run_upgrade(
+            user_id, from_id, to_id, odd, won, boost=boost
+        )
+        if not outcome.get("ok"):
+            raise ValueError(outcome.get("error", "Этой карты у тебя уже нет."))
     except Exception as error:  # noqa: BLE001
         return JSONResponse({"error": str(error)}, status_code=400)
 
@@ -1263,6 +1284,11 @@ async def api_upgrader_spin(request: Request) -> JSONResponse:
             "from": upgrader.card_payload(source),
             "to": upgrader.card_payload(target),
             "balance": await state.market.balance(user_id),
+            "boost": boost,
+            "base_chance": base_odd,
+            "drift": bool(outcome.get("drift")),
+            "drift_streak": int(outcome.get("streak") or 0),
+            "dep": await state.db.dep_balance(user_id),
         }
     )
 
@@ -1346,6 +1372,14 @@ body .hub[disabled]{color:var(--muted)!important;opacity:.7}
 .hub .ic{font-size:19px;font-weight:900;color:var(--acc);line-height:1;margin-top:3px}
 .hub .tt{font-size:12px;font-weight:900;letter-spacing:2.4px}
 
+.boost{display:flex;gap:9px;align-items:center;margin:13px 0 2px}
+.boost button{flex:1;border:1px solid var(--line)!important;background:transparent!important;
+  color:var(--ink)!important;border-radius:12px!important;padding:13px!important;
+  font-size:13px!important;font-weight:800!important;box-shadow:none!important}
+.boost button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+  border-color:transparent!important}
+.boost .dep{font-size:11.5px;color:var(--muted);min-width:92px;text-align:right;line-height:1.5}
+
 .go{position:fixed;left:14px;right:14px;bottom:16px;max-width:492px;margin:0 auto;
   border:0;border-radius:15px;padding:17px;font-size:16px;font-weight:900;letter-spacing:.5px;
   color:#1a1204;background:linear-gradient(135deg,var(--acc2),var(--acc));
@@ -1424,6 +1458,8 @@ body .hub[disabled]{color:var(--muted)!important;opacity:.7}
     </div>
   </div>
 
+  <div class="boost" id="boostBox"></div>
+
   <div class="tabs">
     <button class="tab on" data-tab="mine" id="tabMine">Мои карты</button>
     <button class="tab" data-tab="targets" id="tabTargets">Вы получите</button>
@@ -1447,7 +1483,30 @@ body .hub[disabled]{color:var(--muted)!important;opacity:.7}
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 const SEGMENTS = 40;
-let S = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, tab: "mine", busy: false, rotation: 0};
+let S = {mine: [], targets: [], ladder: [], steps: {}, A: null, B: null, tab: "mine", busy: false,
+  rotation: 0, boost: 0};
+function shownChance(){
+  if (!(S.A && S.B)) return 0;
+  const step = (S.data && S.data.dep) ? S.data.dep.step : 1;
+  return Math.min(0.95, chanceOf(S.A, S.B) * Math.pow(step, S.boost || 0));
+}
+function renderBoost(){
+  const d = (S.data && S.data.dep) || {balance: 0, price: 5, max: 2, step: 1.35, streak: 0, need: 3};
+  const b = S.boost || 0;
+  const canUp = b < (d.max || 2) && (d.balance || 0) >= (d.price || 5);
+  const box = document.getElementById("boostBox");
+  box.innerHTML =
+    '<button id="boostBtn" class="' + (b ? "on" : "") + '"' + ((canUp || b) ? "" : " disabled") + '>' +
+      (b ? "Улучшено ×" + b : "Улучшить шанс") + ' · ' + (d.price || 5) + ' деп</button>' +
+    '<div class="dep">' + (d.balance || 0).toFixed(5) + ' деп' +
+      ((d.streak || 0) > 0 ? "<br>дрифт " + d.streak + "/" + (d.need || 3) : "") + '</div>';
+  document.getElementById("boostBtn").onclick = () => {
+    if (S.boost >= (d.max || 2)) S.boost = 0;
+    else if ((d.balance || 0) < (d.price || 5) && !S.boost) { toast("Не хватает деп-коинов"); return; }
+    else S.boost = (S.boost || 0) + 1;
+    renderBoost(); paintDial(shownChance());
+  };
+}
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
 function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -1531,7 +1590,7 @@ function render(){
       if (sd === "A") S.A = S.mine.find(c => c.id === id) || null;
       else S.B = S.targets.find(c => c.id === id) || null;
       render();
-      paintDial(S.A && S.B ? chanceOf(S.A, S.B) : 0);
+      paintDial(shownChance()); renderBoost();
       if (S.tab === "mine" && S.A) { S.tab = "targets"; render(); }
     };
   });
@@ -1548,7 +1607,7 @@ async function load(){
     if (S.B && !S.targets.some(c => c.id === S.B.id)) S.B = null;
     if (!S.A && S.mine.length) S.A = S.mine[0];
     render();
-    paintDial(S.A && S.B ? chanceOf(S.A, S.B) : 0);
+    paintDial(shownChance()); renderBoost();
   }catch(e){ toast("Не смог загрузить", true); }
 }
 async function spin(){
@@ -1557,7 +1616,7 @@ async function spin(){
   const odd = chanceOf(S.A, S.B);
   try{
     const r = await fetch("/api/upgrader/spin", {method:"POST", headers,
-      body: JSON.stringify({from: S.A.id, to: S.B.id})});
+      body: JSON.stringify({from: S.A.id, to: S.B.id, boost: S.boost || 0})});
     const d = await r.json();
     if (d.error){ toast(d.error, true); S.busy = false; await load(); return; }
 
@@ -1581,9 +1640,13 @@ async function spin(){
     document.getElementById("rArt").innerHTML = d.won && d.to.image
       ? '<img src="' + d.to.image + '" alt="">' : "";
     document.getElementById("rTitle").textContent = d.won ? esc(d.to.name) + " — твоя!" : "Не повезло";
-    document.getElementById("rText").textContent = d.won
+    let tail = d.won
       ? d.from.name + " стал " + d.to.name + ". Шанс был " + pct(d.chance) + "."
       : d.from.name + " сгорел. Шанс был " + pct(d.chance) + ".";
+    if (d.boost) tail += " Улучшение ×" + d.boost + " (было " + pct(d.base_chance) + ").";
+    if (d.drift) tail += " Дрифт-комбо! Эльвира приехала в коллекцию.";
+    else if (d.drift_streak) tail += " Дрифт " + d.drift_streak + "/3.";
+    document.getElementById("rText").textContent = tail;
     document.getElementById("result").classList.add("on");
     if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred(d.won ? "success" : "error");
   }catch(e){ toast("Связь потерялась", true); }

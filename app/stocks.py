@@ -48,6 +48,15 @@ STOCKS: tuple[dict[str, object], ...] = (
     {"slug": "ludoman", "name": "MusorDelta_Coin", "emoji": "🗑️", "base": 800, "vol": 0.050},
     {"slug": "kartofan", "name": "Карточный_Coin", "emoji": "🃏", "base": 600, "vol": 0.035},
     {"slug": "zeya", "name": "ЗеяКоин", "emoji": "🌌", "base": 1200, "vol": 0.028},
+    # платит при продаже не очками, а деп-коинами
+    {
+        "slug": "dodep",
+        "name": "Компания доДеп",
+        "emoji": "🧾",
+        "base": 900,
+        "vol": 0.026,
+        "pays": "dep",
+    },
 )
 
 

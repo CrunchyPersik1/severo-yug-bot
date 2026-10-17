@@ -993,11 +993,12 @@ def test_faq_drops_lists_every_rarity():
         "Мифический",
         "Легендарный",
         "Секретный",
+        "Ультимативный",
         "Ультралегендарный",
         "Учителя",
     ):
         assert name in text, name
-    assert "42.00%" in text
+    assert "41.65%" in text
     assert "Кейс" in text
     callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
     assert "fq:menu" in callbacks

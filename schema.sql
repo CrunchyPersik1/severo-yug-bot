@@ -508,3 +508,10 @@ create table if not exists player_themes (
     created_at timestamptz not null default now(),
     primary key (user_id, theme_id)
 );
+
+-- ===================================================================== --
+-- Деп-коины и дрифт-комбо
+-- ===================================================================== --
+
+alter table players add column if not exists dep_coins numeric(18,5) not null default 0;
+alter table players add column if not exists drift_streak integer not null default 0;

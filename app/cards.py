@@ -33,12 +33,14 @@ class Rarity:
 
 
 RARITIES: dict[str, Rarity] = {
-    "rare": Rarity("rare", "Редкий", 0.4200, "⚪"),
+    "rare": Rarity("rare", "Редкий", 0.4165, "⚪"),
     "superrare": Rarity("superrare", "Сверхредкий", 0.3025, "🔵"),
     "epic": Rarity("epic", "Эпический", 0.1800, "🟣"),
     "mythic": Rarity("mythic", "Мифический", 0.0700, "🔴"),
     "legendary": Rarity("legendary", "Легендарный", 0.0150, "🟡"),
     "secret": Rarity("secret", "Секретный", 0.0100, "⚫"),
+    # выше легендарного, но ниже ультралегендарного
+    "ultimate": Rarity("ultimate", "Ультимативный", 0.0035, "💎"),
     "ultra": Rarity("ultra", "Ультралегендарный", 0.0005, "🌈"),
     "teacher": Rarity("teacher", "Учителя", 0.0020, "🟤"),
 }
@@ -46,6 +48,7 @@ RARITIES: dict[str, Rarity] = {
 RARITY_ORDER: tuple[str, ...] = (
     "teacher",
     "ultra",
+    "ultimate",
     "secret",
     "legendary",
     "mythic",
@@ -186,6 +189,17 @@ CARDS: tuple[Card, ...] = (
        "Красная ручка", 4,
        description="Русичка · ивентовая карта, выдают только вручную",
        damage=175, poison=35, poison_turns=3, weaken=25, weaken_turns=2),
+    # дрифт-комбо: три провала подряд в апгрейдере
+    _c("elvira_drift", "Эльвира ДрифтФонкХасановна", "teacher", 66000, 940, 54,
+       "Фонк-разгон", 3,
+       description="Дрифт-комбо · три проигрыша подряд в апгрейдере",
+       damage=140, stun=1, dodge=1),
+
+    # ======================================================================= #
+    # УЛЬТИМАТИВНЫЙ
+    # ======================================================================= #
+    _c("yara_robert", "Яра, Роберт", "ultimate", 20000, 760, 50, "Дрифт-дуэт", 3,
+       description="Ультимативная · бьют вдвоём", damage=90, dodge=1),
 
     # ======================================================================= #
     # ЛЕГЕНДАРНЫЙ (3)
@@ -271,8 +285,18 @@ PROMO_ONLY_CARD_IDS: frozenset[str] = frozenset({"elmira_secret"})
 # Секретные ивентовые карты: их выдаёт только админ вручную.
 ADMIN_ONLY_CARD_IDS: frozenset[str] = frozenset({"guzel_armatura"})
 
+# Дрифт-комбо: три проигрыша подряд в апгрейдере.
+COMBO_ONLY_CARD_IDS: frozenset[str] = frozenset({"elvira_drift"})
+
 # Всё, что не попадается в случайных наградах и не продаётся в магазине.
-SECRET_CARD_IDS: frozenset[str] = PROMO_ONLY_CARD_IDS | ADMIN_ONLY_CARD_IDS
+SECRET_CARD_IDS: frozenset[str] = (
+    PROMO_ONLY_CARD_IDS | ADMIN_ONLY_CARD_IDS | COMBO_ONLY_CARD_IDS
+)
+
+# Их нельзя выбрать целью в апгрейдере: слишком сильные для обмена.
+UPGRADER_EXCLUDED_CARD_IDS: frozenset[str] = frozenset(
+    {"guzel_armatura", "elmira_secret"}
+)
 
 # Парные карты: когда обе в одной команде, поддерживают друг друга.
 # Михаил Николаевич (географ) и Глафира — «М + Г = ❤️».
