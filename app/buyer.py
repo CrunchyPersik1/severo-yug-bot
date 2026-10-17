@@ -16,8 +16,13 @@ BUYER_RATE = 0.90
 
 
 def price(card: Card, bonus: dict[str, int] | None = None) -> int:
-    """Сколько скупщик даст за эту карту."""
-    return max(1, int(market_price(card, bonus) * BUYER_RATE))
+    """Сколько скупщик даст за эту карту.
+
+    Апгрейды (ауры, фоны, эффекты) в цену НЕ входят. Иначе получалась
+    печатная машинка: карта за 750 очков апгрейда дорожала втрое, а скупщик
+    платил 90% от новой цены — покупай в магазине, апгрейди, сдавай, повторяй.
+    """
+    return max(1, int(market_price(card) * BUYER_RATE))
 
 
 def loss(card: Card, bonus: dict[str, int] | None = None) -> int:
