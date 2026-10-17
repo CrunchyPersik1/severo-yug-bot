@@ -14,16 +14,25 @@ header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);border-bott
 h1{margin:0;font-size:19px}
 .wallet{font-weight:700;font-size:15px;background:#1e2140;color:#c7c9ff;border-radius:999px;padding:7px 14px}
 main{padding:16px 0 0}
-.reelwrap{position:relative;overflow:hidden;padding:14px 0;background:#12141c;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.reelwrap{position:relative;overflow:hidden;padding:14px 0;background:#12141c;border-top:1px solid var(--line);border-bottom:1px solid var(--line);--tw:96px;--th:118px}
+.reelwrap.mini{padding:5px 0;--tw:62px;--th:74px}
+.reelwrap.mini + .reelwrap.mini{border-top:0}
 .reel{display:flex;gap:8px;will-change:transform}
-.tile{flex:0 0 96px;width:96px;height:118px;border-radius:12px;background:#1b1f2b;border:2px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
-.tile .emoji{font-size:26px;line-height:1}
+.tile{flex:0 0 var(--tw);width:var(--tw);height:var(--th);border-radius:12px;background:#1b1f2b;border:2px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;overflow:hidden}
+.tile .emoji{font-size:calc(var(--tw)*.27);line-height:1}
 .tile .tname{font-size:11px;text-align:center;padding:0 4px;color:#e5e7eb;max-height:28px;overflow:hidden}
 .tile .tpoints{font-size:11px;color:var(--muted)}
+.reelwrap.mini .tile{border-radius:9px;gap:2px}
+.reelwrap.mini .tile .tname{font-size:7.5px;max-height:18px;padding:0 2px;line-height:1.15}
+.reelwrap.mini .tile .tpoints{font-size:8px}
+.reelwrap.mini .marker{width:2px}
 .marker{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#f59e0b;box-shadow:0 0 12px #f59e0b;z-index:3}
 .result{margin:16px;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px;line-height:1.5;min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center}
 .open{margin:0 16px;width:calc(100% - 32px);border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#f59e0b,#b45309)}
 .open:disabled{opacity:.45}
+.howmany{display:flex;gap:8px;margin:12px 16px 0}
+.howmany button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;padding:10px 0;font-size:13px;font-weight:800}
+.howmany button.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
 .legend{margin:14px 16px 0;font-size:12px;color:var(--muted);line-height:1.7}
 #toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;border-radius:12px;padding:14px 16px;font-size:14px;transform:translateY(150%);transition:.26s;z-index:9}
 #toast.on{transform:translateY(0)}
@@ -33,8 +42,14 @@ main{padding:16px 0 0}
 <body>
 <header><h1>📦 Кейсы</h1><div class="wallet">📦 <span id="cases">…</span></div></header>
 <main>
-  <div class="reelwrap"><div class="marker"></div><div class="reel" id="reel"></div></div>
+  <div id="reels"><div class="reelwrap"><div class="marker"></div><div class="reel" id="reel"></div></div></div>
   <div class="result" id="result">Жми «Открыть кейс» — лента закрутится.</div>
+  <div class="howmany" id="howmany">
+    <button data-n="1" class="on">1 кейс</button>
+    <button data-n="3">3</button>
+    <button data-n="5">5</button>
+    <button data-n="10">10</button>
+  </div>
   <button class="open" id="open">Открыть кейс</button>
   <div class="legend">
     Шансы кейса: 🟣 эпик 60% · 🔴 миф 28% · 🟡 легенда 8% · ⚫ секрет 1.5% · 💎 ультима 1.5% · 🌈 ульта 1%.
@@ -45,9 +60,9 @@ main{padding:16px 0 0}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let pool = [], cases = 0, spinning = false, filled = false;
-const TILE = 96, GAP = 8, STEP = TILE + GAP;
-const reel = document.getElementById("reel");
+let pool = [], cases = 0, spinning = false, howMany = 1;
+const GAP = 8;
+const reels = document.getElementById("reels");
 const result = document.getElementById("result");
 const openBtn = document.getElementById("open");
 function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -60,40 +75,60 @@ function tile(card){
     '<div class="tpoints">'+money(card.price || card.points)+'</div></div>';
 }
 function randomCard(){ return pool[Math.floor(Math.random()*pool.length)] || {name:"?",emoji:"?",points:0,price:0,color:"#334155"}; }
-function fillReel(win){
-  var n = 60, target = 54, html = "";
-  for(var i=0;i<n;i++){ html += tile(i===target && win ? win : randomCard()); }
-  reel.innerHTML = html;
-  return target;
+// Одна лента: создаём узел, набиваем плитками, возвращаем всё для прокрутки.
+function makeReel(win, mini){
+  var wrap = document.createElement("div");
+  wrap.className = "reelwrap" + (mini ? " mini" : "");
+  var marker = document.createElement("div");
+  marker.className = "marker";
+  var el = document.createElement("div");
+  el.className = "reel";
+  wrap.appendChild(marker);
+  wrap.appendChild(el);
+  reels.appendChild(wrap);
+  var tw = mini ? 62 : 96;
+  var total = mini ? 34 : 60;
+  var target = mini ? 28 : 54;
+  var html = "";
+  for(var i=0;i<total;i++){ html += tile(i===target && win ? win : randomCard()); }
+  el.innerHTML = html;
+  return {el: el, target: target, step: tw + GAP, tw: tw};
 }
-function spinTo(target){
+function spinOne(item){
   var center = window.innerWidth / 2;
   var jitter = (Math.random()*40) - 20;
-  var offset = target*STEP + TILE/2 - center + jitter;
-  reel.style.transition = "transform 5s cubic-bezier(.12,.72,.06,1)";
-  reel.style.transform = "translateX(" + (-offset) + "px)";
+  var offset = item.target*item.step + item.tw/2 - center + jitter;
+  setTimeout(function(){
+    item.el.style.transition = "transform 4.2s cubic-bezier(.12,.72,.06,1)";
+    item.el.style.transform = "translateX(" + (-offset) + "px)";
+  }, 30);
 }
 async function open(){
   if(spinning) return;
   spinning = true; openBtn.disabled = true;
-  result.textContent = "Крутим...";
+  result.textContent = "\u041a\u0440\u0443\u0442\u0438\u043c...";
   try{
-    var r = await fetch("/api/case/open", {method:"POST", headers, body:"{}"});
+    var r = await fetch("/api/case/open_many", {method:"POST", headers,
+      body: JSON.stringify({count: howMany})});
     var d = await r.json();
     if(d.error){ toast(d.error,"bad"); spinning=false; openBtn.disabled = cases<=0; return; }
-    var target = fillReel(d.card);
-    reel.style.transition = "none"; reel.style.transform = "translateX(0)";
-    void reel.offsetWidth;
-    spinTo(target);
+    reels.innerHTML = "";
+    var mini = d.cards.length > 1;
+    var items = d.cards.map(function(c){ return makeReel(c, mini); });
+    void reels.offsetWidth;
+    items.forEach(spinOne);
     cases = d.cases;
     document.getElementById("cases").textContent = cases;
     setTimeout(function(){
-      result.innerHTML = "\uD83C\uDF89 <b>"+d.card.name+"</b> \u00b7 "+d.card.rarity_title+
-        " \u00b7 +"+money(d.card.points)+" \u043e\u0447\u043a." + (d.is_new ? " \u00b7 <b>\u041d\u041e\u0412\u0410\u042f!</b>" : "");
+      result.innerHTML = d.cards.map(function(c){
+        return "\uD83C\uDF89 <b>"+c.name+"</b> \u00b7 "+c.rarity_title+
+          " \u00b7 +"+money(c.points)+" \u043e\u0447\u043a." +
+          (c.is_new ? " \u00b7 <b>\u041d\u041e\u0412\u0410\u042f!</b>" : "");
+      }).join("<br>");
       spinning = false;
       openBtn.disabled = cases <= 0;
       if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u0435\u0442";
-    }, 5200);
+    }, 4600);
   }catch(e){ toast("\u0421\u0432\u044f\u0437\u044c \u043f\u043e\u0442\u0435\u0440\u044f\u043b\u0430\u0441\u044c","bad"); spinning=false; openBtn.disabled=cases<=0; }
 }
 async function load(){
@@ -109,6 +144,15 @@ async function load(){
   }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0435\u0439\u0441\u044b"; }
 }
 openBtn.onclick = open;
+document.querySelectorAll("#howmany [data-n]").forEach(function(b){
+  b.onclick = function(){
+    if(spinning) return;
+    howMany = parseInt(b.dataset.n, 10) || 1;
+    document.querySelectorAll("#howmany [data-n]").forEach(function(x){
+      x.className = x === b ? "on" : "";
+    });
+  };
+});
 if(tg){ tg.ready(); tg.expand(); }
 load();
 </script>

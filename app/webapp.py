@@ -1435,8 +1435,10 @@ body .hub[disabled]{color:var(--muted)!important;opacity:.7}
 .card .ic{font-size:30px;line-height:56px}
 .card .nm{font-size:10.5px;font-weight:700;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .pr{font-size:9.5px;color:var(--acc2);font-weight:700;margin-top:1px}
-.card .ct{position:absolute;top:4px;right:5px;font-size:9.5px;font-weight:700;color:#dbe3ef;
-  background:rgba(0,0,0,.6);border-radius:6px;padding:1px 5px}
+.card .ct{position:absolute;z-index:5;top:4px;right:5px;font-size:10px;
+  font-weight:800;color:#fff;background:rgba(8,10,14,.94);
+  border:1px solid rgba(255,255,255,.28);border-radius:7px;padding:1px 6px;
+  box-shadow:0 2px 7px rgba(0,0,0,.55);line-height:15px}
 .r-rare{border-color:rgba(107,114,128,.55)} .r-superrare{border-color:rgba(59,130,246,.7)}
 .r-epic{border-color:rgba(168,85,247,.75)} .r-mythic{border-color:rgba(239,68,68,.75)}
 .r-legendary{border-color:rgba(234,179,8,.8)} .r-secret{border-color:rgba(100,116,139,.85)}
@@ -4457,8 +4459,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .card .nm{font-size:10.5px;font-weight:700;margin-top:5px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .card .pr{font-size:9.5px;color:var(--acc2);font-weight:700}
-.card .ct{position:absolute;top:4px;right:5px;font-size:9.5px;font-weight:800;color:#dbe3ef;
-  background:rgba(0,0,0,.6);border-radius:6px;padding:1px 5px}
+.card .ct{position:absolute;z-index:5;top:4px;right:5px;font-size:10px;
+  font-weight:800;color:#fff;background:rgba(8,10,14,.94);
+  border:1px solid rgba(255,255,255,.28);border-radius:7px;padding:1px 6px;
+  box-shadow:0 2px 7px rgba(0,0,0,.55);line-height:15px}
 .r-rare{border-color:rgba(107,114,128,.55)} .r-superrare{border-color:rgba(59,130,246,.7)}
 .r-epic{border-color:rgba(168,85,247,.75)} .r-mythic{border-color:rgba(239,68,68,.75)}
 .r-legendary{border-color:rgba(234,179,8,.8)} .r-secret{border-color:rgba(100,116,139,.85)}
@@ -4646,3 +4650,52 @@ load();
 </body>
 </html>
 """
+
+
+@router.post("/api/case/open_many")
+async def api_case_open_many(request: Request) -> JSONResponse:
+    """Открыть сразу несколько кейсов — для мульти-ленты."""
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        want = int((body or {}).get("count", 1))
+    except (TypeError, ValueError):
+        want = 1
+    want = max(1, min(10, want))
+
+    cases = await state.db.user_cases(uid)
+    if not cases:
+        return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
+
+    opened: list[dict[str, Any]] = []
+    for case in cases[:want]:
+        if not await state.db.open_case(uid, int(case["id"])):
+            continue
+        card = roll_case_card()
+        counts = await state.db.get_collection(uid)
+        is_new = card.card_id not in counts
+        await state.db.add_card(uid, card.card_id)
+        await state.db.add_points(uid, card.points)
+        opened.append(
+            {
+                "id": card.card_id,
+                "name": card.name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "points": card.points,
+                "price": market_price(card),
+                "color": cases_mod.RARITY_COLORS.get(card.rarity, "#334155"),
+                "is_new": is_new,
+            }
+        )
+    if not opened:
+        return JSONResponse({"error": "Не получилось открыть"}, status_code=400)
+    left = len(await state.db.user_cases(uid))
+    return JSONResponse({"ok": True, "cards": opened, "cases": left})
