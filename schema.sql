@@ -533,3 +533,15 @@ create table if not exists yugi (
     upgrades   jsonb not null default '[]'::jsonb,
     updated_at timestamptz not null default now()
 );
+
+alter table yugi add column if not exists tap_tokens numeric(12,3) not null default 30;
+alter table yugi add column if not exists tap_window_at timestamptz not null default now();
+
+create table if not exists yugi_flags (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    asked      integer not null,
+    accepted   integer not null,
+    created_at timestamptz not null default now()
+);
+create index if not exists yugi_flags_user_idx on yugi_flags (user_id, created_at desc);

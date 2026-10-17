@@ -9,10 +9,17 @@ from __future__ import annotations
 
 from typing import Any
 
-MAX_TOTAL = 15_000_000.0        # потолок за всю игру
+MAX_TOTAL = 2_500_000.0         # потолок за всю игру
 CASE_PRICE = 100_000.0          # Югов за один кейс
 BASE_TAP = 1.0                  # сколько даёт один тап изначально
 OFFLINE_CAP_SECONDS = 8 * 3600  # больше 8 часов офлайна не копим
+
+# --- античит --------------------------------------------------------------- #
+# Человек не может тапать быстрее этого. Всё сверх нормы не засчитывается,
+# а запросы с наглым перебором пишутся в журнал.
+MAX_TAPS_PER_SECOND = 15.0
+TAP_BURST = 30.0               # запас токенов, чтобы короткие рывки прощались
+FLAG_FROM = 5                  # с этого перебора пишем в журнал
 
 # Здания: растят доход в секунду. Цена растёт с каждой покупкой.
 BUILDINGS: tuple[dict[str, Any], ...] = (
@@ -44,6 +51,26 @@ UPGRADES: tuple[dict[str, Any], ...] = (
 
 BUILDINGS_BY_ID: dict[str, dict[str, Any]] = {b["id"]: b for b in BUILDINGS}
 UPGRADES_BY_ID: dict[str, dict[str, Any]] = {u["id"]: u for u in UPGRADES}
+
+
+def tap_bucket(window_at: Any, tokens: Any, now: Any) -> float:
+    """Сколько тапов игрок имеет право сделать прямо сейчас.
+
+    Простая «лейка»: токены копятся со временем, каждый тап тратит один.
+    Так робот, долбящий 300 тапов в секунду, упрётся в потолок, а живой
+    человек с быстрыми пальцами — нет.
+    """
+    if window_at is None:
+        return TAP_BURST
+    elapsed = max(0.0, (now - window_at).total_seconds())
+    return min(TAP_BURST, max(0.0, float(tokens or 0)) + elapsed * MAX_TAPS_PER_SECOND)
+
+
+def tap_take(available: float, count: int) -> tuple[int, float, int]:
+    """Сколько тапов засчитать. Возвращает (принято, остаток токенов, отклонено)."""
+    want = max(0, int(count))
+    take = int(min(float(want), max(0.0, float(available))))
+    return take, max(0.0, float(available) - take), want - take
 
 
 def building_cost(spec: dict[str, Any], count: int) -> float:

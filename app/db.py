@@ -1232,6 +1232,8 @@ class Database:
             "cases": int(row["cases"]),
             "buildings": {str(k): int(v) for k, v in buildings.items()},
             "upgrades": [str(x) for x in upgrades],
+            "tokens": float(row["tap_tokens"]),
+            "window_at": row["tap_window_at"],
         }
 
     async def yugi_write(self, user_id: int, state: dict[str, Any]) -> None:
@@ -1240,7 +1242,8 @@ class Database:
         async with self._p().acquire() as con:
             await con.execute(
                 "update yugi set balance = $2, total = $3, taps = $4, cases = $5, "
-                "buildings = $6::jsonb, upgrades = $7::jsonb, updated_at = now() "
+                "buildings = $6::jsonb, upgrades = $7::jsonb, "
+                "tap_tokens = $8, tap_window_at = $9, updated_at = now() "
                 "where user_id = $1",
                 user_id,
                 float(state["balance"]),
@@ -1249,6 +1252,18 @@ class Database:
                 int(state["cases"]),
                 json.dumps(state["buildings"], ensure_ascii=False),
                 json.dumps(state["upgrades"], ensure_ascii=False),
+                float(state.get("tokens", 0)),
+                state.get("window_at"),
+            )
+
+    async def yugi_flag(self, user_id: int, asked: int, accepted: int) -> None:
+        """Журнал перебора: сколько тапов запросили и сколько засчитали."""
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into yugi_flags (user_id, asked, accepted) values ($1, $2, $3)",
+                user_id,
+                int(asked),
+                int(accepted),
             )
 
     # ------------------------------------------------------------------ #

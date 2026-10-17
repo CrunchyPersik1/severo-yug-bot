@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import contextlib
 import logging
 import random
 from typing import Any
@@ -3180,14 +3181,30 @@ async def api_yugi_tap(request: Request) -> JSONResponse:
         count = 1
     count = max(1, min(300, count))
 
+    from datetime import datetime, timezone
+
     data = await state.db.yugi_load(user_id)
-    gain = yugi.tap_power(data["upgrades"]) * count
+    now = datetime.now(timezone.utc)
+    # Античит: «лейка» токенов. Человек тапает ~10 раз в секунду, робот —
+    # сотни. Всё сверх нормы не засчитываем и пишем в журнал.
+    available = yugi.tap_bucket(data.get("window_at"), data.get("tokens"), now)
+    accepted, tokens_left, dropped = yugi.tap_take(available, count)
+    if dropped >= yugi.FLAG_FROM:
+        with contextlib.suppress(Exception):
+            await state.db.yugi_flag(user_id, count, accepted)
+
+    gain = yugi.tap_power(data["upgrades"]) * accepted
     data["total"], data["balance"] = yugi.add_earned(
         data["total"], data["balance"], gain
     )
-    data["taps"] += count
+    data["taps"] += accepted
+    data["tokens"] = tokens_left
+    data["window_at"] = now
     await state.db.yugi_write(user_id, data)
-    return JSONResponse(_yugi_payload(data))
+    payload = _yugi_payload(data)
+    payload["accepted"] = accepted
+    payload["dropped"] = dropped
+    return JSONResponse(payload)
 
 
 @router.post("/api/yugi/buy")
@@ -3490,7 +3507,10 @@ async function flush(){
   if (!count) return;
   try{
     const d = await post("/api/yugi/tap", {count});
-    if (!d.error){ S.data = d; render(); }
+    if (!d.error){
+      S.data = d; render();
+      if (d.dropped >= 5) toast("Слишком быстро — часть тапов не зачлась");
+    }
   }catch(e){ /* вернём при следующем тапе */ S.pending += count; }
 }
 document.getElementById("tap").onclick = doTap;
