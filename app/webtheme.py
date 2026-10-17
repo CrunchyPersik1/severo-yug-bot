@@ -118,6 +118,73 @@ POLISH = r"""<style>
 
   img{ transition:opacity .3s ease }
 
+  /* ===================== СОЧНОСТЬ ===================== */
+
+  /* Страница мягко проявляется */
+  @keyframes __pageIn{ from{opacity:0; transform:translateY(7px)} to{opacity:1; transform:none} }
+  body{ animation:__pageIn .42s cubic-bezier(.2,.8,.25,1) both }
+
+  /* Картинки не «выскакивают», а проявляются */
+  @keyframes __imgIn{ from{opacity:0; transform:scale(1.04)} to{opacity:1; transform:none} }
+  img{ animation:__imgIn .45s cubic-bezier(.2,.8,.25,1) both }
+
+  /* Кнопки: живой отклик на нажатие */
+  body button,body .btn,body .go,body .buy,body .sell,body .tab,body .ch,body .bt{
+    transition:transform .13s cubic-bezier(.2,.8,.3,1),
+               filter .16s ease, box-shadow .22s ease,
+               background .2s ease, color .2s ease!important;
+    will-change:transform;
+  }
+  body button:active,body .btn:active,body .go:active,body .buy:active,
+  body .sell:active,body .tab:active,body .ch:active,body .bt:active{
+    transform:scale(.955)!important;
+  }
+  /* Радиус нажатия (рисуется скриптом внизу) */
+  @keyframes __ripple{ from{transform:scale(0); opacity:.55} to{transform:scale(1); opacity:0} }
+
+  /* Оверлеи: открываются зумом, содержимое подъезжает */
+  @keyframes __fadeIn{ from{opacity:0} to{opacity:1} }
+  @keyframes __zoomIn{
+    from{opacity:0; transform:scale(.86) translateY(14px)}
+    to{opacity:1; transform:none}
+  }
+  .result.on,.flying.on,.modal.on,.sheet.on,.popup.on,.overlay.on{
+    animation:__fadeIn .26s ease both;
+  }
+  .result.on>*,.flying.on>*,.modal.on>*,.sheet.on>*,.popup.on>*{
+    animation:__zoomIn .36s cubic-bezier(.2,.9,.3,1.06) both;
+  }
+
+  /* Списки и сетки: содержимое подъезжает волной */
+  @keyframes __slideIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+  .cards>*,.grid>*,.list>*,.rows>*,.ticker>*{
+    animation:__slideIn .42s cubic-bezier(.2,.8,.25,1) both;
+  }
+  .cards>*:nth-child(2n),.grid>*:nth-child(2n),.list>*:nth-child(2n){ animation-delay:.04s }
+  .cards>*:nth-child(3n),.grid>*:nth-child(3n),.list>*:nth-child(3n){ animation-delay:.08s }
+  .cards>*:nth-child(5n),.grid>*:nth-child(5n),.list>*:nth-child(5n){ animation-delay:.13s }
+
+  /* Переключение вкладок: активная подчёркивается */
+  .tab,.ch,.bt{ position:relative; overflow:hidden }
+  .tab::after,.ch::after,.bt::after{
+    content:"";position:absolute;left:12%;right:12%;bottom:3px;height:2px;border-radius:2px;
+    background:currentColor;opacity:0;transform:scaleX(.4);
+    transition:opacity .2s ease, transform .25s cubic-bezier(.2,.8,.3,1);
+  }
+  .tab.on::after,.ch.on::after,.bt.on::after{ opacity:.5; transform:scaleX(1) }
+
+  /* Тост выезжает с лёгким отскоком */
+  @keyframes __toastIn{ from{opacity:0; transform:translateY(140%)} to{opacity:1; transform:none} }
+  #toast.on{ animation:__toastIn .34s cubic-bezier(.2,.9,.3,1.08) both }
+
+  @media (prefers-reduced-motion: reduce){
+    body,img,.cards>*,.grid>*,.list>*,#toast.on,
+    .result.on,.flying.on,.modal.on,.sheet.on,.popup.on,
+    .result.on>*,.flying.on>*,.modal.on>*{
+      animation:none!important;
+    }
+  }
+
   /* Кнопка «Назад» в главное приложение — на всех аппках, кроме самого хаба */
   #__back{
     display:flex;align-items:center;gap:10px;padding:11px 15px;
@@ -188,6 +255,30 @@ BOOTSTRAP = POLISH + r"""<script>
     bar.appendChild(ttl);
     document.body.insertBefore(bar, document.body.firstChild);
   }
+  /* Волна от нажатия на любой кнопке — «сочный» отклик */
+  document.addEventListener("pointerdown", function(e){
+    var b = e.target && e.target.closest
+      ? e.target.closest("button,.btn,.go,.buy,.sell,.tab,.ch,.bt,.mult")
+      : null;
+    if (!b || b.disabled) return;
+    try{
+      var r = b.getBoundingClientRect();
+      if (getComputedStyle(b).position === "static") b.style.position = "relative";
+      b.style.overflow = "hidden";
+      var size = Math.max(r.width, r.height) * 2.2;
+      var s = document.createElement("span");
+      s.style.cssText = "position:absolute;border-radius:50%;pointer-events:none;z-index:3;" +
+        "background:radial-gradient(circle,rgba(255,255,255,.5),transparent 68%);" +
+        "width:" + size + "px;height:" + size + "px;" +
+        "left:" + (e.clientX - r.left - size / 2) + "px;" +
+        "top:" + (e.clientY - r.top - size / 2) + "px;" +
+        "animation:__ripple .55s ease-out forwards";
+      b.appendChild(s);
+      setTimeout(function(){ s.remove(); }, 580);
+    }catch(err){}
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  }, {passive:true});
+
   backBar();
   fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
     if (d && d.vars) apply(d.vars);
