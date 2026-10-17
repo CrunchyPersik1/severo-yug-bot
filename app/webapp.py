@@ -112,6 +112,10 @@ async def _player(request: Request) -> dict[str, Any]:
     await state.db.ensure_player(
         user_id, user.get("username"), user.get("first_name")
     )
+    # Бан действует и в мини-аппках, а не только в боте. Раньше забаненный
+    # мог спокойно играть через приложение — middleware его не видел.
+    if user_id not in state.settings.admin_ids and await state.db.is_banned(user_id):
+        raise ShopError("🚫 Доступ закрыт: аккаунт заблокирован.")
     return user
 
 
