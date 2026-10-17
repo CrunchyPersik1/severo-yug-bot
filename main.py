@@ -222,6 +222,36 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="severo-yug-bot", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def no_store(request: Request, call_next):
+    """Мини-аппки не кэшируем.
+
+    Telegram и WebView держат страницы и ответы API в кэше — из-за этого
+    игроки видели старые цифры (например, уровень 1 вместо 40) даже после
+    исправления. Теперь браузер обязан спрашивать сервер заново.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") or path in (
+        "/",
+        "/app",
+        "/market",
+        "/buyer",
+        "/upgrader",
+        "/hub",
+        "/casino_app",
+        "/roulette_table",
+        "/yugi",
+        "/case_app",
+        "/stocks",
+    ):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 # Роуты мини-аппок подключаем сразу при импорте, а не в lifespan: иначе они
 # добавляются в уже работающий роутер на каждом старте.
 app.include_router(webapp_router)
