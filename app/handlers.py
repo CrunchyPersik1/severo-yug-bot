@@ -465,6 +465,25 @@ async def resolve_profile_target(
     return None, None, None
 
 
+async def _profile_extra(db: Database, user_id: int) -> str:
+    """Статус, описание, музыка, теги и награды — то, что игрок оформил сам."""
+    prof = await db.profile_get(user_id)
+    tags = await db.profile_tags(user_id)
+    rewards = await db.profile_rewards(user_id)
+    lines: list[str] = []
+    if tags:
+        lines.append(" ".join(profiles.tag_label(tag) for tag in tags))
+    if prof["status"]:
+        lines.append(f"💬 {render.esc(prof['status'])}")
+    if prof["bio"]:
+        lines.append(f"«{render.esc(prof['bio'])}»")
+    if prof["music"]:
+        lines.append(f"🎵 {render.esc(prof['music'])}")
+    for reward in rewards:
+        lines.append(f"{render.esc(str(reward['icon']))} {render.esc(str(reward['text']))}")
+    return "\n".join(lines)
+
+
 @router.message(Command("profile", "me", "профиль"))
 @router.message(NormalizedText("профиль", "мой профиль"))
 async def cmd_profile(
@@ -484,13 +503,55 @@ async def cmd_profile(
     if profile is None:
         await message.answer("Профиль пока пуст. Напиши «Северо-Юг».")
         return
-    await _send_profile(
-        message,
-        bot,
-        target_id,
-        render.render_profile(profile, len(CARDS)),
-        render.profile_keyboard(target_id, is_owner=target_id == user.id),
-    )
+    extra = await _profile_extra(db, target_id)
+    text = render.render_profile(profile, len(CARDS))
+    if extra:
+        head, _, body = text.partition("\n")
+        text = head + "\n" + extra + "\n" + body
+    keyboard = render.profile_keyboard(target_id, is_owner=target_id == user.id)
+    base = _base_url()
+    if base and message.chat.type == "private":
+        from aiogram.types import WebAppInfo
+
+        link = f"{base}/profile" + ("" if target_id == user.id else f"?u={target_id}")
+        keyboard.inline_keyboard.insert(
+            0,
+            [
+                InlineKeyboardButton(
+                    text="🎨 Открыть профиль в приложении",
+                    web_app=WebAppInfo(url=link),
+                )
+            ],
+        )
+    await _send_profile(message, bot, target_id, text, keyboard)
+
+
+@router.message(Command("find", "поиск", "search"))
+@router.message(NormalizedText("поиск"))
+async def cmd_find(message: Message, db: Database) -> None:
+    parts = (message.text or "").split(maxsplit=1)
+    query = parts[1].strip() if len(parts) > 1 else ""
+    if len(query.lstrip("@")) < 2:
+        await message.answer(
+            "🔎 <b>Поиск игроков</b>\n\n"
+            "Напиши: <code>/find имя</code> — покажу, кто есть.\n"
+            "Дальше <code>/profile @ник</code> откроет его профиль."
+        )
+        return
+    from . import levels
+
+    rows = await db.profile_find(query)
+    if not rows:
+        await message.answer(f"По запросу «{render.esc(query)}» никого не нашёл.")
+        return
+    lines = ["🔎 <b>Нашёл:</b>", ""]
+    for row in rows:
+        name = row["first_name"] or row["username"] or "игрок"
+        nick = f" @{row['username']}" if row["username"] else ""
+        level = levels.level_from_xp(int(row["xp"] or 0))
+        lines.append(f"· <b>{render.esc(name)}</b>{render.esc(nick)} — ур. {level}")
+    lines += ["", "Открыть: <code>/profile @ник</code>"]
+    await message.answer("\n".join(lines))
 
 
 @router.callback_query(F.data.startswith("pf:"))
