@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from . import buyer
 from . import casino
 from . import depcoins
+from . import levels
 from . import dice_casino
 from . import themes
 from . import cases as cases_mod
@@ -2103,7 +2104,9 @@ async def api_hub(request: Request) -> JSONResponse:
             "me": {
                 "name": user.get("first_name") or "игрок",
                 "balance": await state.market.balance(user_id),
-                "level": int(profile.get("level") or 1),
+                # Уровень в базе не хранится — он считается из опыта.
+            # Раньше тут читалось несуществующее поле, и у всех был «1».
+            "level": levels.level_from_xp(int(profile.get("xp") or 0)),
                 "xp": int(profile.get("xp") or 0),
                 "wins": int(profile.get("wins") or 0),
                 "cards": len(cards),
