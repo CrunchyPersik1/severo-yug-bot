@@ -28,6 +28,7 @@ from . import themes
 from . import cases as cases_mod
 from . import roulette as roulette_mod
 from . import upgrader
+from . import yugi
 from .cards import (
     CARDS,
     CARDS_BY_ID,
@@ -2049,6 +2050,7 @@ HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "roulette", "title": "Рулетка", "note": "крутить колесо", "kind": "app", "path": "/roulette_app"},
     {"id": "casino", "title": "Казино", "note": "кости и ставки", "kind": "app", "path": "/casino_app"},
     {"id": "rtable", "title": "Рулетка-стол", "note": "колесо и шарик", "kind": "app", "path": "/roulette_table"},
+    {"id": "yugi", "title": "Юга-кликер", "note": "тапай и качай", "kind": "app", "path": "/yugi"},
     {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
     {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
     {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},
@@ -3097,6 +3099,418 @@ if(tg){ tg.ready(); tg.expand(); }
     S.data = d; buildWheel(); render();
   }catch(e){ toast("Не смог загрузить"); }
 })();
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Юга-кликер
+# --------------------------------------------------------------------------- #
+
+
+def _yugi_payload(state: dict[str, Any]) -> dict[str, Any]:
+    buildings = state["buildings"]
+    ups = state["upgrades"]
+    return {
+        "balance": round(float(state["balance"]), 2),
+        "total": round(float(state["total"]), 2),
+        "taps": int(state["taps"]),
+        "cases": int(state["cases"]),
+        "per_second": round(yugi.per_second(buildings, ups), 2),
+        "per_tap": round(yugi.tap_power(ups), 2),
+        "cap": yugi.MAX_TOTAL,
+        "left": round(yugi.left_to_earn(state["total"]), 2),
+        "rate": yugi.CASE_PRICE,
+        "buildings": [
+            {
+                "id": b["id"],
+                "name": b["name"],
+                "emoji": b["emoji"],
+                "note": b["note"],
+                "count": int(buildings.get(b["id"], 0)),
+                "prod": b["prod"],
+                "cost": round(yugi.building_cost(b, buildings.get(b["id"], 0))),
+            }
+            for b in yugi.BUILDINGS
+        ],
+        "upgrades": [
+            {
+                "id": u["id"],
+                "name": u["name"],
+                "emoji": u["emoji"],
+                "note": u["note"],
+                "cost": u["cost"],
+                "owned": u["id"] in ups,
+            }
+            for u in yugi.UPGRADES
+        ],
+    }
+
+
+async def _yugi_ready(request: Request):
+    state = request.app.state
+    user = await _player(request)
+    user_id = int(user["id"])
+    await state.db.ensure_player(user_id, user.get("username"), user.get("first_name"))
+    return state, user_id
+
+
+@router.get("/api/yugi")
+async def api_yugi(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    return JSONResponse(_yugi_payload(await state.db.yugi_load(user_id)))
+
+
+@router.post("/api/yugi/tap")
+async def api_yugi_tap(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    body = await request.json()
+    try:
+        count = int(body.get("count", 1))
+    except (TypeError, ValueError):
+        count = 1
+    count = max(1, min(300, count))
+
+    data = await state.db.yugi_load(user_id)
+    gain = yugi.tap_power(data["upgrades"]) * count
+    data["total"], data["balance"] = yugi.add_earned(
+        data["total"], data["balance"], gain
+    )
+    data["taps"] += count
+    await state.db.yugi_write(user_id, data)
+    return JSONResponse(_yugi_payload(data))
+
+
+@router.post("/api/yugi/buy")
+async def api_yugi_buy(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    body = await request.json()
+    kind = str(body.get("kind", ""))
+    target = str(body.get("id", ""))
+    data = await state.db.yugi_load(user_id)
+
+    if kind == "building":
+        spec = yugi.BUILDINGS_BY_ID.get(target)
+        if spec is None:
+            return JSONResponse({"error": "Нет такой постройки"}, status_code=400)
+        have = int(data["buildings"].get(target, 0))
+        cost = yugi.building_cost(spec, have)
+        if data["balance"] < cost:
+            return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
+        data["balance"] -= cost
+        data["buildings"][target] = have + 1
+    elif kind == "upgrade":
+        spec = yugi.UPGRADES_BY_ID.get(target)
+        if spec is None:
+            return JSONResponse({"error": "Нет такого улучшения"}, status_code=400)
+        if target in data["upgrades"]:
+            return JSONResponse({"error": "Уже куплено"}, status_code=400)
+        if data["balance"] < float(spec["cost"]):
+            return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
+        data["balance"] -= float(spec["cost"])
+        data["upgrades"].append(target)
+    else:
+        return JSONResponse({"error": "Не понял, что покупаем"}, status_code=400)
+
+    await state.db.yugi_write(user_id, data)
+    return JSONResponse(_yugi_payload(data))
+
+
+@router.post("/api/yugi/case")
+async def api_yugi_case(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    body = await request.json()
+    try:
+        count = int(body.get("count", 1))
+    except (TypeError, ValueError):
+        count = 1
+    count = max(1, min(150, count))
+
+    data = await state.db.yugi_load(user_id)
+    cost = yugi.CASE_PRICE * count
+    if data["balance"] < cost:
+        return JSONResponse(
+            {"error": f"Нужно {int(cost)} Югов, а у тебя {int(data['balance'])}"},
+            status_code=400,
+        )
+    data["balance"] -= cost
+    data["cases"] += count
+    await state.db.yugi_write(user_id, data)
+    async with state.db.pool.acquire() as con:  # type: ignore[attr-defined]
+        await con.execute(
+            "insert into cases (user_id, source) "
+            "select $1, 'yugi' from generate_series(1, $2)",
+            user_id,
+            int(count),
+        )
+    payload = _yugi_payload(data)
+    payload["bought"] = count
+    return JSONResponse(payload)
+
+
+@router.get("/yugi", response_class=HTMLResponse)
+async def yugi_app() -> HTMLResponse:
+    return HTMLResponse(inject(YUGI_PAGE))
+YUGI_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Юга-кликер</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:22px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+
+.hero{text-align:center;padding:6px 0 4px}
+.hero .b{font-size:40px;font-weight:900;letter-spacing:-1.6px;line-height:1.05;
+  transition:transform .1s}
+.hero .b.pop{transform:scale(1.06)}
+.hero .u{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
+  font-weight:800;margin-top:3px}
+.hero .s{font-size:13.5px;font-weight:800;color:var(--acc2);margin-top:7px}
+
+.tapzone{position:relative;display:flex;justify-content:center;margin:14px 0 8px;height:230px}
+body .tapbtn{width:210px;height:210px;border-radius:50%!important;border:0!important;
+  background:radial-gradient(circle at 50% 32%,var(--acc2),var(--acc) 62%,color-mix(in srgb,var(--acc) 70%,#000) 100%)!important;
+  color:var(--acc-ink)!important;box-shadow:0 14px 34px color-mix(in srgb,var(--acc) 34%,transparent),
+  inset 0 -6px 0 rgba(0,0,0,.18),inset 0 3px 0 rgba(255,255,255,.28)!important;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  transition:transform .09s cubic-bezier(.2,.8,.3,1)}
+body .tapbtn:active{transform:scale(.93)!important}
+body .tapbtn small{font-size:11px;font-weight:800;letter-spacing:2.4px;opacity:.75}
+body .tapbtn b{font-size:56px;line-height:1;font-weight:900;letter-spacing:-2px}
+.fly{position:absolute;pointer-events:none;font-size:19px;font-weight:900;color:var(--acc2);
+  animation:fly 1s ease-out forwards;z-index:6}
+@keyframes fly{0%{opacity:1;transform:translateY(0) scale(1)}
+  100%{opacity:0;transform:translateY(-92px) scale(1.3)}}
+
+.capwrap{margin:6px 0 4px}
+.capbar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.capbar i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s ease}
+.captext{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);
+  margin-top:6px;font-weight:700}
+
+.tabs{display:flex;gap:7px;margin:14px 0 10px}
+.tab{flex:1;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:12px;padding:12px 4px;font-size:13px;font-weight:800}
+.tab.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+
+.row{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);
+  border-radius:14px;padding:11px 12px;margin-bottom:8px}
+.row .ic{width:42px;height:42px;flex:0 0 auto;border-radius:12px;background:var(--panel2);
+  display:flex;align-items:center;justify-content:center;font-size:21px}
+.row .mid{flex:1;min-width:0}
+.row .nm{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .nt{font-size:11.5px;color:var(--muted);margin-top:2px}
+.row .cnt{font-size:11px;color:var(--acc2);font-weight:800}
+.row button{flex:0 0 auto;border:1px solid var(--line)!important;background:transparent!important;
+  color:var(--ink)!important;border-radius:11px!important;padding:11px 13px!important;
+  font-size:12.5px!important;font-weight:800!important;box-shadow:none!important;min-width:104px}
+.row button.can{background:var(--acc)!important;color:var(--acc-ink)!important;border-color:transparent!important}
+.row button[disabled]{color:var(--muted)!important;border-color:var(--line)!important}
+.row button small{display:block;font-size:10px;opacity:.85;font-weight:700;margin-top:2px}
+.own{font-size:12px;font-weight:800;color:var(--up, #3fae6a)}
+.ex{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center}
+.ex .t{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);font-weight:800}
+.ex .v{font-size:26px;font-weight:900;margin:8px 0 4px}
+.ex .s{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.ex button{width:100%;border:0;border-radius:13px;padding:15px;font-size:15px;font-weight:900;
+  background:var(--acc);color:var(--acc-ink)}
+.ex button[disabled]{background:var(--panel2);color:var(--muted)}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <div class="b" id="bal">0</div>
+    <div class="u">Югов</div>
+    <div class="s" id="perSec">+0 в секунду</div>
+  </div>
+
+  <div class="tapzone" id="tapzone">
+    <button class="tapbtn" id="tap">
+      <small>ЮГА</small>
+      <b>🍁</b>
+      <small id="perTap">+1 за тап</small>
+    </button>
+  </div>
+
+  <div class="capwrap">
+    <div class="capbar"><i id="capFill"></i></div>
+    <div class="captext"><span id="capLeft">…</span><span id="capMax">…</span></div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+  <div id="list"></div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {data: null, tab: "building", pending: 0, busy: false, timer: null};
+
+function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function fmt(v){
+  v = Number(v) || 0;
+  if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return Math.round(v).toLocaleString("ru");
+}
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2600);
+}
+function render(){
+  const d = S.data;
+  document.getElementById("bal").textContent = fmt(d.balance);
+  document.getElementById("perSec").textContent = "+" + fmt(d.per_second) + " в секунду";
+  document.getElementById("perTap").textContent = "+" + fmt(d.per_tap) + " за тап";
+  const done = Math.min(100, d.total / d.cap * 100);
+  document.getElementById("capFill").style.width = done.toFixed(2) + "%";
+  document.getElementById("capLeft").textContent = "Осталось " + fmt(d.left) + " Югов";
+  document.getElementById("capMax").textContent = "Потолок " + fmt(d.cap) + " · кейсов " + d.cases;
+  const tabs = [["building", "Здания"], ["upgrade", "Улучшения"], ["exchange", "Обмен"]];
+  document.getElementById("tabs").innerHTML = tabs.map(t =>
+    '<button class="tab' + (S.tab === t[0] ? " on" : "") + '" data-t="' + t[0] + '">' + t[1] + '</button>').join("");
+  document.querySelectorAll("[data-t]").forEach(el => el.onclick = () => { S.tab = el.dataset.t; render(); });
+  drawList();
+}
+function drawList(){
+  const d = S.data, box = document.getElementById("list");
+  if (S.tab === "building"){
+    box.innerHTML = d.buildings.map(b =>
+      '<div class="row"><div class="ic">' + b.emoji + '</div>' +
+      '<div class="mid"><div class="nm">' + esc(b.name) + ' <span class="cnt">×' + b.count + '</span></div>' +
+      '<div class="nt">+' + fmt(b.prod) + '/сек · ' + esc(b.note) + '</div></div>' +
+      '<button data-k="building" data-i="' + b.id + '" class="' + (d.balance >= b.cost ? "can" : "") + '">' +
+      fmt(b.cost) + '<small>Купить</small></button></div>').join("");
+  } else if (S.tab === "upgrade"){
+    box.innerHTML = d.upgrades.map(u =>
+      '<div class="row"><div class="ic">' + u.emoji + '</div>' +
+      '<div class="mid"><div class="nm">' + esc(u.name) + '</div>' +
+      '<div class="nt">' + esc(u.note) + '</div></div>' +
+      (u.owned
+        ? '<div class="own">куплено ✓</div>'
+        : '<button data-k="upgrade" data-i="' + u.id + '" class="' + (d.balance >= u.cost ? "can" : "") + '">' +
+          fmt(u.cost) + '<small>Купить</small></button>') +
+      '</div>').join("");
+  } else {
+    const can = Math.floor(d.balance / d.rate);
+    box.innerHTML = '<div class="ex"><div class="t">Обмен Югов на кейсы</div>' +
+      '<div class="v">' + fmt(d.rate) + ' = 1 кейс</div>' +
+      '<div class="s">Хватает на ' + can + ' кейс(ов) · у тебя ' + d.cases + '</div>' +
+      '<button id="buyCase"' + (can < 1 ? " disabled" : "") + '>Обменять ' + Math.min(can, 10) + ' шт.</button>' +
+      '</div>';
+    const b = document.getElementById("buyCase");
+    if (b) b.onclick = () => buyCase(Math.max(1, Math.min(can, 10)));
+  }
+  document.querySelectorAll("[data-k]").forEach(el => el.onclick = () => buy(el.dataset.k, el.dataset.i));
+}
+async function post(url, body){
+  const r = await fetch(url, {method:"POST", headers, body: JSON.stringify(body || {})});
+  return await r.json();
+}
+async function buy(kind, id){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await post("/api/yugi/buy", {kind, id});
+    if (d.error) toast(d.error);
+    else {
+      S.data = d; render();
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function buyCase(count){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await post("/api/yugi/case", {count});
+    if (d.error) toast(d.error);
+    else { S.data = d; render(); toast("📦 Получено кейсов: " + d.bought); }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+function leaf(x, y){
+  const el = document.createElement("div");
+  el.className = "fly"; el.textContent = "+" + fmt(S.data.per_tap);
+  el.style.left = x + "px"; el.style.top = y + "px";
+  document.getElementById("tapzone").appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+function doTap(ev){
+  if (!S.data) return;
+  const rect = document.getElementById("tapzone").getBoundingClientRect();
+  const x = (ev.clientX ? ev.clientX - rect.left : rect.width / 2) - 18;
+  const y = (ev.clientY ? ev.clientY - rect.top : rect.height / 2) - 20;
+  leaf(x, y);
+  S.pending += 1;
+  S.data.balance += S.data.per_tap;
+  S.data.total += S.data.per_tap;
+  S.data.left = Math.max(0, S.data.left - S.data.per_tap);
+  document.getElementById("bal").textContent = fmt(S.data.balance);
+  const b = document.getElementById("bal");
+  b.classList.add("pop"); setTimeout(() => b.classList.remove("pop"), 90);
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  clearTimeout(S.timer);
+  S.timer = setTimeout(flush, 650);
+}
+async function flush(){
+  const count = S.pending;
+  S.pending = 0;
+  if (!count) return;
+  try{
+    const d = await post("/api/yugi/tap", {count});
+    if (!d.error){ S.data = d; render(); }
+  }catch(e){ /* вернём при следующем тапе */ S.pending += count; }
+}
+document.getElementById("tap").onclick = doTap;
+if(tg){ tg.ready(); tg.expand(); }
+(async () => {
+  try{
+    const r = await fetch("/api/yugi", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; render();
+  }catch(e){ toast("Не смог загрузить"); }
+})();
+setInterval(() => {
+  if (!S.data || S.pending) return;
+  S.data.balance += S.data.per_second * 2;
+  S.data.total += S.data.per_second * 2;
+  S.data.left = Math.max(0, S.data.left - S.data.per_second * 2);
+  if (S.data.total > S.data.cap) S.data.total = S.data.cap;
+  document.getElementById("bal").textContent = fmt(S.data.balance);
+}, 2000);
 </script>
 </body>
 </html>

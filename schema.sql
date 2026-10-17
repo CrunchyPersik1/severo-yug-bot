@@ -518,3 +518,18 @@ alter table players add column if not exists drift_streak integer not null defau
 
 alter table stocks add column if not exists dep_rate numeric(18,5);
 update stocks set dep_rate = 100000 where slug = 'dodep' and dep_rate is null;
+
+-- ===================================================================== --
+-- Юга-кликер
+-- ===================================================================== --
+
+create table if not exists yugi (
+    user_id    bigint primary key references players(user_id) on delete cascade,
+    balance    numeric(18,2) not null default 0,
+    total      numeric(18,2) not null default 0,
+    taps       bigint not null default 0,
+    cases      integer not null default 0,
+    buildings  jsonb not null default '{}'::jsonb,
+    upgrades   jsonb not null default '[]'::jsonb,
+    updated_at timestamptz not null default now()
+);

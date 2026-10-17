@@ -1184,6 +1184,74 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Юга-кликер
+    # ------------------------------------------------------------------ #
+
+    async def yugi_load(self, user_id: int) -> dict[str, Any]:
+        """Читает состояние и досчитывает офлайн-доход (не больше 8 часов)."""
+        import json
+        from datetime import datetime, timezone
+
+        from . import yugi as yugi_mod
+
+        now = datetime.now(timezone.utc)
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select * from yugi where user_id = $1 for update", user_id
+                )
+                if row is None:
+                    row = await con.fetchrow(
+                        "insert into yugi (user_id) values ($1) returning *", user_id
+                    )
+                buildings = as_json_dict(row["buildings"])
+                raw = row["upgrades"]
+                upgrades = json.loads(raw) if isinstance(raw, str) else list(raw or [])
+                total = float(row["total"])
+                balance = float(row["balance"])
+                elapsed = max(
+                    0.0,
+                    min(
+                        (now - row["updated_at"]).total_seconds(),
+                        yugi_mod.OFFLINE_CAP_SECONDS,
+                    ),
+                )
+                gain = yugi_mod.per_second(buildings, upgrades) * elapsed
+                total, balance = yugi_mod.add_earned(total, balance, gain)
+                await con.execute(
+                    "update yugi set balance = $2, total = $3, updated_at = now() "
+                    "where user_id = $1",
+                    user_id,
+                    balance,
+                    total,
+                )
+        return {
+            "balance": balance,
+            "total": total,
+            "taps": int(row["taps"]),
+            "cases": int(row["cases"]),
+            "buildings": {str(k): int(v) for k, v in buildings.items()},
+            "upgrades": [str(x) for x in upgrades],
+        }
+
+    async def yugi_write(self, user_id: int, state: dict[str, Any]) -> None:
+        import json
+
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update yugi set balance = $2, total = $3, taps = $4, cases = $5, "
+                "buildings = $6::jsonb, upgrades = $7::jsonb, updated_at = now() "
+                "where user_id = $1",
+                user_id,
+                float(state["balance"]),
+                float(state["total"]),
+                int(state["taps"]),
+                int(state["cases"]),
+                json.dumps(state["buildings"], ensure_ascii=False),
+                json.dumps(state["upgrades"], ensure_ascii=False),
+            )
+
+    # ------------------------------------------------------------------ #
     # Деп-коины
     # ------------------------------------------------------------------ #
 
