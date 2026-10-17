@@ -623,3 +623,7 @@ create table if not exists profile_tags (
     created_at timestamptz not null default now(),
     primary key (user_id, tag)
 );
+
+
+-- Аватарка профиля: ссылка на картинку.
+alter table profiles add column if not exists avatar text not null default '';
