@@ -2627,6 +2627,7 @@ async def api_casino_play(request: Request) -> JSONResponse:
             "mult": mult,
             "bet": bet,
             "payout": bet * mult if won else 0,
+            "delta": (bet * mult if won else 0) - bet,
             "game": game,
             "choice": choice,
             "choice_label": dice_casino.choice_label(game, choice),
@@ -2795,8 +2796,9 @@ async function spin(){
     }
     setFace(g.id === "dice" ? ["", "⚀","⚁","⚂","⚃","⚄","⚅"][d.value] : String(d.value),
             d.won ? "win" : "lose");
+    const net = d.delta != null ? d.delta : d.payout - d.bet;
     document.getElementById("val").textContent = d.won
-      ? "ВЫИГРЫШ  +" + money(d.payout) : "ПРОИГРЫШ  −" + money(d.bet);
+      ? "ВЫИГРЫШ  +" + money(net) : "ПРОИГРЫШ  −" + money(Math.abs(net));
     document.getElementById("val").className = "val " + (d.won ? "win" : "lose");
     document.getElementById("sub").textContent = "Выпало " + d.value + " · ставка «" + d.choice_label + "»";
     S.data.me.balance = d.balance; S.data.me.left = d.left;
@@ -2970,6 +2972,7 @@ async def api_roulette_table_spin(request: Request) -> JSONResponse:
             "mult": mult,
             "bet": bet,
             "payout": payout,
+            "delta": payout - bet,
             "kind": kind,
             "title": str(ROULETTE_BETS[kind]["title"]),
             "balance": int(new_balance),
@@ -3175,9 +3178,10 @@ async function spin(){
     document.getElementById("hubNum").textContent = d.number;
     document.getElementById("hubCol").textContent = d.color === "red" ? "красное"
       : (d.color === "black" ? "чёрное" : "зелёное");
+    const net = d.delta != null ? d.delta : d.payout - d.bet;
     document.getElementById("res").textContent = d.won
-      ? "ВЫИГРЫШ +" + money(d.payout) + " · " + d.title
-      : "ПРОИГРЫШ −" + money(d.bet) + " · " + d.title;
+      ? "ВЫИГРЫШ +" + money(net) + " · " + d.title
+      : "ПРОИГРЫШ −" + money(Math.abs(net)) + " · " + d.title;
     document.getElementById("res").className = "res " + (d.won ? "win" : "lose");
     S.data.me.balance = d.balance; S.data.me.left = d.left;
     S.last = [d.number].concat(S.last).slice(0, 14);
