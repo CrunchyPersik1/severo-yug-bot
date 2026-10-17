@@ -1238,6 +1238,107 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # Профили
+    # ------------------------------------------------------------------ #
+
+    async def profile_get(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select bio, status, banner, music from profiles where user_id = $1",
+                user_id,
+            )
+        if row is None:
+            return {"bio": "", "status": "", "banner": "sunset", "music": ""}
+        return {
+            "bio": str(row["bio"] or ""),
+            "status": str(row["status"] or ""),
+            "banner": str(row["banner"] or "sunset"),
+            "music": str(row["music"] or ""),
+        }
+
+    async def profile_save(
+        self, user_id: int, bio: str, status: str, banner: str, music: str
+    ) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into profiles (user_id, bio, status, banner, music, updated_at) "
+                "values ($1, $2, $3, $4, $5, now()) "
+                "on conflict (user_id) do update set bio = excluded.bio, "
+                "status = excluded.status, banner = excluded.banner, "
+                "music = excluded.music, updated_at = now()",
+                user_id,
+                bio,
+                status,
+                banner,
+                music,
+            )
+
+    async def profile_rewards(self, user_id: int) -> list[dict[str, Any]]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select id, icon, text from profile_rewards where user_id = $1 "
+                "order by id",
+                user_id,
+            )
+        return [dict(row) for row in rows]
+
+    async def profile_reward_add(self, user_id: int, icon: str, text: str) -> int:
+        async with self._p().acquire() as con:
+            return int(
+                await con.fetchval(
+                    "insert into profile_rewards (user_id, icon, text) "
+                    "values ($1, $2, $3) returning id",
+                    user_id,
+                    icon,
+                    text,
+                )
+                or 0
+            )
+
+    async def profile_reward_del(self, reward_id: int) -> None:
+        async with self._p().acquire() as con:
+            await con.execute("delete from profile_rewards where id = $1", int(reward_id))
+
+    async def profile_tags(self, user_id: int) -> list[str]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select tag from profile_tags where user_id = $1 order by created_at",
+                user_id,
+            )
+        return [str(row["tag"]) for row in rows]
+
+    async def profile_tag_set(self, user_id: int, tag: str, on: bool) -> None:
+        async with self._p().acquire() as con:
+            if on:
+                await con.execute(
+                    "insert into profile_tags (user_id, tag) values ($1, $2) "
+                    "on conflict do nothing",
+                    user_id,
+                    tag,
+                )
+            else:
+                await con.execute(
+                    "delete from profile_tags where user_id = $1 and tag = $2",
+                    user_id,
+                    tag,
+                )
+
+    async def profile_find(self, query: str, limit: int = 12) -> list[dict[str, Any]]:
+        """Поиск игроков по нику или юзернейму."""
+        clean = (query or "").strip().lstrip("@")
+        if len(clean) < 2:
+            return []
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select user_id, first_name, username, xp from players "
+                "where first_name ilike $1 or username ilike $1 "
+                "order by coalesce(xp, 0) desc limit $2",
+                f"%{clean}%",
+                int(limit),
+            )
+        return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------ #
     # Недельный ивент «Звёздочка»
     # ------------------------------------------------------------------ #
 

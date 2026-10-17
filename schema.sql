@@ -594,3 +594,32 @@ create table if not exists case_limits (
     used     integer not null default 0,
     last_at  timestamptz
 );
+
+-- ===================================================================== --
+-- Профили игроков
+-- ===================================================================== --
+
+create table if not exists profiles (
+    user_id    bigint primary key,
+    bio        text not null default '',
+    status     text not null default '',
+    banner     text not null default 'sunset',
+    music      text not null default '',
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists profile_rewards (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    icon       text not null default '🏆',
+    text       text not null,
+    created_at timestamptz not null default now()
+);
+create index if not exists profile_rewards_user_idx on profile_rewards (user_id, id);
+
+create table if not exists profile_tags (
+    user_id    bigint not null,
+    tag        text not null,
+    created_at timestamptz not null default now(),
+    primary key (user_id, tag)
+);

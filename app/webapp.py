@@ -26,6 +26,7 @@ from . import buyer
 from . import casino
 from . import depcoins
 from . import event_week
+from . import profiles
 from . import levels
 from . import dice_casino
 from . import themes
@@ -3939,6 +3940,320 @@ async function load(){
 }
 if(tg){ tg.ready(); tg.expand(); }
 load();
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Профили
+# --------------------------------------------------------------------------- #
+
+
+async def _profile_payload(state, user_id: int) -> dict[str, Any]:
+    prof = await state.db.profile_get(user_id)
+    rewards = await state.db.profile_rewards(user_id)
+    tags = await state.db.profile_tags(user_id)
+    data = await state.db.player_profile(user_id) or {}
+    name = data.get("first_name") or data.get("username") or "игрок"
+    xp = int(data.get("xp") or 0)
+    return {
+        "id": int(user_id),
+        "name": name,
+        "username": data.get("username") or "",
+        "level": levels.level_from_xp(xp),
+        "xp": xp,
+        "wins": int(data.get("wins") or 0),
+        "losses": int(data.get("losses") or 0),
+        "cards": int(data.get("unique_cards") or 0),
+        "balance": int(data.get("bonus_points") or 0),
+        "initial": profiles.initial(str(name)),
+        "avatar_color": profiles.avatar_color(str(name)),
+        "bio": prof["bio"],
+        "status": prof["status"],
+        "banner": prof["banner"],
+        "banner_css": profiles.banner_css(prof["banner"]),
+        "banner_name": profiles.banner_name(prof["banner"]),
+        "music": prof["music"],
+        "rewards": [
+            {"id": int(r["id"]), "icon": str(r["icon"]), "text": str(r["text"])}
+            for r in rewards
+        ],
+        "tags": [
+            {"key": t, "label": profiles.tag_label(t)} for t in tags
+        ],
+    }
+
+
+@router.get("/api/profile")
+async def api_profile(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    me = int(user["id"])
+    raw = request.query_params.get("u", "")
+    target = me
+    if raw:
+        try:
+            target = int(raw)
+        except ValueError:
+            target = me
+    await state.db.ensure_player(target, None, None)
+    payload = await _profile_payload(state, target)
+    payload["is_me"] = target == me
+    payload["banners"] = [
+        {"key": k, "name": v["name"], "css": profiles.banner_css(k)}
+        for k, v in profiles.BANNERS.items()
+    ]
+    payload["limits"] = {
+        "bio": profiles.MAX_BIO,
+        "status": profiles.MAX_STATUS,
+        "music": profiles.MAX_MUSIC,
+    }
+    return JSONResponse(payload)
+
+
+@router.get("/api/profile/search")
+async def api_profile_search(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    query = request.query_params.get("q", "")
+    rows = await state.db.profile_find(query)
+    return JSONResponse(
+        {
+            "results": [
+                {
+                    "id": int(r["user_id"]),
+                    "name": r["first_name"] or r["username"] or "игрок",
+                    "level": levels.level_from_xp(int(r["xp"] or 0)),
+                    "initial": profiles.initial(str(r["first_name"] or r["username"])),
+                    "color": profiles.avatar_color(str(r["first_name"] or r["username"])),
+                }
+                for r in rows
+            ]
+        }
+    )
+
+
+@router.post("/api/profile/save")
+async def api_profile_save(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    banner = str(body.get("banner", "")) or profiles.DEFAULT_BANNER
+    if banner not in profiles.BANNERS:
+        banner = profiles.DEFAULT_BANNER
+    bio = profiles.clean(body.get("bio"), profiles.MAX_BIO)
+    status_text = profiles.clean(body.get("status"), profiles.MAX_STATUS)
+    music = profiles.clean(body.get("music"), profiles.MAX_MUSIC)
+    await state.db.profile_save(user_id, bio, status_text, banner, music)
+    payload = await _profile_payload(state, user_id)
+    payload["is_me"] = True
+    return JSONResponse({"ok": True, "profile": payload})
+
+
+@router.get("/profile", response_class=HTMLResponse)
+async def profile_page() -> HTMLResponse:
+    return HTMLResponse(inject(PROFILE_PAGE))
+
+
+PROFILE_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Профиль</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:24px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.search{display:flex;gap:8px;margin-bottom:12px}
+.search input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+  color:var(--ink);padding:12px 14px;font-size:14px;font-family:inherit}
+.search button{border:0;border-radius:12px;padding:0 18px;font-size:13px;font-weight:800;
+  background:var(--acc);color:var(--acc-ink)}
+.res{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.res .a{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-weight:900;color:#12100e;font-size:15px}
+.res .n{flex:1;font-size:13.5px;font-weight:800}
+.res .l{font-size:11.5px;color:var(--muted)}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.banner{height:132px;position:relative}
+.banner .av{position:absolute;left:16px;bottom:-34px;width:82px;height:82px;border-radius:50%;
+  border:4px solid var(--panel);display:flex;align-items:center;justify-content:center;
+  font-size:34px;font-weight:900;color:#12100e;box-shadow:0 8px 22px rgba(0,0,0,.4)}
+.body{padding:44px 16px 16px}
+.nm{font-size:21px;font-weight:900;letter-spacing:-.3px;display:flex;align-items:center;
+  gap:7px;flex-wrap:wrap}
+.tag{font-size:10.5px;font-weight:800;background:color-mix(in srgb,var(--acc) 20%,var(--panel2));
+  color:var(--acc2);border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));
+  border-radius:99px;padding:3px 9px}
+.st{font-size:12.5px;color:var(--muted);margin-top:4px}
+.bio{font-size:13px;line-height:1.55;margin-top:10px;color:var(--ink)}
+.mus{font-size:12.5px;color:var(--acc2);margin-top:8px}
+.rew{display:flex;flex-direction:column;gap:5px;margin-top:12px}
+.rew div{font-size:12.5px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:10px;padding:7px 11px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stats div{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px;text-align:center}
+.stats b{display:block;font-size:16px;font-weight:900}
+.stats span{font-size:10px;color:var(--muted);letter-spacing:.6px;text-transform:uppercase}
+.edit{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.edit label{display:block;font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--muted);font-weight:800;margin:10px 0 6px}
+.edit input,.edit textarea{width:100%;background:var(--panel2);border:1px solid var(--line);
+  border-radius:11px;color:var(--ink);padding:11px 13px;font-size:13.5px;font-family:inherit;resize:none}
+.bans{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.bans::-webkit-scrollbar{display:none}
+.bans button{flex:0 0 auto;width:58px;height:38px;border-radius:10px;border:2px solid transparent}
+.bans button.on{border-color:var(--acc)}
+.save{width:100%;margin-top:14px;border:0;border-radius:13px;padding:15px;font-size:15px;
+  font-weight:900;background:var(--acc);color:var(--acc-ink)}
+.empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;line-height:1.6}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="search">
+    <input id="q" placeholder="Найти игрока по нику…">
+    <button id="goBtn">Найти</button>
+  </div>
+  <div id="results"></div>
+  <div id="card"><div class="empty">Загружаю профиль…</div></div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {data: null, banner: "sunset", busy: false};
+
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2800);
+}
+function cardHtml(d){
+  const tags = (d.tags || []).map(t => '<span class="tag">' + esc(t.label) + '</span>').join("");
+  const rewards = (d.rewards || []).length
+    ? '<div class="rew">' + d.rewards.map(r =>
+        '<div>' + esc(r.icon) + " " + esc(r.text) + '</div>').join("") + '</div>'
+    : "";
+  return '<div class="card">' +
+    '<div class="banner" style="background:' + d.banner_css + '">' +
+      '<div class="av" style="background:' + d.avatar_color + '">' + esc(d.initial) + '</div>' +
+    '</div>' +
+    '<div class="body">' +
+      '<div class="nm">' + esc(d.name) + tags + '</div>' +
+      (d.status ? '<div class="st">' + esc(d.status) + '</div>' : '') +
+      (d.bio ? '<div class="bio">' + esc(d.bio) + '</div>' : '') +
+      (d.music ? '<div class="mus">\uD83C\uDFB5 ' + esc(d.music) + '</div>' : '') +
+      rewards +
+      '<div class="stats">' +
+        '<div><b>' + d.level + '</b><span>уровень</span></div>' +
+        '<div><b>' + d.wins + '</b><span>побед</span></div>' +
+        '<div><b>' + d.cards + '</b><span>карт</span></div>' +
+      '</div>' +
+      (d.is_me ? editHtml(d) : '') +
+    '</div></div>';
+}
+function editHtml(d){
+  const bans = (d.banners || []).map(b =>
+    '<button data-ban="' + b.key + '" class="' + (b.key === S.banner ? "on" : "") +
+    '" style="background:' + b.css + '"></button>').join("");
+  return '<div class="edit">' +
+    '<label>Описание</label>' +
+    '<textarea id="fBio" rows="3" maxlength="' + d.limits.bio + '">' + esc(d.bio) + '</textarea>' +
+    '<label>Статус</label>' +
+    '<input id="fStatus" maxlength="' + d.limits.status + '" value="' + esc(d.status) + '">' +
+    '<label>Музыка</label>' +
+    '<input id="fMusic" maxlength="' + d.limits.music + '" value="' + esc(d.music) + '">' +
+    '<label>Баннер</label><div class="bans">' + bans + '</div>' +
+    '<button class="save" id="saveBtn">Сохранить</button></div>';
+}
+function paint(){
+  document.getElementById("card").innerHTML = cardHtml(S.data);
+  document.querySelectorAll("[data-ban]").forEach(b => b.onclick = () => {
+    S.banner = b.dataset.ban; paint();
+  });
+  const sb = document.getElementById("saveBtn");
+  if (sb) sb.onclick = save;
+}
+async function save(){
+  if (S.busy) return;
+  S.busy = true;
+  const body = {
+    bio: document.getElementById("fBio").value,
+    status: document.getElementById("fStatus").value,
+    music: document.getElementById("fMusic").value,
+    banner: S.banner,
+  };
+  try{
+    const r = await fetch("/api/profile/save", {method:"POST", headers, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (d.error) toast(d.error);
+    else {
+      toast("Сохранено");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      await open(S.data.id);
+    }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function open(id){
+  try{
+    const url = id ? "/api/profile?u=" + id : "/api/profile";
+    const r = await fetch(url, {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; S.banner = d.banner; paint();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+async function search(){
+  const q = document.getElementById("q").value.trim();
+  if (q.length < 2){ toast("Хотя бы две буквы"); return; }
+  try{
+    const r = await fetch("/api/profile/search?q=" + encodeURIComponent(q), {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    const box = document.getElementById("results");
+    if (!d.results.length){ box.innerHTML = '<div class="empty">Никого не нашёл</div>'; return; }
+    box.innerHTML = d.results.map(u =>
+      '<div class="res" data-u="' + u.id + '">' +
+      '<div class="a" style="background:' + u.color + '">' + esc(u.initial) + '</div>' +
+      '<div class="n">' + esc(u.name) + '</div>' +
+      '<div class="l">ур. ' + u.level + '</div></div>').join("");
+    document.querySelectorAll("[data-u]").forEach(el => el.onclick = () => {
+      document.getElementById("results").innerHTML = "";
+      open(+el.dataset.u);
+    });
+  }catch(e){ toast("Связь потерялась"); }
+}
+document.getElementById("goBtn").onclick = search;
+document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+if(tg){ tg.ready(); tg.expand(); }
+open(0);
 </script>
 </body>
 </html>
