@@ -1827,32 +1827,62 @@ BUYER_PAGE = r"""<!doctype html>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --bg:#f5f3ee; --card:#fff; --ink:#1c1a17; --muted:#7c7468; --line:#e6e1d7;
-  --gold:#b7791f; --gold2:#d69e2e; --soft:#fdf6e7; --ok:#0f9d58; --bad:#d93025;
+  /* --bg, --ink, --muted, --line приходят из темы игрока и подставляются
+     в documentElement. Остальные имена привязываем к тем же переменным,
+     иначе на тёмной теме оставались белые пятна. */
+  --bg:#f5f3ee; --ink:#1c1a17; --muted:#7c7468; --line:#e6e1d7;
+  --card:var(--panel); --gold:var(--acc); --gold2:var(--acc2);
+  --soft:color-mix(in srgb, var(--acc) 13%, var(--panel));
+  --ok:#3fae6a; --bad:#d8434a;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:96px}
-header{position:sticky;top:0;z-index:6;background:rgba(245,243,238,.94);
+header{position:sticky;top:0;z-index:6;background:color-mix(in srgb,var(--bg) 93%,transparent);
   backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:15px 18px 13px}
 .hrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
 h1{margin:0;font-size:19px;letter-spacing:-.2px}
 .sub{font-size:12px;color:var(--muted);margin-top:4px}
 .bal{font-weight:800;font-size:15px;background:var(--soft);color:var(--gold);
   border-radius:999px;padding:8px 14px;white-space:nowrap}
-.hint{margin:10px 18px 0;background:var(--soft);border:1px solid #f0e2c2;border-radius:12px;
-  padding:11px 13px;font-size:12.5px;color:#7a5c1c;line-height:1.5}
+.hint{margin:10px 18px 0;background:var(--soft);border:1px solid color-mix(in srgb,var(--acc) 26%,var(--line));
+  border-radius:12px;padding:11px 13px;font-size:12.5px;color:var(--ink);line-height:1.5}
 .dupes{margin:12px 18px 0}
 .dupes button{width:100%;border:0;border-radius:13px;padding:15px;font-size:14.5px;font-weight:800;
   color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold))}
-.dupes button[disabled]{background:#e3ded3;color:#a49b8c}
+.dupes button[disabled]{background:var(--panel2);color:var(--muted)}
 main{padding:14px 18px}
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}
 .item{background:var(--card);border:1px solid var(--line);border-radius:15px;overflow:hidden;
   display:flex;flex-direction:column}
-.item .pic{height:104px;background:#efece4;display:flex;align-items:center;justify-content:center;font-size:38px}
-.item .pic img{width:100%;height:100%;object-fit:cover}
+.item .pic{
+  position:relative;height:104px;overflow:hidden;
+  background:linear-gradient(165deg,
+    color-mix(in srgb, var(--acc) 20%, var(--panel)) 0%,
+    var(--panel2) 70%);
+  display:flex;align-items:center;justify-content:center;font-size:38px
+}
+/* Две волны: цвет берётся из темы, поэтому у каждого стиля свой оттенок */
+.item .pic .wave{
+  position:absolute;left:0;bottom:-1px;width:200%;height:64%;opacity:.30;z-index:0;
+  pointer-events:none;animation:buyerWave 14s linear infinite
+}
+.item .pic .wave.b{
+  height:44%;opacity:.20;animation-duration:21s;animation-direction:reverse
+}
+@keyframes buyerWave{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.item .pic .art{position:relative;z-index:1;display:flex;align-items:center;justify-content:center}
+.item .pic img.art{width:100%;height:100%;object-fit:cover}
+/* Мягкое «дыхание» баланса: медленно и почти незаметно */
+@keyframes buyerGlow{
+  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--acc) 0%,transparent)}
+  50%{box-shadow:0 0 14px 0 color-mix(in srgb,var(--acc) 26%,transparent)}
+}
+body .bal{animation:buyerGlow 7s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){
+  .item .pic .wave,body .bal{animation:none}
+}
 .item .body{padding:10px 11px 0}
 .item .nm{font-weight:700;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .rr{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:3px}
@@ -1861,7 +1891,7 @@ main{padding:14px 18px}
 .item .sell{margin:9px 10px 10px;border:0;border-radius:11px;padding:11px;font-size:13.5px;
   font-weight:800;color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold))}
 .item .sell:active{transform:scale(.98)}
-.item .sell[disabled]{background:#e3ded3;color:#a49b8c}
+.item .sell[disabled]{background:var(--panel2);color:var(--muted)}
 .item .cnt{font-size:10.5px;color:var(--muted);margin-top:2px}
 .empty{text-align:center;color:var(--muted);padding:54px 20px;font-size:14px;line-height:1.6}
 #toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--ink);color:#fff;
@@ -1898,7 +1928,13 @@ function toast(t, kind){
   clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3400);
 }
 function itemHtml(it){
-  const pic = it.image ? '<img src="' + it.image + '" alt="">' : it.emoji;
+  const wave = '<svg class="wave" viewBox="0 0 400 60" preserveAspectRatio="none">' +
+      '<path d="M0,30 C50,6 100,54 200,30 C300,6 350,54 400,30 L400,60 L0,60 Z" fill="var(--acc)"/></svg>' +
+    '<svg class="wave b" viewBox="0 0 400 60" preserveAspectRatio="none">' +
+      '<path d="M0,30 C50,6 100,54 200,30 C300,6 350,54 400,30 L400,60 L0,60 Z" fill="var(--acc2)"/></svg>';
+  const pic = wave + (it.image
+    ? '<img class="art" src="' + it.image + '" alt="">'
+    : '<span class="art">' + it.emoji + '</span>');
   const cnt = it.count > 1 ? '<div class="cnt">в коллекции ×' + it.count + '</div>' : '';
   return '<div class="item">' +
     '<div class="pic">' + pic + '</div>' +
