@@ -58,7 +58,13 @@ RARITY_COLORS: dict[str, str] = {
 
 
 def case_pool() -> list[dict]:
-    """Карты, которые могут выпасть из кейса, — для ленты в мини-аппке."""
+    """Карты, которые могут выпасть из кейса, — для ленты в мини-аппке.
+
+    Цена считается с учётом редкости: у ультралегендарной карты она вчетверо
+    выше базовых очков, и лента должна показывать именно её, а не «points».
+    """
+    from .market import market_price
+
     pool: list[dict] = []
     for rarity in CASE_RARITY_ORDER:
         for card in CARDS_BY_RARITY[rarity]:
@@ -70,6 +76,7 @@ def case_pool() -> list[dict]:
                     "rarity": card.rarity,
                     "rarity_title": rarity_name(card.rarity),
                     "points": card.points,
+                    "price": market_price(card),
                     "color": RARITY_COLORS.get(rarity, "#334155"),
                 }
             )
