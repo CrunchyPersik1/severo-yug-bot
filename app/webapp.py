@@ -3490,7 +3490,9 @@ function render(){
   document.getElementById("perTap").textContent = "+" + fmt(d.per_tap) + " за тап";
   const done = Math.min(100, d.total / d.cap * 100);
   document.getElementById("capFill").style.width = done.toFixed(2) + "%";
-  document.getElementById("capLeft").textContent = "Осталось " + fmt(d.left) + " Югов";
+  document.getElementById("capLeft").textContent = d.left <= 0
+    ? "МАКСИМУМ собран"
+    : "Осталось " + fmt(d.left) + " Югов";
   document.getElementById("capMax").textContent = "Потолок " + fmt(d.cap) + " · кейсов " + d.cases;
   const tabs = [["building", "Здания"], ["upgrade", "Улучшения"], ["exchange", "Обмен"]];
   document.getElementById("tabs").innerHTML = tabs.map(t =>
@@ -3565,16 +3567,26 @@ function leaf(x, y){
   document.getElementById("tapzone").appendChild(el);
   setTimeout(() => el.remove(), 1000);
 }
+function maxed(){ return !!S.data && S.data.total >= S.data.cap; }
+function addLocal(gain){
+  if (!S.data) return 0;
+  const room = Math.max(0, S.data.cap - S.data.total);
+  const real = Math.min(gain, room);
+  if (real <= 0) return 0;
+  S.data.balance += real;
+  S.data.total += real;
+  S.data.left = Math.max(0, S.data.left - real);
+  return real;
+}
 function doTap(ev){
   if (!S.data) return;
+  if (maxed()){ toast("Максимум Югов уже собран"); return; }
   const rect = document.getElementById("tapzone").getBoundingClientRect();
   const x = (ev.clientX ? ev.clientX - rect.left : rect.width / 2) - 18;
   const y = (ev.clientY ? ev.clientY - rect.top : rect.height / 2) - 20;
   leaf(x, y);
   S.pending += 1;
-  S.data.balance += S.data.per_tap;
-  S.data.total += S.data.per_tap;
-  S.data.left = Math.max(0, S.data.left - S.data.per_tap);
+  addLocal(S.data.per_tap);
   document.getElementById("bal").textContent = fmt(S.data.balance);
   const b = document.getElementById("bal");
   b.classList.add("pop"); setTimeout(() => b.classList.remove("pop"), 90);
@@ -3610,10 +3622,15 @@ if(tg){ tg.ready(); tg.expand(); }
 })();
 setInterval(() => {
   if (!S.data || S.pending) return;
-  S.data.balance += S.data.per_second * 2;
-  S.data.total += S.data.per_second * 2;
-  S.data.left = Math.max(0, S.data.left - S.data.per_second * 2);
-  if (S.data.total > S.data.cap) S.data.total = S.data.cap;
+  if (maxed()){
+    // Потолок взят: доход останавливается, и на экране это видно.
+    const fill = document.getElementById("capFill");
+    if (fill) fill.style.width = "100%";
+    const left = document.getElementById("capLeft");
+    if (left) left.textContent = "МАКСИМУМ собран";
+    return;
+  }
+  addLocal(S.data.per_second * 2);
   document.getElementById("bal").textContent = fmt(S.data.balance);
 }, 2000);
 </script>
