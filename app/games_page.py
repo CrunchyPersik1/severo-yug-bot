@@ -138,7 +138,7 @@ async function load(){
     if(d.error){ result.textContent = d.error; return; }
     pool = d.pool || []; cases = d.cases || 0;
     document.getElementById("cases").textContent = cases;
-    if(!filled){ fillReel(null); filled = true; }
+    if(!reels.querySelector(".reelwrap")){ reels.innerHTML = ""; makeReel(null, false); }
     openBtn.disabled = cases <= 0;
     if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u043d\u0435\u0442 \u2014 \u043a\u0440\u0443\u0442\u0438 \u0440\u0443\u043b\u0435\u0442\u043a\u0443";
   }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0435\u0439\u0441\u044b"; }
