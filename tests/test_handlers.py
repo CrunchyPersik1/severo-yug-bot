@@ -158,6 +158,18 @@ class FakeDB:
     async def accessory_bonus(self, user_id: int, card_id: str) -> dict[str, int]:
         return {}
 
+    async def profile_get(self, user_id: int) -> dict[str, Any]:
+        return {"bio": "", "status": "", "banner": "sunset", "music": "", "avatar": ""}
+
+    async def profile_tags(self, user_id: int) -> list[str]:
+        return []
+
+    async def profile_rewards(self, user_id: int) -> list[dict[str, Any]]:
+        return []
+
+    async def profile_find(self, query: str, limit: int = 12) -> list[dict[str, Any]]:
+        return []
+
     async def touch_chat(self, chat_id: int, kind: str, title: str | None = None) -> None:
         return None
 
