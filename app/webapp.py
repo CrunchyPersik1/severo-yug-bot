@@ -634,6 +634,15 @@ async def api_case_open(request: Request) -> JSONResponse:
     cases = await state.db.user_cases(uid)
     if not cases:
         return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
+    limit = await state.db.case_limit(uid)
+    if limit["left"] <= 0:
+        return JSONResponse(
+            {"error": "Лимит на сегодня: 15 кейсов. Приходи завтра."}, status_code=400
+        )
+    if limit["wait"] > 0:
+        return JSONResponse(
+            {"error": f"Кейсы раз в минуту. Подожди {limit['wait']} сек."}, status_code=400
+        )
     case = cases[0]
     if not await state.db.open_case(uid, int(case["id"])):
         return JSONResponse({"error": "Этот кейс уже открыт"}, status_code=400)

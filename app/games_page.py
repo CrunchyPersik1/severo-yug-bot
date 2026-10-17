@@ -89,7 +89,7 @@ async function open(){
     document.getElementById("cases").textContent = cases;
     setTimeout(function(){
       result.innerHTML = "\uD83C\uDF89 <b>"+d.card.name+"</b> \u00b7 "+d.card.rarity_title+
-        " \u00b7 \u0441\u0442\u043e\u0438\u0442 "+money(d.card.price || d.card.points)+" \u043e\u0447\u043a." + (d.is_new ? " \u00b7 <b>\u041d\u041e\u0412\u0410\u042f!</b>" : "");
+        " \u00b7 +"+money(d.card.points)+" \u043e\u0447\u043a." + (d.is_new ? " \u00b7 <b>\u041d\u041e\u0412\u0410\u042f!</b>" : "");
       spinning = false;
       openBtn.disabled = cases <= 0;
       if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u0435\u0442";

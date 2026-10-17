@@ -40,7 +40,7 @@ from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
 from .cards import CARDS, CARDS_BY_ID, cards_sorted_for_user, get_card, image_url
-from .cases import roll_case_card
+from .cases import OPEN_PER_DAY, roll_case_card
 from .db import Database
 from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
 from .roulette import (
@@ -1277,6 +1277,19 @@ async def cmd_case(message: Message, db: Database, bot: Bot) -> None:
         )
         return
 
+    limit = await db.case_limit(user.id)
+    if limit["left"] <= 0:
+        await message.answer(
+            "📦 <b>Лимит на сегодня</b>\n\n"
+            f"Кейсы открываются не больше {OPEN_PER_DAY} раз в сутки.\n"
+            "Приходи завтра."
+        )
+        return
+    if limit["wait"] > 0:
+        await message.answer(
+            f"⏳ Кейсы открываются раз в минуту.\nПодожди ещё <b>{limit['wait']} сек.</b>"
+        )
+        return
     case = cases[0]
     if not await db.open_case(user.id, case["id"]):
         await message.answer("Этот кейс уже открыт или выставлен на продажу.")
