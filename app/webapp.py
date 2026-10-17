@@ -2041,6 +2041,7 @@ HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "cases", "title": "Кейсы", "note": "открыть кейс", "kind": "app", "path": "/case_app"},
     {"id": "roulette", "title": "Рулетка", "note": "крутить колесо", "kind": "app", "path": "/roulette_app"},
     {"id": "casino", "title": "Казино", "note": "кости и ставки", "kind": "app", "path": "/casino_app"},
+    {"id": "rtable", "title": "Рулетка-стол", "note": "колесо и шарик", "kind": "app", "path": "/roulette_table"},
     {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
     {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
     {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},
@@ -2714,3 +2715,162 @@ if(tg){ tg.ready(); tg.expand(); }
 </body>
 </html>
 """
+
+
+# --------------------------------------------------------------------------- #
+# Рулетка: настоящее колесо, шарик и стол
+# --------------------------------------------------------------------------- #
+
+# Европейское колесо: порядок лунок как на реальном столе.
+ROULETTE_ORDER: tuple[int, ...] = (
+    0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5,
+    24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+)
+ROULETTE_RED: frozenset[int] = frozenset(
+    {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
+)
+
+ROULETTE_BETS: dict[str, dict[str, Any]] = {
+    "red": {"title": "Красное", "mult": 2, "tone": "red"},
+    "black": {"title": "Чёрное", "mult": 2, "tone": "black"},
+    "green": {"title": "Зелёное", "mult": 5, "tone": "green"},
+    "col1": {"title": "1-й столбик", "mult": 3, "tone": "col"},
+    "col2": {"title": "2-й столбик", "mult": 3, "tone": "col"},
+    "col3": {"title": "3-й столбик", "mult": 3, "tone": "col"},
+}
+
+
+def roulette_color(number: int) -> str:
+    if int(number) == 0:
+        return "green"
+    return "red" if int(number) in ROULETTE_RED else "black"
+
+
+def roulette_wins(kind: str, number: int) -> bool:
+    number = int(number)
+    if kind == "green":
+        return number == 0
+    if number == 0:
+        return False
+    if kind == "red":
+        return number in ROULETTE_RED
+    if kind == "black":
+        return number not in ROULETTE_RED
+    if kind == "col1":
+        return number % 3 == 1
+    if kind == "col2":
+        return number % 3 == 2
+    if kind == "col3":
+        return number % 3 == 0
+    return False
+
+
+@router.get("/api/roulette_table")
+async def api_roulette_table(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    left = await state.db.casino_left(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    return JSONResponse(
+        {
+            "me": {
+                "balance": await state.market.balance(user_id),
+                "left": left,
+                "cap": casino.SPINS_PER_DAY,
+            },
+            "limits": {"min": casino.MIN_BET, "max": casino.MAX_BET},
+            "order": list(ROULETTE_ORDER),
+            "red": sorted(ROULETTE_RED),
+            "bets": [
+                {"id": key, **value} for key, value in ROULETTE_BETS.items()
+            ],
+        }
+    )
+
+
+@router.post("/api/roulette_table/spin")
+async def api_roulette_table_spin(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    kind = str(body.get("bet_type", ""))
+    try:
+        bet = int(body.get("bet", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Не понял ставку"}, status_code=400)
+
+    if kind not in ROULETTE_BETS:
+        return JSONResponse({"error": "Не понял, на что ставим"}, status_code=400)
+    if not casino.MIN_BET <= bet <= casino.MAX_BET:
+        return JSONResponse(
+            {"error": f"Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков"},
+            status_code=400,
+        )
+    balance = await state.market.balance(user_id)
+    if balance < bet:
+        return JSONResponse(
+            {"error": f"Не хватает очков: ставишь {bet}, у тебя {balance}"},
+            status_code=400,
+        )
+
+    left = await state.db.claim_casino(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    if left is None:
+        return JSONResponse({"error": "Крутки на сегодня кончились"}, status_code=400)
+
+    number = random.randint(0, 36)
+    won = roulette_wins(kind, number)
+    mult = int(ROULETTE_BETS[kind]["mult"])
+    payout = bet * mult if won else 0
+    repo = CasinoRepo(state.db, state.market)
+    try:
+        async with state.db.pool.acquire() as con:
+            async with con.transaction():
+                # Тот же расчёт, что и в текстовом казино: баланс, опыт, журнал.
+                new_balance = await repo._settle_points(  # noqa: SLF001
+                    con,
+                    user_id,
+                    bet,
+                    payout,
+                    color=kind,
+                    rolled=str(number),
+                    won=won,
+                    outcome=kind,
+                )
+    except Exception as error:  # noqa: BLE001
+        return JSONResponse({"error": str(error)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "number": number,
+            "color": roulette_color(number),
+            "won": won,
+            "mult": mult,
+            "bet": bet,
+            "payout": payout,
+            "kind": kind,
+            "title": str(ROULETTE_BETS[kind]["title"]),
+            "balance": int(new_balance),
+            "left": await state.db.casino_left(
+                user_id, roulette_day_key(), casino.SPINS_PER_DAY
+            ),
+        }
+    )
+
+
+@router.get("/roulette_table", response_class=HTMLResponse)
+async def roulette_table_app() -> HTMLResponse:
+    return HTMLResponse(inject(ROULETTE_TABLE_PAGE))
+
+@router.get("/roulette_table", response_class=HTMLResponse)
+async def roulette_table_page() -> HTMLResponse:
+    return HTMLResponse(inject(ROULETTE_TABLE_PAGE))
