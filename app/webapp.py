@@ -3518,14 +3518,14 @@ function drawList(){
           fmt(u.cost) + '<small>Купить</small></button>') +
       '</div>').join("");
   } else {
-    const can = Math.floor(d.balance / d.rate);
+    const can = Math.min(1, Math.floor(d.balance / d.rate));
     box.innerHTML = '<div class="ex"><div class="t">Обмен Югов на кейсы</div>' +
       '<div class="v">' + fmt(d.rate) + ' = 1 кейс</div>' +
       '<div class="s">Хватает на ' + can + ' кейс(ов) · у тебя ' + d.cases + '</div>' +
       '<button id="buyCase"' + (can < 1 ? " disabled" : "") + '>Обменять ' + Math.min(can, 10) + ' шт.</button>' +
       '</div>';
     const b = document.getElementById("buyCase");
-    if (b) b.onclick = () => buyCase(Math.max(1, Math.min(can, 10)));
+    if (b) b.onclick = () => buyCase(1);
   }
   document.querySelectorAll("[data-k]").forEach(el => el.onclick = () => buy(el.dataset.k, el.dataset.i));
 }

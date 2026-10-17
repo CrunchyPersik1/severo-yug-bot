@@ -484,28 +484,22 @@ class Database:
         )
 
     async def open_case(self, user_id: int, case_id: int) -> bool:
-        """Открывает кейс с лимитами: 1 в минуту и 15 в сутки."""
-        from datetime import datetime, timezone
+        """Помечает кейс открытым. False — кейса нет, он открыт или на продаже.
 
-        now = datetime.now(timezone.utc)
+        Лимитов тут НЕТ: ограничение стоит на ОБМЕНЕ Югов на кейсы
+        (см. yugi_buy_cases), а не на открытии.
+        """
         async with self._p().acquire() as con:
-            async with con.transaction():
-                row = await con.fetchrow(
-                    "select 1 from cases where id = $1 and user_id = $2 "
-                    "and opened = false and listed = false",
-                    int(case_id),
-                    user_id,
-                )
-                if row is None:
-                    return False
-                limit = await self._case_limit(con, user_id, now)
-                if limit["wait"] > 0 or limit["left"] <= 0:
-                    return False
-                await con.execute(
-                    "update cases set opened = true where id = $1", int(case_id)
-                )
-                await self._case_bump(con, user_id, now)
-        return True
+            row = await con.fetchrow(
+                """
+                update cases set opened = true
+                 where id = $1 and user_id = $2 and opened = false and listed = false
+                returning id
+                """,
+                int(case_id),
+                user_id,
+            )
+        return row is not None
 
     async def add_card(
         self, user_id: int, card_id: str, xp: bool = True
@@ -1753,12 +1747,17 @@ class Database:
         return state, cost
 
     async def yugi_buy_cases(self, user_id: int, count: int, cost: float) -> dict[str, Any] | None:
-        """Атомарный обмен Югов на кейсы."""
+        """Обмен Югов на кейс. Только по одному и не чаще раза в минуту."""
         from datetime import datetime, timezone
 
+        if int(count) != 1:
+            return None
         now = datetime.now(timezone.utc)
         async with self._p().acquire() as con:
             async with con.transaction():
+                limit = await self._case_limit(con, user_id, now)
+                if limit["wait"] > 0 or limit["left"] <= 0:
+                    return None
                 row = await self._yugi_lock(con, user_id)
                 state = self._yugi_state(row)
                 state = await self._yugi_offline(row, state, now)
@@ -1771,8 +1770,9 @@ class Database:
                     "insert into cases (user_id, source) "
                     "select $1, 'yugi' from generate_series(1, $2)",
                     user_id,
-                    int(count),
+                    1,
                 )
+                await self._case_bump(con, user_id, now)
         return state
 
     async def yugi_load(self, user_id: int) -> dict[str, Any]:
