@@ -545,3 +545,44 @@ create table if not exists yugi_flags (
     created_at timestamptz not null default now()
 );
 create index if not exists yugi_flags_user_idx on yugi_flags (user_id, created_at desc);
+
+-- ===================================================================== --
+-- Недельный ивент «Звёздочка»
+-- ===================================================================== --
+
+create table if not exists event_week (
+    id          integer primary key default 1,
+    active      boolean not null default false,
+    started_at  timestamptz,
+    ends_at     timestamptz,
+    title       text
+);
+insert into event_week (id, active) values (1, false) on conflict (id) do nothing;
+
+create table if not exists event_quests (
+    id          bigserial primary key,
+    user_id     bigint not null,
+    day         integer not null,
+    slot        integer not null,
+    source      text not null,
+    need        integer not null,
+    baseline    bigint not null,
+    claimed     boolean not null default false,
+    created_at  timestamptz not null default now(),
+    unique (user_id, day, slot)
+);
+create index if not exists event_quests_user_idx on event_quests (user_id, day);
+
+create table if not exists event_players (
+    user_id       bigint primary key,
+    done_count    integer not null default 0,
+    main_unlocked boolean not null default false,
+    main_done     boolean not null default false,
+    given_drops   integer not null default 0,
+    given_roulette integer not null default 0,
+    main_drops    integer not null default 0,
+    main_roulette integer not null default 0,
+    main_cases    integer not null default 0,
+    main_points   bigint not null default 0,
+    joined_at     timestamptz not null default now()
+);
