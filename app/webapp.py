@@ -993,7 +993,13 @@ async function trade(kind){
     const d = await r.json();
     if (d.error){ toast(d.error); }
     else {
-      toast((kind === "buy" ? "Куплено " : "Продано ") + S.shares + " акц.");
+      if (d.kind === "dep"){
+        toast("Получено " + Number(d.dep).toFixed(5) + " деп-коинов по курсу " +
+          Math.round(d.dep_rate).toLocaleString("ru") + " · всего " +
+          Number(d.dep_balance).toFixed(5));
+      } else {
+        toast((kind === "buy" ? "Куплено " : "Продано ") + S.shares + " акц.");
+      }
       if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
     }
   }catch(e){ toast("Связь потерялась"); }
@@ -1230,6 +1236,7 @@ async def api_upgrader(request: Request) -> JSONResponse:
             "steps": {str(key): value for key, value in upgrader.STEP_CHANCE.items()},
             "dep": {
                 "balance": await state.db.dep_balance(user_id),
+                "rate": await state.db.dep_rate(),
                 "price": depcoins.BOOST_PRICE,
                 "max": depcoins.MAX_BOOSTS,
                 "step": depcoins.BOOST_STEP,

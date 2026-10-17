@@ -515,3 +515,6 @@ create table if not exists player_themes (
 
 alter table players add column if not exists dep_coins numeric(18,5) not null default 0;
 alter table players add column if not exists drift_streak integer not null default 0;
+
+alter table stocks add column if not exists dep_rate numeric(18,5);
+update stocks set dep_rate = 100000 where slug = 'dodep' and dep_rate is null;

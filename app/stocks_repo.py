@@ -272,6 +272,7 @@ class StocksRepo:
         if steps <= 0:
             return
         steps = min(steps, stocks.MAX_CATCHUP_TICKS)
+        spec = stocks.by_slug(row["slug"]) or {}
         price = int(row["price"])
         target = row["target_price"]
         # Сжимаем цель ЗДЕСЬ, до сравнения с ценой: иначе устаревшая цель
@@ -299,6 +300,16 @@ class StocksRepo:
                 int(row["id"]),
                 price,
             )
+        # У «Компании доДеп» плавает ещё и курс деп-коина: сколько очков
+        # дают за один деп. Поэтому суммы на продаже всегда разные.
+        if spec.get("pays") == "dep":
+            from . import depcoins as dep_mod
+
+            new_rate = dep_mod.next_rate(float(row["dep_rate"] or dep_mod.DEP_BASE_RATE))
+            await con.execute(
+                "update stocks set dep_rate = $2 where id = $1", int(row["id"]), new_rate
+            )
+
         reached = target is not None and price == target and pump_phase is None
         await con.execute(
             """
@@ -566,7 +577,8 @@ class StocksRepo:
                     # «Компания доДеп»: покупается за очки, а платит деп-коинами.
                     from . import depcoins as dep_mod
 
-                    paid_dep = dep_mod.from_points(proceeds)
+                    rate = float(stock["dep_rate"] or dep_mod.DEP_BASE_RATE)
+                    paid_dep = dep_mod.from_points(proceeds, rate)
                     dep_balance = await con.fetchval(
                         "update players set dep_coins = dep_coins + $2 "
                         "where user_id = $1 returning dep_coins",
@@ -582,6 +594,7 @@ class StocksRepo:
                         "pnl": proceeds - spent_out,
                         "kind": "dep",
                         "dep": paid_dep,
+                        "dep_rate": rate,
                         "dep_balance": float(dep_balance or 0),
                         "balance": None,
                     }

@@ -7,9 +7,18 @@
 
 from __future__ import annotations
 
-# Сколько очков «стоит» один деп-коин. Держит экономику: продал акции на
-# 500 000 очков — получил 5 деп-коинов, не больше.
-POINTS_PER_DEP = 100_000.0
+import random
+from typing import Any
+
+# Курс деп-коина ПЛАВАЕТ: сколько очков дают за один деп-коин, меняется на
+# каждом шаге биржи. Среднее держим около базового, но в коридоре.
+DEP_BASE_RATE = 100_000.0
+DEP_MIN_RATE = 40_000.0
+DEP_MAX_RATE = 260_000.0
+DEP_RATE_VOL = 0.035      # разброс шага
+DEP_RATE_REVERT = 0.06    # тяга к базовому курсу
+
+POINTS_PER_DEP = DEP_BASE_RATE
 
 # Улучшение шанса в апгрейдере.
 BOOST_PRICE = 5      # деп-коинов за одну покупку
@@ -28,13 +37,24 @@ DRIFT_CARD_ID = "elvira_drift"
 DRIFT_NEEDED = 3
 
 
-def from_points(points: int) -> float:
-    """Сколько деп-коинов причитается за такую сумму очков."""
-    return max(0.0, round(float(points) / POINTS_PER_DEP, 5))
+def next_rate(rate: float, rng: Any = None) -> float:
+    """Один шаг курса. Как биржа: сносит в стороны, но тянет к базовому."""
+    rng = rng or random
+    rate = float(rate) if rate else DEP_BASE_RATE
+    drift = ((DEP_BASE_RATE - rate) / DEP_BASE_RATE) * DEP_RATE_REVERT
+    change = rng.uniform(-DEP_RATE_VOL, DEP_RATE_VOL) + drift
+    value = rate * (1.0 + change)
+    return round(max(DEP_MIN_RATE, min(DEP_MAX_RATE, value)), 5)
 
 
-def to_points(dep: float) -> int:
-    return int(round(float(dep) * POINTS_PER_DEP))
+def from_points(points: int, rate: float = DEP_BASE_RATE) -> float:
+    """Сколько деп-коинов дадут за такую сумму очков по текущему курсу."""
+    rate = float(rate) if rate else DEP_BASE_RATE
+    return max(0.0, round(float(points) / rate, 5))
+
+
+def to_points(dep: float, rate: float = DEP_BASE_RATE) -> int:
+    return int(round(float(dep) * float(rate or DEP_BASE_RATE)))
 
 
 def boost_multiplier(boost: int) -> float:

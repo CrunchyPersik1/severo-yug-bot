@@ -1187,6 +1187,16 @@ class Database:
     # Деп-коины
     # ------------------------------------------------------------------ #
 
+    async def dep_rate(self) -> float:
+        """Текущий курс: сколько очков дают за один деп-коин."""
+        from . import depcoins as dep_mod
+
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select dep_rate from stocks where slug = $1", dep_mod.DEP_SLUG
+            )
+        return float(value or dep_mod.DEP_BASE_RATE)
+
     async def dep_balance(self, user_id: int) -> float:
         async with self._p().acquire() as con:
             value = await con.fetchval(
