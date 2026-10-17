@@ -27,6 +27,7 @@ from . import casino
 from . import depcoins
 from . import event_week
 from . import profiles
+from .market import UPGRADE_PRICE, market_price
 from . import levels
 from . import dice_casino
 from . import themes
@@ -2100,7 +2101,7 @@ async def api_theme_set(request: Request) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 
 HUB_SECTIONS: tuple[dict[str, Any], ...] = (
-    {"id": "collection", "title": "Коллекция", "note": "все твои карты", "kind": "panel"},
+    {"id": "collection", "title": "Коллекция", "note": "все твои карты", "kind": "app", "path": "/collection"},
     {"id": "market", "title": "Рынок", "note": "лоты игроков", "kind": "app", "path": "/market"},
     {"id": "shop", "title": "Магазин", "note": "учителя и наборы", "kind": "app", "path": "/app"},
     {"id": "buyer", "title": "Скупщик", "note": "продать сразу", "kind": "app", "path": "/buyer"},
@@ -4296,6 +4297,334 @@ document.getElementById("goBtn").onclick = search;
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
 if(tg){ tg.ready(); tg.expand(); }
 open(0);
+</script>
+</body>
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# Коллекция — мини-аппка
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/api/collection")
+async def api_collection(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    counts = await state.db.get_collection(user_id)
+    cards = []
+    for card in cards_sorted_for_user(list(counts)):
+        cards.append(
+            {
+                "id": card.card_id,
+                "name": card.display_name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "hp": card.hp,
+                "atk": card.atk,
+                "points": card.points,
+                "price": market_price(card),
+                "count": int(counts[card.card_id]),
+                "image": image_url(card.card_id),
+                "ability": card.ability.name,
+                "ability_text": describe_ability(card),
+                "description": card.description or "",
+            }
+        )
+    upgraded = []
+    for row in await state.market.user_inventory(user_id):
+        card = get_card(str(row["card_id"]))
+        bonus = row.get("bonus") or {}
+        upgraded.append(
+            {
+                "inventory_id": int(row["id"]),
+                "id": card.card_id,
+                "name": card.display_name,
+                "emoji": card.rarity_emoji,
+                "rarity_title": rarity_name(card.rarity),
+                "price": market_price(card, bonus),
+                "image": image_url(card.card_id),
+                "bonus": bonus,
+            }
+        )
+    return JSONResponse(
+        {
+            "cards": cards,
+            "upgraded": upgraded,
+            "balance": await state.market.balance(user_id),
+            "upgrade_price": UPGRADE_PRICE,
+            "total": len(cards),
+        }
+    )
+
+
+@router.post("/api/collection/upgrade")
+async def api_collection_upgrade(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    body = await request.json()
+    card_id = str(body.get("card_id", ""))
+    if card_id not in CARDS_BY_ID:
+        return JSONResponse({"error": "Такой карты нет."}, status_code=400)
+    try:
+        outcome = await state.market.upgrade_stack(user_id, card_id)
+    except Exception as error:  # noqa: BLE001
+        return JSONResponse({"error": str(error)[:160]}, status_code=400)
+
+    items = []
+    for slot in ("aura", "background", "effect"):
+        item = (outcome.get("items") or {}).get(slot)
+        if item is not None:
+            items.append(
+                {
+                    "slot": slot,
+                    "name": str(item.name),
+                    "summary": str(item.summary),
+                }
+            )
+    return JSONResponse(
+        {
+            "ok": True,
+            "card_id": card_id,
+            "items": items,
+            "balance": int(outcome["balance"]),
+            "inventory_id": int(outcome["inventory_id"]),
+        }
+    )
+
+
+@router.get("/collection", response_class=HTMLResponse)
+async def collection_page() -> HTMLResponse:
+    return HTMLResponse(inject(COLLECTION_PAGE))
+
+
+COLLECTION_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Коллекция</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--up:#3fae6a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:24px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.head .b{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:8px 14px;font-size:13px;font-weight:800}
+.head .b.bal{color:var(--acc2)}
+.tabs{display:flex;gap:7px;margin-bottom:12px}
+.tab{flex:1;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:12px;padding:11px;font-size:13px;font-weight:800}
+.tab.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.card{background:var(--panel);border:1.5px solid var(--line);border-radius:13px;padding:7px;
+  text-align:center;position:relative;overflow:hidden}
+.card img{width:100%;height:58px;object-fit:cover;border-radius:9px;display:block}
+.card .ic{font-size:31px;line-height:58px}
+.card .nm{font-size:10.5px;font-weight:700;margin-top:5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.card .pr{font-size:9.5px;color:var(--acc2);font-weight:700}
+.card .ct{position:absolute;top:4px;right:5px;font-size:9.5px;font-weight:800;color:#dbe3ef;
+  background:rgba(0,0,0,.6);border-radius:6px;padding:1px 5px}
+.r-rare{border-color:rgba(107,114,128,.55)} .r-superrare{border-color:rgba(59,130,246,.7)}
+.r-epic{border-color:rgba(168,85,247,.75)} .r-mythic{border-color:rgba(239,68,68,.75)}
+.r-legendary{border-color:rgba(234,179,8,.8)} .r-secret{border-color:rgba(100,116,139,.85)}
+.r-ultra{border-color:rgba(232,121,249,.9)} .r-teacher{border-color:rgba(194,65,12,.9)}
+.empty{text-align:center;color:var(--muted);padding:44px 16px;font-size:13px;line-height:1.6}
+
+.sheetwrap{position:fixed;inset:0;background:rgba(8,10,14,.72);display:none;
+  align-items:flex-end;justify-content:center;z-index:40}
+.sheetwrap.on{display:flex;animation:__fade .22s ease}
+@keyframes __fade{from{opacity:0}to{opacity:1}}
+.sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+  border-radius:20px 20px 0 0;padding:18px;max-height:88vh;overflow-y:auto;
+  animation:__up .3s cubic-bezier(.2,.9,.3,1.05)}
+@keyframes __up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+.sheet .top{display:flex;gap:13px;align-items:center}
+.sheet .art{width:76px;height:76px;border-radius:14px;object-fit:cover;flex:0 0 auto;
+  background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:38px}
+.sheet .nm{font-size:19px;font-weight:900;line-height:1.15}
+.sheet .rr{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:2px}
+.sheet .pr{font-size:16px;font-weight:900;color:var(--acc2);margin-top:5px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.stats div{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px;text-align:center}
+.stats b{display:block;font-size:16px;font-weight:900}
+.stats span{font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase}
+.block{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.block .t{font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);font-weight:800}
+.block .v{font-size:13px;margin-top:4px;line-height:1.5}
+.upg{width:100%;margin-top:16px;border:0;border-radius:13px;padding:16px;font-size:15px;
+  font-weight:900;background:var(--acc);color:var(--acc-ink)}
+.upg[disabled]{background:var(--panel2);color:var(--muted)}
+.close{width:100%;margin-top:8px;border:1px solid var(--line);border-radius:13px;padding:13px;
+  font-size:13px;font-weight:800;background:transparent;color:var(--muted)}
+
+.flash{position:fixed;inset:0;pointer-events:none;z-index:60;opacity:0;
+  background:radial-gradient(circle at 50% 45%,rgba(255,255,255,.95),transparent 62%)}
+.flash.on{animation:__flash .9s ease-out}
+@keyframes __flash{0%{opacity:0;transform:scale(.2)}30%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.6)}}
+.parts{margin-top:14px}
+.part{display:flex;align-items:center;gap:10px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:7px;
+  opacity:0;transform:translateY(12px) scale(.96);
+  animation:__part .45s cubic-bezier(.2,.9,.3,1.06) forwards}
+@keyframes __part{to{opacity:1;transform:none}}
+.part .i{font-size:24px}
+.part .n{font-size:13.5px;font-weight:800}
+.part .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:70}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="b bal" id="bal">…</div>
+    <div class="b" id="cnt">…</div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" id="tabCards">Карты</button>
+    <button class="tab" id="tabUpg">Улучшенные</button>
+  </div>
+  <div id="list"></div>
+</div>
+
+<div class="sheetwrap" id="modal">
+  <div class="sheet" id="sheet"></div>
+</div>
+<div class="flash" id="flash"></div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+const SLOT = {aura: "\u2728", background: "\uD83D\uDDBC", effect: "\uD83C\uDF00"};
+let S = {data: null, tab: "cards", busy: false};
+
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function money(n){ return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3000);
+}
+function render(){
+  const d = S.data;
+  document.getElementById("bal").textContent = "$ " + money(d.balance);
+  document.getElementById("cnt").textContent = "Карт: " + d.total;
+  document.getElementById("tabCards").className = "tab" + (S.tab === "cards" ? " on" : "");
+  document.getElementById("tabUpg").className = "tab" + (S.tab === "upg" ? " on" : "");
+  if (S.tab === "cards"){
+    document.getElementById("list").innerHTML = d.cards.length
+      ? '<div class="grid">' + d.cards.map(c =>
+          '<div class="card r-' + c.rarity + '" data-c="' + c.id + '">' +
+          (c.count > 1 ? '<div class="ct">\u00d7' + c.count + '</div>' : '') +
+          (c.image ? '<img src="' + esc(c.image) + '" alt="">' : '<div class="ic">' + c.emoji + '</div>') +
+          '<div class="nm">' + esc(c.name) + '</div>' +
+          '<div class="pr">' + money(c.price) + '</div></div>').join("") + '</div>'
+      : '<div class="empty">Пусто. Выбей карту командой «Северо-Юг».</div>';
+    document.querySelectorAll("[data-c]").forEach(el => el.onclick = () => openCard(el.dataset.c));
+  } else {
+    document.getElementById("list").innerHTML = d.upgraded.length
+      ? '<div class="grid">' + d.upgraded.map(u =>
+          '<div class="card">' +
+          (u.image ? '<img src="' + esc(u.image) + '" alt="">' : '<div class="ic">' + u.emoji + '</div>') +
+          '<div class="nm">' + esc(u.name) + '</div>' +
+          '<div class="pr">' + money(u.price) + '</div></div>').join("") + '</div>'
+      : '<div class="empty">Улучшенных копий пока нет.<br>Открой карту и нажми «Улучшить».</div>';
+  }
+}
+function openCard(id){
+  const c = S.data.cards.find(x => x.id === id);
+  if (!c) return;
+  const can = S.data.balance >= S.data.upgrade_price && c.count > 0;
+  document.getElementById("sheet").innerHTML =
+    '<div class="top">' +
+      (c.image ? '<img class="art" src="' + esc(c.image) + '" alt="">'
+               : '<div class="art">' + c.emoji + '</div>') +
+      '<div><div class="nm">' + esc(c.name) + '</div>' +
+      '<div class="rr">' + esc(c.rarity_title) + '</div>' +
+      '<div class="pr">' + money(c.price) + ' очк.</div></div></div>' +
+    '<div class="stats">' +
+      '<div><b>' + c.hp + '</b><span>HP</span></div>' +
+      '<div><b>' + c.atk + '</b><span>атака</span></div>' +
+      '<div><b>\u00d7' + c.count + '</b><span>копий</span></div></div>' +
+    '<div class="block"><div class="t">Способность</div><div class="v"><b>' +
+      esc(c.ability) + '</b><br>' + esc(c.ability_text) + '</div></div>' +
+    (c.description ? '<div class="block"><div class="t">Описание</div><div class="v">' +
+      esc(c.description) + '</div></div>' : '') +
+    '<div id="upgResult"></div>' +
+    '<button class="upg" id="upgBtn"' + (can ? "" : " disabled") + '>Улучшить за ' +
+      money(S.data.upgrade_price) + ' очк.</button>' +
+    '<button class="close" id="closeBtn">Закрыть</button>';
+  document.getElementById("modal").classList.add("on");
+  const b = document.getElementById("upgBtn");
+  if (b) b.onclick = () => upgrade(c.id);
+  document.getElementById("closeBtn").onclick = closeModal;
+}
+function closeModal(){
+  document.getElementById("modal").classList.remove("on");
+}
+async function upgrade(cardId){
+  if (S.busy) return;
+  S.busy = true;
+  const btn = document.getElementById("upgBtn");
+  if (btn){ btn.disabled = true; btn.textContent = "Улучшаем…"; }
+  try{
+    const r = await fetch("/api/collection/upgrade", {method:"POST", headers,
+      body: JSON.stringify({card_id: cardId})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); }
+    else {
+      const flash = document.getElementById("flash");
+      flash.classList.remove("on");
+      void flash.offsetWidth;
+      flash.classList.add("on");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      const box = document.getElementById("upgResult");
+      if (box){
+        box.innerHTML = '<div class="parts">' + d.items.map((it, i) =>
+          '<div class="part" style="animation-delay:' + (0.25 + i * 0.18) + 's">' +
+          '<div class="i">' + (SLOT[it.slot] || "\u2728") + '</div>' +
+          '<div><div class="n">' + esc(it.name) + '</div>' +
+          '<div class="s">' + esc(it.summary) + '</div></div></div>').join("") + '</div>';
+      }
+      if (btn){ btn.textContent = "Готово"; btn.disabled = true; }
+      await load();
+    }
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function load(){
+  try{
+    const r = await fetch("/api/collection", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; render();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+document.getElementById("tabCards").onclick = () => { S.tab = "cards"; render(); };
+document.getElementById("tabUpg").onclick = () => { S.tab = "upg"; render(); };
+if(tg){ tg.ready(); tg.expand(); }
+load();
 </script>
 </body>
 </html>
