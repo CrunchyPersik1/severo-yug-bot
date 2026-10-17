@@ -439,19 +439,73 @@ class Database:
             rows = await con.fetch(query, user_id)
         return [dict(row) for row in rows]
 
-    async def open_case(self, user_id: int, case_id: int) -> bool:
-        """Помечает кейс открытым. False — кейса нет, он открыт или выставлен на продажу."""
+    async def _case_limit(self, con: Any, user_id: int, now: Any) -> dict[str, Any]:
+        from . import cases as cases_mod
+
+        row = await con.fetchrow(
+            "select day, used, last_at from case_limits where user_id = $1", user_id
+        )
+        if row is None or row["day"] != now.date():
+            return {"used": 0, "last_at": None, "wait": 0, "left": cases_mod.OPEN_PER_DAY}
+        last = row["last_at"]
+        wait = 0
+        if last is not None:
+            passed = (now - last).total_seconds()
+            if passed < cases_mod.OPEN_COOLDOWN_SECONDS:
+                wait = int(cases_mod.OPEN_COOLDOWN_SECONDS - passed) + 1
+        used = int(row["used"])
+        return {
+            "used": used,
+            "last_at": last,
+            "wait": wait,
+            "left": max(0, cases_mod.OPEN_PER_DAY - used),
+        }
+
+    async def case_limit(self, user_id: int) -> dict[str, Any]:
+        """Можно ли открыть кейс: сколько ждать и сколько осталось на сутки."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
         async with self._p().acquire() as con:
-            row = await con.fetchrow(
-                """
-                update cases set opened = true
-                 where id = $1 and user_id = $2 and opened = false and listed = false
-                returning id
-                """,
-                int(case_id),
-                user_id,
-            )
-        return row is not None
+            return await self._case_limit(con, user_id, now)
+
+    async def _case_bump(self, con: Any, user_id: int, now: Any) -> None:
+        await con.execute(
+            "insert into case_limits (user_id, day, used, last_at) "
+            "values ($1, $2, 1, $3) "
+            "on conflict (user_id) do update set "
+            "  day = excluded.day, "
+            "  used = case when case_limits.day = excluded.day "
+            "              then case_limits.used + 1 else 1 end, "
+            "  last_at = excluded.last_at",
+            user_id,
+            now.date(),
+            now,
+        )
+
+    async def open_case(self, user_id: int, case_id: int) -> bool:
+        """Открывает кейс с лимитами: 1 в минуту и 15 в сутки."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select 1 from cases where id = $1 and user_id = $2 "
+                    "and opened = false and listed = false",
+                    int(case_id),
+                    user_id,
+                )
+                if row is None:
+                    return False
+                limit = await self._case_limit(con, user_id, now)
+                if limit["wait"] > 0 or limit["left"] <= 0:
+                    return False
+                await con.execute(
+                    "update cases set opened = true where id = $1", int(case_id)
+                )
+                await self._case_bump(con, user_id, now)
+        return True
 
     async def add_card(
         self, user_id: int, card_id: str, xp: bool = True

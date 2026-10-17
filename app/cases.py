@@ -9,6 +9,10 @@ from .cards import CARDS_BY_RARITY, Card, rarity_name
 # Рыночная цена кейса фиксирована и не зависит от того, что внутри.
 CASE_PRICE = 5000
 
+# Лимиты на открытие кейсов: иначе экономику можно обвалить за вечер.
+OPEN_COOLDOWN_SECONDS = 60   # не чаще одного кейса в минуту
+OPEN_PER_DAY = 15            # и не больше 15 за сутки
+
 # Ниже эпической из кейса не выпадает ничего.
 CASE_RARITY_WEIGHTS: dict[str, float] = {
     "epic": 0.60,

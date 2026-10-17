@@ -587,3 +587,10 @@ create table if not exists event_players (
     joined_at     timestamptz not null default now()
 );
 alter table event_players add column if not exists last_grant_day integer not null default 0;
+
+create table if not exists case_limits (
+    user_id  bigint primary key,
+    day      date not null default current_date,
+    used     integer not null default 0,
+    last_at  timestamptz
+);
