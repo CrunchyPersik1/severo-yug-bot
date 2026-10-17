@@ -1050,7 +1050,7 @@ body{
   background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:100px;
 }
 header{
-  position:sticky;top:0;z-index:5;background:rgba(246,246,248,.92);
+  position:sticky;top:0;z-index:5;background:color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line);
   padding:14px 18px 12px
 }
@@ -1063,7 +1063,7 @@ h1{margin:0;font-size:19px;letter-spacing:-.2px}
 }
 .tabs{display:flex;gap:6px;padding:12px 18px 4px}
 .tab{
-  border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:10px;
+  border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:10px;
   padding:9px 14px;font-size:14px;font-weight:600;transition:.15s
 }
 .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -1084,20 +1084,20 @@ main{padding:12px 18px}
 .info{flex:1;min-width:0}
 .name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rar{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px}
-.stats{display:flex;gap:12px;margin-top:7px;font-size:13px;font-weight:600;color:#374151}
+.stats{display:flex;gap:12px;margin-top:7px;font-size:13px;font-weight:600;color:var(--ink)}
 .seller{font-size:12px;color:var(--muted);margin-top:6px}
 .bottom{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:11px 12px;border-top:1px solid var(--line);background:#fcfcfd
+  padding:11px 12px;border-top:1px solid var(--line);background:var(--panel2)
 }
-.price{font-weight:800;font-size:16px;color:var(--ink)}
+.price{font-weight:800;font-size:17px;color:var(--acc2)}
 .btn{
   border:0;border-radius:11px;padding:11px 18px;font-size:14px;font-weight:700;
   color:#fff;background:var(--accent);transition:.15s
 }
 .btn:active{transform:scale(.98)}
-.btn.ghost{background:#fff;color:var(--bad);border:1px solid var(--line)}
-.btn[disabled]{background:#e9eaee;color:#9aa0aa}
+.btn.ghost{background:transparent;color:var(--bad);border:1px solid var(--line)}
+.btn[disabled]{background:var(--panel2);color:var(--muted)}
 .empty{text-align:center;color:var(--muted);padding:56px 20px;font-size:14px;line-height:1.6}
 #toast{
   position:fixed;left:14px;right:14px;bottom:18px;background:var(--ink);color:#fff;
