@@ -1,186 +1,251 @@
 CASE_PAGE = r"""<!doctype html>
+"""
+CASE_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Северо-Юг · Кейсы</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-:root{--bg:#0f1117;--card:#171a23;--line:#252a38;--ink:#e8ebf2;--muted:#8b93a7}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:110px}
-header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:#0f1117;color:#e8ebf2;min-height:100vh;padding-bottom:100px}
+header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);
+  border-bottom:1px solid #252a38;padding:14px 16px;display:flex;
+  align-items:baseline;justify-content:space-between}
 h1{margin:0;font-size:19px}
-.wallet{font-weight:700;font-size:15px;background:#1e2140;color:#c7c9ff;border-radius:999px;padding:7px 14px}
+.wallet{font-weight:700;font-size:15px;background:#1e2140;color:#c7c9ff;
+  border-radius:999px;padding:7px 14px}
 main{padding:16px 0 0}
-.reelwrap{position:relative;overflow:hidden;padding:14px 0;background:#12141c;border-top:1px solid var(--line);border-bottom:1px solid var(--line);--tw:96px;--th:118px}
+.pick{display:flex;gap:10px;margin:0 16px}
+.ptile{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:#1b1f2b;border:2px solid #334155;border-radius:15px;padding:16px 8px;
+  color:#e8ebf2;font-family:inherit;transition:.15s}
+.ptile:active{transform:scale(.97)}
+.ptile.on{border-color:#f59e0b;background:#26233a}
+.ptile .pe{font-size:27px;line-height:1}
+.ptile .pn{font-size:13.5px;font-weight:800}
+.ptile .pc{font-size:11.5px;color:#8b93a7}
+.ptile.on .pc{color:#f6c94a}
+.hint{margin:14px 16px 0;font-size:12.5px;color:#8b93a7;text-align:center;line-height:1.5}
+#play{display:none;margin-top:14px}
+.reelwrap{position:relative;overflow:hidden;padding:14px 0;background:#12141c;
+  border-top:1px solid #252a38;border-bottom:1px solid #252a38;--tw:96px;--th:118px}
 .reelwrap.mini{padding:5px 0;--tw:62px;--th:74px}
 .reelwrap.mini + .reelwrap.mini{border-top:0}
 .reel{display:flex;gap:8px;will-change:transform}
-.tile{flex:0 0 var(--tw);width:var(--tw);height:var(--th);border-radius:12px;background:#1b1f2b;border:2px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;overflow:hidden}
+.tile{flex:0 0 var(--tw);width:var(--tw);height:var(--th);border-radius:12px;
+  background:#1b1f2b;border:2px solid #334155;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px;overflow:hidden}
 .tile .emoji{font-size:calc(var(--tw)*.27);line-height:1}
-.tile .tname{font-size:11px;text-align:center;padding:0 4px;color:#e5e7eb;max-height:28px;overflow:hidden}
-.tile .tpoints{font-size:11px;color:var(--muted)}
+.tile .tname{font-size:11px;text-align:center;padding:0 4px;color:#e5e7eb;
+  max-height:28px;overflow:hidden}
+.tile .tpoints{font-size:11px;color:#8b93a7}
 .reelwrap.mini .tile{border-radius:9px;gap:2px}
 .reelwrap.mini .tile .tname{font-size:7.5px;max-height:18px;padding:0 2px;line-height:1.15}
 .reelwrap.mini .tile .tpoints{font-size:8px}
-.reelwrap.mini .marker{width:2px}
-.marker{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#f59e0b;box-shadow:0 0 12px #f59e0b;z-index:3}
-.result{margin:16px;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px;line-height:1.5;min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center}
-.open{margin:0 16px;width:calc(100% - 32px);border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#f59e0b,#b45309)}
-.open:disabled{opacity:.45}
-.buyd{margin:12px 16px 0;width:calc(100% - 32px);border:1px solid #4a3a12;
-  border-radius:14px;padding:14px;font-size:14px;font-weight:800;
-  background:linear-gradient(135deg,#3a2f10,#231c0a);color:#f6c94a}
-.buyd:disabled{opacity:.5}
+.marker{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#f59e0b;
+  box-shadow:0 0 12px #f59e0b;z-index:3}
+.result{margin:16px;padding:14px;border-radius:14px;background:#171a23;
+  border:1px solid #252a38;font-size:14px;line-height:1.6;min-height:56px;
+  display:flex;align-items:center;justify-content:center;text-align:center}
 .howmany{display:flex;gap:8px;margin:12px 16px 0}
-.howmany button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;padding:10px 0;font-size:13px;font-weight:800}
-.howmany button.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
-.legend{margin:14px 16px 0;font-size:12px;color:var(--muted);line-height:1.7}
-#toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;border-radius:12px;padding:14px 16px;font-size:14px;transform:translateY(150%);transition:.26s;z-index:9}
+.howmany button{flex:1;border:1px solid #252a38;background:transparent;color:#8b93a7;
+  border-radius:11px;padding:11px 0;font-size:13px;font-weight:800;font-family:inherit}
+.howmany button.on{background:#f59e0b;color:#1a1205;border-color:transparent}
+.open{margin:12px 16px 0;width:calc(100% - 32px);border:0;border-radius:14px;
+  padding:16px;font-size:16px;font-weight:800;color:#fff;
+  background:linear-gradient(135deg,#f59e0b,#b45309);font-family:inherit}
+.open:disabled{opacity:.45}
+.legend{margin:14px 16px 0;font-size:12px;color:#8b93a7;line-height:1.7}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;
+  border-radius:12px;padding:14px 16px;font-size:14px;transform:translateY(150%);
+  transition:.26s;z-index:9}
 #toast.on{transform:translateY(0)}
 #toast.bad{background:#b91c1c}
 </style>
 </head>
 <body>
-<header><h1>📦 Кейсы</h1><div class="wallet">📦 <span id="cases">…</span></div></header>
+<header><h1>📦 Кейсы</h1><div class="wallet">📦 <span id="total">…</span></div></header>
 <main>
-  <button class="buyd" id="buyD">🏫 Купить кейс «7Д класс» · 350 000</button>
-  <div id="reels"><div class="reelwrap"><div class="marker"></div><div class="reel" id="reel"></div></div></div>
-  <div class="result" id="result">Жми «Открыть кейс» — лента закрутится.</div>
-  <div class="howmany" id="howmany">
-    <button data-n="1" class="on">1 кейс</button>
-    <button data-n="3">3</button>
-    <button data-n="5">5</button>
-    <button data-n="10">10</button>
+  <div class="pick" id="pick">
+    <button class="ptile" data-k="g">
+      <span class="pe">🧩</span><span class="pn">7Г класс</span>
+      <span class="pc" id="cntG">…</span>
+    </button>
+    <button class="ptile" data-k="d">
+      <span class="pe">🏫</span><span class="pn">7Д класс</span>
+      <span class="pc" id="cntD">…</span>
+    </button>
   </div>
-  <button class="open" id="open">Открыть кейс</button>
+  <div class="hint" id="hint">Выбери кейс — потом откроется лента</div>
+
+  <div id="play">
+    <div id="reels"><div class="reelwrap"><div class="marker"></div><div class="reel"></div></div></div>
+    <div class="result" id="result">Жми «Открыть кейс» — лента закрутится.</div>
+    <div class="howmany" id="howmany">
+      <button data-n="1" class="on">1</button>
+      <button data-n="3">3</button>
+      <button data-n="5">5</button>
+      <button data-n="10">10</button>
+    </div>
+    <button class="open" id="open" disabled>Сначала выбери кейс</button>
+  </div>
+
   <div class="legend">
-    Шансы кейса: 🟣 эпик 60% · 🔴 миф 28% · 🟡 легенда 8% · ⚫ секрет 1.5% · 💎 ультима 1.5% · 🌈 ульта 1%.
-    Внутри редкости все карты равновероятны.
+    🧩 <b>7Г</b> — обычная коллекция. 🏫 <b>7Д</b> — второй класс, только из кейса
+    и слова «западо-восток». Шансы сверху редкости низкие.
   </div>
 </main>
 <div id="toast"></div>
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
-const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let pool = [], poolD = [], cases = 0, spinning = false, howMany = 1, nextD = false;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 const GAP = 8;
+let pool = [], poolD = [], countG = 0, countD = 0;
+let kind = null, howMany = 1, spinning = false;
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
 const openBtn = document.getElementById("open");
-function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
-function toast(t,k){ var el=document.getElementById("toast"); el.textContent=t; el.className="on "+(k||""); clearTimeout(el._t); el._t=setTimeout(function(){el.className="";},3200); }
-function tile(card){
-  var c = card.color || "#334155";
-  return '<div class="tile" style="border-color:'+c+'">'+
-    '<div class="emoji">'+card.emoji+'</div>'+
-    '<div class="tname">'+card.name+'</div>'+
-    '<div class="tpoints">'+money(card.price || card.points)+'</div></div>';
+const hint = document.getElementById("hint");
+
+function money(n){
+  return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
-function randomCard(){ return pool[Math.floor(Math.random()*pool.length)] || {name:"?",emoji:"?",points:0,price:0,color:"#334155"}; }
-// Одна лента: создаём узел, набиваем плитками, возвращаем всё для прокрутки.
+function toast(t, k){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on " + (k || "");
+  clearTimeout(el._t); el._t = setTimeout(function(){ el.className = ""; }, 3200);
+}
+function tile(card){
+  const c = card.color || "#334155";
+  return '<div class="tile" style="border-color:' + c + '">' +
+    '<div class="emoji">' + card.emoji + '</div>' +
+    '<div class="tname">' + card.name + '</div>' +
+    '<div class="tpoints">' + money(card.price || card.points) + '</div></div>';
+}
+function source(){ return kind === "d" ? poolD : pool; }
+function left(){ return kind === "d" ? countD : countG; }
+function randomOf(src){
+  return src[Math.floor(Math.random() * src.length)] ||
+    {name: "?", emoji: "?", points: 0, price: 0, color: "#334155"};
+}
 function makeReel(win, mini, src){
-  var source = src || pool;
-  var wrap = document.createElement("div");
+  const wrap = document.createElement("div");
   wrap.className = "reelwrap" + (mini ? " mini" : "");
-  var marker = document.createElement("div");
+  const marker = document.createElement("div");
   marker.className = "marker";
-  var el = document.createElement("div");
+  const el = document.createElement("div");
   el.className = "reel";
   wrap.appendChild(marker);
   wrap.appendChild(el);
   reels.appendChild(wrap);
-  var tw = mini ? 62 : 96;
-  var total = mini ? 34 : 60;
-  var target = mini ? 28 : 54;
-  var html = "";
-  for(var i=0;i<total;i++){
-    html += tile(i===target && win ? win : source[Math.floor(Math.random()*source.length)] || randomCard());
+  const tw = mini ? 62 : 96;
+  const total = mini ? 34 : 60;
+  const target = mini ? 28 : 54;
+  let html = "";
+  for (let i = 0; i < total; i++) {
+    html += tile(i === target && win ? win : randomOf(src));
   }
   el.innerHTML = html;
   return {el: el, target: target, step: tw + GAP, tw: tw};
 }
 function spinOne(item){
-  var center = window.innerWidth / 2;
-  var jitter = (Math.random()*40) - 20;
-  var offset = item.target*item.step + item.tw/2 - center + jitter;
+  const center = window.innerWidth / 2;
+  const jitter = (Math.random() * 40) - 20;
+  const offset = item.target * item.step + item.tw / 2 - center + jitter;
   setTimeout(function(){
     item.el.style.transition = "transform 4.2s cubic-bezier(.12,.72,.06,1)";
     item.el.style.transform = "translateX(" + (-offset) + "px)";
   }, 30);
 }
+function sync(){
+  const l = left();
+  openBtn.disabled = spinning || !kind || l <= 0;
+  openBtn.textContent = !kind ? "Сначала выбери кейс"
+    : l <= 0 ? (kind === "d" ? "Кейсов 7Д нет" : "Кейсов 7Г нет")
+    : (howMany > 1 ? "Открыть " + howMany + " кейсов" : "Открыть кейс");
+}
+function updateCounts(g, d){
+  countG = g; countD = d;
+  document.getElementById("cntG").textContent = g + " шт.";
+  document.getElementById("cntD").textContent = d + " шт.";
+  document.getElementById("total").textContent = g + d;
+  sync();
+}
+function choose(k){
+  if (spinning) return;
+  kind = k;
+  document.querySelectorAll("#pick [data-k]").forEach(function(x){
+    x.className = "ptile" + (x.dataset.k === k ? " on" : "");
+  });
+  document.getElementById("play").style.display = "block";
+  hint.style.display = "none";
+  reels.innerHTML = "";
+  makeReel(null, false, source());
+  sync();
+}
 async function open(){
-  if(spinning) return;
-  spinning = true; openBtn.disabled = true;
-  result.textContent = "\u041a\u0440\u0443\u0442\u0438\u043c...";
+  if (spinning || !kind) return;
+  spinning = true; sync();
+  result.textContent = "Крутим…";
   try{
-    var r = await fetch("/api/case/open_many", {method:"POST", headers,
-      body: JSON.stringify({count: howMany})});
-    var d = await r.json();
-    if(d.error){ toast(d.error,"bad"); spinning=false; openBtn.disabled = cases<=0; return; }
+    const r = await fetch("/api/case/open_many", {
+      method: "POST", headers,
+      body: JSON.stringify({count: howMany, kind: kind}),
+    });
+    const d = await r.json();
+    if (d.error){ toast(d.error, "bad"); spinning = false; sync(); return; }
     reels.innerHTML = "";
-    var mini = d.cards.length > 1;
-    var src = d.is_d && poolD.length ? poolD : pool;
-    var items = d.cards.map(function(c){ return makeReel(c, mini, src); });
+    const mini = d.cards.length > 1;
+    const src = source();
+    const items = d.cards.map(function(c){ return makeReel(c, mini, src); });
     void reels.offsetWidth;
     items.forEach(spinOne);
-    cases = d.cases;
-    document.getElementById("cases").textContent = cases;
+    updateCounts(d.count_g || 0, d.count_d || 0);
     setTimeout(function(){
       result.innerHTML = d.cards.map(function(c){
-        return "\uD83C\uDF89 <b>"+c.name+"</b> \u00b7 "+c.rarity_title+
-          " \u00b7 +"+money(c.points)+" \u043e\u0447\u043a." +
-          (c.is_new ? " \u00b7 <b>\u041d\u041e\u0412\u0410\u042f!</b>" : "");
+        return "🎉 <b>" + c.name + "</b> · " + c.rarity_title +
+          " · +" + money(c.points) + " очк." +
+          (c.is_new ? " · <b>НОВАЯ!</b>" : "");
       }).join("<br>");
       spinning = false;
-      openBtn.disabled = cases <= 0;
-      if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u0431\u043e\u043b\u044c\u0448\u0435 \u043d\u0435\u0442";
+      sync();
     }, 4600);
-  }catch(e){ toast("\u0421\u0432\u044f\u0437\u044c \u043f\u043e\u0442\u0435\u0440\u044f\u043b\u0430\u0441\u044c","bad"); spinning=false; openBtn.disabled=cases<=0; }
+  }catch(e){
+    toast("Связь потерялась", "bad");
+    spinning = false; sync();
+  }
 }
 async function load(){
   try{
-    var r = await fetch("/api/case", {headers});
-    var d = await r.json();
-    if(d.error){ result.textContent = d.error; return; }
-    pool = d.pool || []; poolD = d.pool_d || []; nextD = !!d.next_d; cases = d.cases || 0;
-    document.getElementById("cases").textContent = cases;
-    if(!reels.querySelector(".reelwrap")){ reels.innerHTML = ""; makeReel(null, false, pool); }
-    openBtn.disabled = cases <= 0;
-    if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u043d\u0435\u0442 \u2014 \u043a\u0440\u0443\u0442\u0438 \u0440\u0443\u043b\u0435\u0442\u043a\u0443";
-  }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0435\u0439\u0441\u044b"; }
+    const r = await fetch("/api/case", {headers});
+    const d = await r.json();
+    if (d.error){ hint.textContent = d.error; return; }
+    pool = d.pool || [];
+    poolD = d.pool_d || [];
+    updateCounts(d.count_g || 0, d.count_d || 0);
+  }catch(e){
+    hint.textContent = "Не смог загрузить кейсы";
+  }
 }
-openBtn.onclick = open;
-document.getElementById("buyD").onclick = async function(){
-  var b = document.getElementById("buyD");
-  if (spinning || b.disabled) return;
-  b.disabled = true; b.textContent = "Покупаем…";
-  try{
-    var r = await fetch("/api/case/buy_d", {method:"POST", headers, body:"{}"});
-    var d = await r.json();
-    if (d.error){ toast(d.error, "bad"); }
-    else {
-      toast("Кейс «7Д класс» куплен за " + money(d.price) + (d.vip ? " (VIP)" : ""));
-      cases = d.cases;
-      document.getElementById("cases").textContent = cases;
-      openBtn.disabled = cases <= 0;
-    }
-  }catch(e){ toast("Связь потерялась", "bad"); }
-  b.disabled = false;
-  b.textContent = "🏫 Купить кейс «7Д класс» · 350 000";
-};
+document.querySelectorAll("#pick [data-k]").forEach(function(b){
+  b.onclick = function(){ choose(b.dataset.k); };
+});
 document.querySelectorAll("#howmany [data-n]").forEach(function(b){
   b.onclick = function(){
-    if(spinning) return;
+    if (spinning) return;
     howMany = parseInt(b.dataset.n, 10) || 1;
     document.querySelectorAll("#howmany [data-n]").forEach(function(x){
       x.className = x === b ? "on" : "";
     });
+    sync();
   };
 });
-if(tg){ tg.ready(); tg.expand(); }
+openBtn.onclick = open;
+if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
 </body>

@@ -624,6 +624,12 @@ async def api_case(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "cases": len(cases),
+            "count_g": sum(
+                1 for c in cases if str(c.get("source") or "") != cases_mod.CASE_D_SOURCE
+            ),
+            "count_d": sum(
+                1 for c in cases if str(c.get("source") or "") == cases_mod.CASE_D_SOURCE
+            ),
             "pool": cases_mod.case_pool(),
             "pool_d": cases_mod.case_pool_d(),
             "next_d": next_d,
@@ -4710,9 +4716,20 @@ async def api_case_open_many(request: Request) -> JSONResponse:
     cases = await state.db.user_cases(uid)
     if not cases:
         return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
+    want_d = str((body or {}).get("kind", "g")) == "d"
+    picked = [
+        c
+        for c in cases
+        if (str(c.get("source") or "") == cases_mod.CASE_D_SOURCE) == want_d
+    ]
+    if not picked:
+        return JSONResponse(
+            {"error": "Кейсов 7Д нет" if want_d else "Кейсов 7Г нет"},
+            status_code=400,
+        )
 
     opened: list[dict[str, Any]] = []
-    for case in cases[:want]:
+    for case in picked[:want]:
         if not await state.db.open_case(uid, int(case["id"])):
             continue
         card = roll_case_card()
@@ -4735,8 +4752,22 @@ async def api_case_open_many(request: Request) -> JSONResponse:
         )
     if not opened:
         return JSONResponse({"error": "Не получилось открыть"}, status_code=400)
-    left = len(await state.db.user_cases(uid))
-    return JSONResponse({"ok": True, "cards": opened, "cases": left})
+    all_cases = await state.db.user_cases(uid)
+    return JSONResponse(
+        {
+            "ok": True,
+            "cards": opened,
+            "cases": len(all_cases),
+            "count_g": sum(
+                1 for c in all_cases
+                if str(c.get("source") or "") != cases_mod.CASE_D_SOURCE
+            ),
+            "count_d": sum(
+                1 for c in all_cases
+                if str(c.get("source") or "") == cases_mod.CASE_D_SOURCE
+            ),
+        }
+    )
 
 
 @router.post("/api/case/buy_d")
