@@ -939,7 +939,7 @@ const CHART_MIN = 15;
 const PER_CANDLE = 2;
 function candles(history){
   // Если истории мало — режем по одному тику, чтобы свечей было больше.
-  const per = history.length < 40 ? 1 : PER_CANDLE;
+  const per = PER_CANDLE;
   const need = Math.round(CHART_MIN * 60 / TICK / PER_CANDLE);
   let n = Math.min(need, Math.floor(history.length / per));
   // На 1ч истории может не хватить — тогда берём сколько есть,
@@ -992,8 +992,7 @@ function draw(){
       rightPriceScale: { borderColor: "#1e222d", scaleMargins: { top: 0.1, bottom: 0.1 } },
       timeScale: {
         borderColor: "#1e222d", timeVisible: true, secondsVisible: false,
-        barSpacing: 26, minBarSpacing: 26, rightOffset: 0, fixLeftEdge: true,
-        lockVisibleTimeRangeOnResize: true,
+        rightOffset: 0,
       },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
@@ -1012,8 +1011,8 @@ function draw(){
       open: b.o, high: b.h, low: b.l, close: b.c,
     };
   }));
-  // fitContent() подгоняет шаг сам — из-за него и были зазоры.
-  chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: bars.length - 0.5 });
+  // Все свечи влезают в экран: ширина / число свечей, листать нечего.
+  chart.timeScale().fitContent();
 }
 function paintPortfolio(){
   const p = S.data.portfolio;
