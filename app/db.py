@@ -469,6 +469,24 @@ class Database:
         async with self._p().acquire() as con:
             return await self._case_limit(con, user_id, now)
 
+    async def buy_case_d(self, user_id: int, price: int) -> bool:
+        """Покупка кейса «7Д класс». False — не хватает очков."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "update players set bonus_points = bonus_points - $2 "
+                    "where user_id = $1 and bonus_points >= $2 returning user_id",
+                    user_id,
+                    int(price),
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "insert into cases (user_id, source) values ($1, 'case_d')",
+                    user_id,
+                )
+        return True
+
     async def _case_bump(self, con: Any, user_id: int, now: Any) -> None:
         await con.execute(
             "insert into case_limits (user_id, day, used, last_at) "

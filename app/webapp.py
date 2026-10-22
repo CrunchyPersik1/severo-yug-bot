@@ -639,19 +639,11 @@ async def api_case_open(request: Request) -> JSONResponse:
     cases = await state.db.user_cases(uid)
     if not cases:
         return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
-    limit = await state.db.case_limit(uid)
-    if limit["left"] <= 0:
-        return JSONResponse(
-            {"error": "Лимит на сегодня: 15 кейсов. Приходи завтра."}, status_code=400
-        )
-    if limit["wait"] > 0:
-        return JSONResponse(
-            {"error": f"Кейсы раз в минуту. Подожди {limit['wait']} сек."}, status_code=400
-        )
     case = cases[0]
+    is_d = str(case.get("source") or "") == cases_mod.CASE_D_SOURCE
     if not await state.db.open_case(uid, int(case["id"])):
         return JSONResponse({"error": "Этот кейс уже открыт"}, status_code=400)
-    card = roll_case_card()
+    card = cases_mod.roll_case_d() if is_d else roll_case_card()
     counts = await state.db.get_collection(uid)
     is_new = card.card_id not in counts
     count = await state.db.add_card(uid, card.card_id)
@@ -671,6 +663,7 @@ async def api_case_open(request: Request) -> JSONResponse:
             },
             "cases": left,
             "is_new": is_new,
+            "is_d": is_d,
             "count": count,
         }
     )
@@ -4717,3 +4710,27 @@ async def api_case_open_many(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Не получилось открыть"}, status_code=400)
     left = len(await state.db.user_cases(uid))
     return JSONResponse({"ok": True, "cards": opened, "cases": left})
+
+
+@router.post("/api/case/buy_d")
+async def api_case_buy_d(request: Request) -> JSONResponse:
+    """Купить кейс «7Д класс»: 350 000, с VIP — 250 000."""
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    vip = await state.db.vip_active(uid)
+    price = cases_mod.CASE_D_PRICE_VIP if vip else cases_mod.CASE_D_PRICE
+    ok = await state.db.buy_case_d(uid, price)
+    if not ok:
+        return JSONResponse(
+            {"error": f"Не хватает очков: нужно {price}"}, status_code=400
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "price": price,
+            "vip": vip,
+            "cases": len(await state.db.user_cases(uid)),
+        }
+    )

@@ -85,3 +85,69 @@ def case_pool() -> list[dict]:
                 }
             )
     return pool
+
+
+# --------------------------------------------------------------------------- #
+# Кейс «7Д класс» — коллекция второго класса
+# --------------------------------------------------------------------------- #
+
+CASE_D_PRICE = 350_000
+CASE_D_PRICE_VIP = 250_000
+CASE_D_SOURCE = "case_d"
+
+# Сверху редкости почти нереальны. Остаток 92.9% делим на эпик/сверхредкий/редкий.
+CASE_D_WEIGHTS: dict[str, float] = {
+    "mythic": 0.0500,
+    "legendary": 0.0150,
+    "secret": 0.0050,
+    "ultra": 0.0010,
+    "epic": 0.5000,
+    "superrare": 0.2790,
+    "rare": 0.1500,
+}
+CASE_D_ORDER: tuple[str, ...] = (
+    "rare",
+    "superrare",
+    "epic",
+    "mythic",
+    "legendary",
+    "secret",
+    "ultra",
+)
+
+
+def roll_case_d(rng: random.Random | None = None) -> Card:
+    """Карта из кейса «7Д класс». Только карты второй коллекции."""
+    from .cards_d import CARDS_D_BY_RARITY
+
+    rng = rng or random
+    keys = list(CASE_D_WEIGHTS)
+    weights = [CASE_D_WEIGHTS[key] for key in keys]
+    rarity = rng.choices(keys, weights=weights, k=1)[0]
+    return rng.choice(CARDS_D_BY_RARITY[rarity])
+
+
+def case_pool_d() -> list[dict]:
+    """Все карты «7Д» для ленты в мини-аппке."""
+    from .cards_d import CARDS_D
+    from .market import market_price
+
+    pool: list[dict] = []
+    for card in CARDS_D:
+        pool.append(
+            {
+                "id": card.card_id,
+                "name": card.name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "points": card.points,
+                "price": market_price(card),
+                "color": RARITY_COLORS.get(card.rarity, "#334155"),
+            }
+        )
+    return pool
+
+
+def case_d_chances() -> list[tuple[str, float]]:
+    return [(rarity_name(key), CASE_D_WEIGHTS[key] * 100) for key in reversed(CASE_D_ORDER)]

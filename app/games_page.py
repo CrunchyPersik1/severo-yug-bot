@@ -30,6 +30,10 @@ main{padding:16px 0 0}
 .result{margin:16px;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14px;line-height:1.5;min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center}
 .open{margin:0 16px;width:calc(100% - 32px);border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#f59e0b,#b45309)}
 .open:disabled{opacity:.45}
+.buyd{margin:10px 16px 0;width:calc(100% - 32px);border:1px solid var(--line);
+  border-radius:14px;padding:14px;font-size:14px;font-weight:800;
+  background:var(--panel2);color:var(--ink)}
+.buyd:disabled{opacity:.5}
 .howmany{display:flex;gap:8px;margin:12px 16px 0}
 .howmany button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;padding:10px 0;font-size:13px;font-weight:800}
 .howmany button.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
@@ -51,6 +55,7 @@ main{padding:16px 0 0}
     <button data-n="10">10</button>
   </div>
   <button class="open" id="open">Открыть кейс</button>
+  <button class="buyd" id="buyD">🏫 Купить кейс «7Д класс» · 350 000</button>
   <div class="legend">
     Шансы кейса: 🟣 эпик 60% · 🔴 миф 28% · 🟡 легенда 8% · ⚫ секрет 1.5% · 💎 ультима 1.5% · 🌈 ульта 1%.
     Внутри редкости все карты равновероятны.
@@ -144,6 +149,24 @@ async function load(){
   }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0435\u0439\u0441\u044b"; }
 }
 openBtn.onclick = open;
+document.getElementById("buyD").onclick = async function(){
+  var b = document.getElementById("buyD");
+  if (spinning || b.disabled) return;
+  b.disabled = true; b.textContent = "Покупаем…";
+  try{
+    var r = await fetch("/api/case/buy_d", {method:"POST", headers, body:"{}"});
+    var d = await r.json();
+    if (d.error){ toast(d.error, "bad"); }
+    else {
+      toast("Кейс «7Д класс» куплен за " + money(d.price) + (d.vip ? " (VIP)" : ""));
+      cases = d.cases;
+      document.getElementById("cases").textContent = cases;
+      openBtn.disabled = cases <= 0;
+    }
+  }catch(e){ toast("Связь потерялась", "bad"); }
+  b.disabled = false;
+  b.textContent = "🏫 Купить кейс «7Д класс» · 350 000";
+};
 document.querySelectorAll("#howmany [data-n]").forEach(function(b){
   b.onclick = function(){
     if(spinning) return;
