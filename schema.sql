@@ -643,3 +643,7 @@ update players p set drift_granted = true
 alter table players add column if not exists banned boolean not null default false;
 alter table players add column if not exists ban_reason text;
 alter table players add column if not exists banned_at timestamptz;
+
+-- VIP-подписка: срок и отметка последней выдачи дневных бонусов.
+alter table players add column if not exists vip_until timestamptz;
+alter table players add column if not exists vip_day date;
