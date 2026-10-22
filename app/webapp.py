@@ -844,6 +844,24 @@ body{background:#131722!important}
   font-variant-numeric:tabular-nums}
 .up{color:#26a69a!important}
 .down{color:#ef5350!important}
+
+/* ---- терминал: портфель, кнопки, список ---- */
+.pf{background:#171a23!important;border:1px solid #1e222d!important;border-radius:12px!important}
+.buy{background:#26a69a!important;color:#06110f!important;border:0!important;
+  border-radius:10px!important;font-weight:800!important}
+.sell{background:#ef5350!important;color:#180808!important;border:0!important;
+  border-radius:10px!important;font-weight:800!important}
+.buy:disabled,.sell:disabled{background:#2a2e3a!important;color:#5b6474!important}
+.step button{border:1px solid #1e222d!important;background:#171a23!important;
+  color:#8b93a7!important;border-radius:9px!important}
+.step button.on{background:#26a69a!important;color:#06110f!important;border-color:transparent!important}
+.row{background:#171a23!important;border:1px solid #1e222d!important;border-radius:11px!important}
+.row.on{border-color:#26a69a!important;background:#1b2130!important}
+.row b,.row i,.pf b,.pr,.ch{font-family:'JetBrains Mono',ui-monospace,monospace!important;
+  font-variant-numeric:tabular-nums}
+.up{color:#26a69a!important}
+.down{color:#ef5350!important}
+header{background:#131722!important;border-bottom:1px solid #1e222d!important}
 </style>
 </head>
 <body>
@@ -877,7 +895,6 @@ body{background:#131722!important}
   <div class="sub" id="pfSub"></div>
 </div>
 
-<div class="bar" id="tfBar"></div>
 
 <div class="chart">
   <div class="chartbox">
@@ -918,13 +935,16 @@ function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 
 // Свечи: одна свеча = ровно столько точек истории, сколько нужно по времени.
 // История пишется раз в TICK секунд, поэтому 1м = 4 точки, 5м = 20, 1ч = 240.
-function candles(history, tfSeconds){
-  const per = Math.max(2, Math.round(tfSeconds / TICK));
-  let n = Math.floor(history.length / per);
+const CHART_MIN = 15;
+const PER_CANDLE = 2;
+function candles(history){
+  const per = PER_CANDLE;
+  const need = Math.round(CHART_MIN * 60 / TICK / PER_CANDLE);
+  let n = Math.min(need, Math.floor(history.length / per));
   // На 1ч истории может не хватить — тогда берём сколько есть,
   // но ось всё равно покажет настоящее время, а не выдуманное.
-  if (n < 3) n = Math.min(3, Math.floor(history.length / 2));
-  if (n < 1) return {bars: [], stepSec: tfSeconds};
+
+  if (n < 1) return {bars: [], stepSec: per * TICK};
   const start = history.length - n * per;
   const out = [];
   for (let k = 0; k < n; k++){
@@ -945,7 +965,7 @@ let chart = null, series = null;
 function draw(){
   const s = cur();
   if (!s) return;
-  const res = candles(s.history, TFS[S.tf][1]);
+  const res = candles(s.history);
   const bars = res.bars;
   if (!bars.length) return;
   const el = document.getElementById("cv");
@@ -1038,12 +1058,6 @@ function paint(){
   });
   draw();
 }
-function renderTf(){
-  document.getElementById("tfBar").innerHTML = TFS.map((t, i) =>
-    '<button class="tf' + (i === S.tf ? " on" : "") + '" data-tf="' + i + '">' + t[0] + '</button>').join("");
-  document.querySelectorAll("[data-tf]").forEach(b => b.onclick = () => {
-    S.tf = +b.dataset.tf; renderTf(); draw();
-  });
 }
 function renderStep(){
   const presets = [1, 5, 10, 25];
@@ -1087,7 +1101,7 @@ async function load(keep){
 }
 document.getElementById("buyBtn").onclick = () => trade("buy");
 document.getElementById("sellBtn").onclick = () => trade("sell");
-renderTf(); renderStep();
+renderStep();
 if(tg){ tg.ready(); tg.expand(); }
 load(false);
 setInterval(() => load(true), 20000);
