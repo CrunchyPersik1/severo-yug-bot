@@ -1312,6 +1312,7 @@ def faq_menu() -> tuple[str, InlineKeyboardMarkup]:
     rows = [
         [InlineKeyboardButton(text="🃏 Персонажи и цены", callback_data="fq:cards:0")],
         [InlineKeyboardButton(text="🎲 Шансы выпадения", callback_data="fq:drop")],
+        [InlineKeyboardButton(text="🏫 Коллекция 7Д", callback_data="fq:d7")],
         [InlineKeyboardButton(text="🎨 Ауры, фоны, эффекты", callback_data="fq:items:aura")],
         [InlineKeyboardButton(text="🧮 Как считается цена", callback_data="fq:price")],
     ]
@@ -1944,3 +1945,34 @@ def render_level_top(rows: list[dict[str, Any]]) -> str:
     if not rows:
         lines.append("Пока пусто.")
     return "\n".join(lines)
+
+
+def faq_d7() -> tuple[str, InlineKeyboardMarkup]:
+    """FAQ по второй коллекции «7Д»."""
+    from .cards_d import CARDS_D
+    from .cases import CASE_D_PRICE, CASE_D_PRICE_VIP, case_d_chances
+
+    lines = [
+        "🏫 <b>Коллекция «7Д»</b>",
+        "",
+        "Второй класс. Карты не смешиваются с «7Г» — у каждой своя полка "
+        "в профиле и в коллекции.",
+        "",
+        "🎴 <b>Слово-триггер:</b> «западо-восток» (и «западо восток»).",
+        "Тратит ту же дневную попытку, что «Северо-Юг» — выбираешь, каким "
+        "словом её потратить.",
+        "",
+        f"📦 <b>Кейс «7Д класс»</b> — {CASE_D_PRICE} очк.",
+        f"👑 С VIP-подпиской — <b>{CASE_D_PRICE_VIP}</b>.",
+        f"Внутри только карты «7Д», всего {len(CARDS_D)}.",
+        "",
+        "Шансы кейса:",
+    ]
+    for name, chance in case_d_chances():
+        lines.append(f"· {name} — <b>{chance:g}%</b>")
+    lines += [
+        "",
+        "Редкости те же, что в «7Г», но учительских карт тут нет — это ученики.",
+    ]
+    rows = [[InlineKeyboardButton(text="⬅️ Назад", callback_data="fq:menu")]]
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=rows)

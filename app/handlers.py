@@ -1922,6 +1922,8 @@ async def cb_faq(callback: CallbackQuery) -> None:
 
     if kind == "menu":
         text, keyboard = render.faq_menu()
+    elif kind == "d7":
+        text, keyboard = render.faq_d7()
     elif kind == "cards":
         text, keyboard = render.faq_cards(int(parts[2]) if len(parts) > 2 else 0)
     elif kind == "card":
