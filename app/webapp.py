@@ -4023,6 +4023,7 @@ async def _profile_payload(state, user_id: int) -> dict[str, Any]:
         "banner_name": profiles.banner_name(prof["banner"]),
         "music": prof["music"],
         "avatar": prof["avatar"],
+        "vip": await state.db.vip_active(user_id),
         "rewards": [
             {"id": int(r["id"]), "icon": str(r["icon"]), "text": str(r["text"])}
             for r in rewards
@@ -4150,6 +4151,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   font-size:34px;font-weight:900;color:#12100e;box-shadow:0 8px 22px rgba(0,0,0,.4);
   overflow:hidden}
 .banner .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+/* VIP: золотая рамка с мягким пульсирующим ореолом */
+.banner .av.vip{box-shadow:0 0 0 3px #f6c94a,0 0 20px rgba(246,201,74,.55),
+  0 8px 22px rgba(0,0,0,.45)}
+.banner .av.vip::after{content:"";position:absolute;inset:-8px;border-radius:50%;
+  border:2px solid rgba(246,201,74,.5);animation:__vipring 2.8s ease-in-out infinite}
+@keyframes __vipring{
+  0%,100%{opacity:.3;transform:scale(1)}
+  50%{opacity:.85;transform:scale(1.07)}
+}
+.crown{font-size:15px;filter:drop-shadow(0 0 6px rgba(246,201,74,.7))}
 .body{padding:44px 16px 16px}
 .nm{font-size:21px;font-weight:900;letter-spacing:-.3px;display:flex;align-items:center;
   gap:7px;flex-wrap:wrap}
@@ -4213,13 +4224,13 @@ function cardHtml(d){
     : "";
   return '<div class="card">' +
     '<div class="banner" style="background:' + d.banner_css + '">' +
-      '<div class="av" style="background:' + d.avatar_color + '">' +
+      '<div class="av' + (d.vip ? " vip" : "") + '" style="background:' + d.avatar_color + '">' +
         '<span>' + esc(d.initial) + '</span>' +
         (d.avatar ? '<img src="' + esc(d.avatar) + '" alt="" onerror="this.remove()">' : '') +
       '</div>' +
     '</div>' +
     '<div class="body">' +
-      '<div class="nm">' + esc(d.name) + tags + '</div>' +
+      '<div class="nm">' + esc(d.name) + (d.vip ? '<span class="crown">👑</span>' : "") + tags + '</div>' +
       (d.status ? '<div class="st">' + esc(d.status) + '</div>' : '') +
       (d.bio ? '<div class="bio">' + esc(d.bio) + '</div>' : '') +
       (d.music ? '<div class="mus">\uD83C\uDFB5 ' + esc(d.music) + '</div>' : '') +
