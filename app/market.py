@@ -91,9 +91,31 @@ def upgrade_multiplier(bonus: dict[str, int] | None) -> float:
     return max(UPGRADE_MULT_MIN, 1 + total * UPGRADE_PRICE_FACTOR / 100)
 
 
+# Цена по редкости: от 75 000 у редких до 550 000 у ультралегендарных.
+# Раньше считалось от очков карты, из-за чего редкая стоила 5 000.
+RARITY_PRICE: dict[str, int] = {
+    "rare": 75_000,
+    "superrare": 90_000,
+    "epic": 120_000,
+    "mythic": 160_000,
+    "legendary": 220_000,
+    "secret": 300_000,
+    "ultimate": 400_000,
+    "ultra": 550_000,
+    "teacher": 400_000,
+}
+PRICE_MIN = 75_000
+PRICE_MAX = 550_000
+
+
+def base_price(card: Card) -> int:
+    """Базовая цена карты без улучшений — по её редкости."""
+    return RARITY_PRICE.get(card.rarity, PRICE_MIN)
+
+
 def market_price(card: Card, bonus: dict[str, int] | None = None) -> int:
-    """base_price * коэффициент редкости * бонус от улучшений."""
-    return max(1, round(card.points * rarity_coef(card) * upgrade_multiplier(bonus)))
+    """Цена по редкости, с надбавкой за улучшения."""
+    return max(1, round(base_price(card) * upgrade_multiplier(bonus)))
 
 
 def market_fee(price: int) -> int:

@@ -104,12 +104,13 @@ def test_effective_stats_never_drop_below_one():
 
 
 def test_market_price_grows_with_rarity_and_upgrades():
-    rare = get_card("oleg")        # 250, редкий
-    ultra = get_card("valeriya")   # 21000, ультра
-    assert market_price(rare) == 250
-    assert market_price(ultra) == 84000
+    """Цена берётся по редкости: 75 000 у редких, 550 000 у ультра."""
+    rare = get_card("oleg")
+    ultra = get_card("valeriya")
+    assert market_price(rare) == 75_000
+    assert market_price(ultra) == 550_000
     # 50 + 15 = 65 процентных пунктов → множитель 1 + 65*2/100 = 2.3
-    assert market_price(rare, {"atk": 50, "def": 15}) == round(250 * 2.3)
+    assert market_price(rare, {"atk": 50, "def": 15}) == round(75_000 * 2.3)
 
 
 def test_upgrade_price_is_worth_several_times_base():
@@ -117,11 +118,10 @@ def test_upgrade_price_is_worth_several_times_base():
     # Вечный Полдень (+12/+12/+12) + Кровавая Луна (+20 атака) + Пламя Души (+25 атака)
     best = sum_bonus(AURAS[8].bonus, BACKGROUNDS[4].bonus, EFFECTS[2].bonus)
     for card in CARDS:
-        ratio = market_price(card, best) / card.points
-        # редкость даёт 1..4x, улучшения сверху ещё ~2.3x
-        expected_min = RARITY_COEF[card.rarity] * 2.0
-        assert ratio >= expected_min, (card.card_id, ratio, expected_min)
-        assert ratio <= 30, (card.card_id, ratio)
+        ratio = market_price(card, best) / market_price(card)
+        # улучшения поднимают цену минимум вдвое, но не больше чем втрое
+        assert ratio >= 2.0, (card.card_id, ratio)
+        assert ratio <= 3.0, (card.card_id, ratio)
 
 
 def test_upgrade_costs_750():
