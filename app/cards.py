@@ -350,7 +350,17 @@ def image_url(card_id: str, base: str = "") -> str | None:
 
 
 def get_card(card_id: str) -> Card:
-    return CARDS_BY_ID[card_id]
+    """Карта по id — из любой коллекции.
+
+    «7Д» лежит отдельно и не подмешивается в CARDS_BY_ID/CARDS_BY_RARITY:
+    иначе обычные кейсы начали бы выдавать карты новой коллекции.
+    """
+    card = CARDS_BY_ID.get(card_id)
+    if card is not None:
+        return card
+    from .cards_d import CARDS_D_BY_ID
+
+    return CARDS_D_BY_ID[card_id]
 
 
 def cards_sorted_for_user(card_ids: list[str] | set[str]) -> list[Card]:
