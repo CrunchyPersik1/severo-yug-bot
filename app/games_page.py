@@ -65,7 +65,7 @@ main{padding:16px 0 0}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let pool = [], cases = 0, spinning = false, howMany = 1;
+let pool = [], poolD = [], cases = 0, spinning = false, howMany = 1, nextD = false;
 const GAP = 8;
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
@@ -81,7 +81,8 @@ function tile(card){
 }
 function randomCard(){ return pool[Math.floor(Math.random()*pool.length)] || {name:"?",emoji:"?",points:0,price:0,color:"#334155"}; }
 // Одна лента: создаём узел, набиваем плитками, возвращаем всё для прокрутки.
-function makeReel(win, mini){
+function makeReel(win, mini, src){
+  var source = src || pool;
   var wrap = document.createElement("div");
   wrap.className = "reelwrap" + (mini ? " mini" : "");
   var marker = document.createElement("div");
@@ -95,7 +96,9 @@ function makeReel(win, mini){
   var total = mini ? 34 : 60;
   var target = mini ? 28 : 54;
   var html = "";
-  for(var i=0;i<total;i++){ html += tile(i===target && win ? win : randomCard()); }
+  for(var i=0;i<total;i++){
+    html += tile(i===target && win ? win : source[Math.floor(Math.random()*source.length)] || randomCard());
+  }
   el.innerHTML = html;
   return {el: el, target: target, step: tw + GAP, tw: tw};
 }
@@ -119,7 +122,8 @@ async function open(){
     if(d.error){ toast(d.error,"bad"); spinning=false; openBtn.disabled = cases<=0; return; }
     reels.innerHTML = "";
     var mini = d.cards.length > 1;
-    var items = d.cards.map(function(c){ return makeReel(c, mini); });
+    var src = d.is_d && poolD.length ? poolD : pool;
+    var items = d.cards.map(function(c){ return makeReel(c, mini, src); });
     void reels.offsetWidth;
     items.forEach(spinOne);
     cases = d.cases;
@@ -141,9 +145,9 @@ async function load(){
     var r = await fetch("/api/case", {headers});
     var d = await r.json();
     if(d.error){ result.textContent = d.error; return; }
-    pool = d.pool || []; cases = d.cases || 0;
+    pool = d.pool || []; poolD = d.pool_d || []; nextD = !!d.next_d; cases = d.cases || 0;
     document.getElementById("cases").textContent = cases;
-    if(!reels.querySelector(".reelwrap")){ reels.innerHTML = ""; makeReel(null, false); }
+    if(!reels.querySelector(".reelwrap")){ reels.innerHTML = ""; makeReel(null, false, pool); }
     openBtn.disabled = cases <= 0;
     if(cases <= 0) openBtn.textContent = "\u041a\u0435\u0439\u0441\u043e\u0432 \u043d\u0435\u0442 \u2014 \u043a\u0440\u0443\u0442\u0438 \u0440\u0443\u043b\u0435\u0442\u043a\u0443";
   }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u043a\u0435\u0439\u0441\u044b"; }

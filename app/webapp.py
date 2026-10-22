@@ -620,10 +620,13 @@ async def api_case(request: Request) -> JSONResponse:
     if error is not None:
         return error
     cases = await state.db.user_cases(uid)
+    next_d = bool(cases) and str(cases[0].get("source") or "") == cases_mod.CASE_D_SOURCE
     return JSONResponse(
         {
             "cases": len(cases),
             "pool": cases_mod.case_pool(),
+            "pool_d": cases_mod.case_pool_d(),
+            "next_d": next_d,
             "balance": await state.market.balance(uid),
         },
         headers={"Cache-Control": "no-store"},
@@ -4522,7 +4525,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     <div class="b" id="cnt">…</div>
   </div>
   <div class="tabs">
-    <button class="tab on" id="tabCards">Карты</button>
+    <button class="tab on" id="tabCards">7Г</button>
+    <button class="tab" id="tabD">7Д</button>
     <button class="tab" id="tabUpg">Улучшенные</button>
   </div>
   <div id="list"></div>
@@ -4549,18 +4553,25 @@ function toast(t){
 function render(){
   const d = S.data;
   document.getElementById("bal").textContent = "$ " + money(d.balance);
-  document.getElementById("cnt").textContent = "Карт: " + d.total;
+  var cntD = d.cards.filter(function(c){ return String(c.id).indexOf("d_") === 0; }).length;
+  document.getElementById("cnt").textContent =
+    "7Г: " + (d.total - cntD) + " · 7Д: " + cntD;
   document.getElementById("tabCards").className = "tab" + (S.tab === "cards" ? " on" : "");
+  document.getElementById("tabD").className = "tab" + (S.tab === "d" ? " on" : "");
   document.getElementById("tabUpg").className = "tab" + (S.tab === "upg" ? " on" : "");
-  if (S.tab === "cards"){
-    document.getElementById("list").innerHTML = d.cards.length
-      ? '<div class="grid">' + d.cards.map(c =>
+  if (S.tab === "cards" || S.tab === "d"){
+    var isD = function(c){ return String(c.id).indexOf("d_") === 0; };
+    var src = S.tab === "d" ? d.cards.filter(isD) : d.cards.filter(function(c){ return !isD(c); });
+    document.getElementById("list").innerHTML = src.length
+      ? '<div class="grid">' + src.map(c =>
           '<div class="card r-' + c.rarity + '" data-c="' + c.id + '">' +
           (c.count > 1 ? '<div class="ct">\u00d7' + c.count + '</div>' : '') +
           (c.image ? '<img src="' + esc(c.image) + '" alt="">' : '<div class="ic">' + c.emoji + '</div>') +
           '<div class="nm">' + esc(c.name) + '</div>' +
           '<div class="pr">' + money(c.price) + '</div></div>').join("") + '</div>'
-      : '<div class="empty">Пусто. Выбей карту командой «Северо-Юг».</div>';
+      : '<div class="empty">' + (S.tab === "d"
+          ? "Коллекция 7Д пуста.<br>Напиши «западо-восток» или открой кейс «7Д класс»."
+          : "Пусто. Выбей карту командой «Северо-Юг».") + '</div>';
     document.querySelectorAll("[data-c]").forEach(el => el.onclick = () => openCard(el.dataset.c));
   } else {
     document.getElementById("list").innerHTML = d.upgraded.length
@@ -4654,6 +4665,7 @@ async function load(){
   }catch(e){ toast("Не смог загрузить"); }
 }
 document.getElementById("tabCards").onclick = () => { S.tab = "cards"; render(); };
+document.getElementById("tabD").onclick = () => { S.tab = "d"; render(); };
 document.getElementById("tabUpg").onclick = () => { S.tab = "upg"; render(); };
 if(tg){ tg.ready(); tg.expand(); }
 load();
