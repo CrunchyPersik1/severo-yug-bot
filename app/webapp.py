@@ -4733,7 +4733,9 @@ async def api_case_open_many(request: Request) -> JSONResponse:
     for case in picked[:want]:
         if not await state.db.open_case(uid, int(case["id"])):
             continue
-        card = roll_case_card()
+        # Пул строго по типу кейса: 7Д не может выдать карту 7Г.
+        case_is_d = str(case.get("source") or "") == cases_mod.CASE_D_SOURCE
+        card = cases_mod.roll_case_d() if case_is_d else roll_case_card()
         counts = await state.db.get_collection(uid)
         is_new = card.card_id not in counts
         await state.db.add_card(uid, card.card_id)

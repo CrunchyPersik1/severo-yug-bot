@@ -41,7 +41,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
 from .cards import CARDS, CARDS_BY_ID, cards_sorted_for_user, get_card, image_url
 from .cards_d import roll_card_d
-from .cases import OPEN_PER_DAY, roll_case_card
+from .cases import CASE_D_SOURCE, OPEN_PER_DAY, roll_case_card, roll_case_d
 from .db import Database
 from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
 from .roulette import (
@@ -1296,7 +1296,11 @@ async def cmd_case(message: Message, db: Database, bot: Bot) -> None:
         await message.answer("Этот кейс уже открыт или выставлен на продажу.")
         return
 
-    card = roll_case_card()
+    # Кейс 7Д отдаёт только карты 7Д — раньше здесь всегда крутилась 7Г.
+    if str(case.get("source") or "") == CASE_D_SOURCE:
+        card = roll_case_d()
+    else:
+        card = roll_case_card()
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
