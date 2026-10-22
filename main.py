@@ -115,7 +115,13 @@ async def lifespan(app: FastAPI):
     await db.upsert_cards(card_rows())
     # Убираем из базы карты, которых уже нет в каталоге: иначе их строки
     # у игроков ломают просмотр профиля (get_card кидает KeyError).
-    await db.purge_missing_cards([card.card_id for card in CARDS])
+    # Чистим только то, чего нет НИ В ОДНОЙ коллекции: иначе «7Д»
+    # заливалась и тут же удалялась при каждом старте.
+    from app.cards_d import CARDS_D
+
+    await db.purge_missing_cards(
+        [card.card_id for card in CARDS] + [card.card_id for card in CARDS_D]
+    )
 
     market = MarketRepo(db)
     await market.seed_items()
