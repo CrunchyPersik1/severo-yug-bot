@@ -969,7 +969,13 @@ function draw(){
   const res = candles(s.history);
   const bars = res.bars;
   if (!bars.length) return;
-  const el = document.getElementById("cv");   if (!el) return;   el.style.height = "240px";   if (typeof LightweightCharts === "undefined"){     el.innerHTML = "<div style=""padding:18px;font:12px JetBrains Mono,monospace;color:#ef5350;line-height:1.6"">График не загрузился.<br>Библиотека lightweight-charts недоступна.<br>Проверь интернет в WebView.</div>";"     return;   }
+  const el = document.getElementById("cv");
+  if (!el) return;
+  el.style.height = "240px";
+  if (typeof LightweightCharts === "undefined"){
+    el.innerHTML = '<div style="padding:18px;font:12px JetBrains Mono,monospace;color:#ef5350">График не загрузился</div>';
+    return;
+  }
   if (!el) return;
   if (!chart){
     el.innerHTML = "";
