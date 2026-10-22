@@ -901,7 +901,10 @@ body{background:#131722!important}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-const TFS = [["1м", 14], ["5м", 12], ["15м", 9], ["1ч", 7]];
+// Таймфрейм в СЕКУНДАХ. История пишется раз в TICK секунд — свеча
+// должна занимать ровно столько точек, сколько нужно по времени.
+const TFS = [["1м", 60], ["5м", 300], ["15м", 900], ["1ч", 3600]];
+const TICK = 15;
 let S = {data: null, slug: null, tf: 0, shares: 1, busy: false};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
@@ -913,26 +916,27 @@ function toast(t){
 }
 function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 
-// Свечи: бьём историю на N кусков и считаем OHLC каждого
-function candles(history, count){
+// Свечи: одна свеча = ровно столько точек истории, сколько нужно по времени.
+// История пишется раз в TICK секунд, поэтому 1м = 4 точки, 5м = 20, 1ч = 240.
+function candles(history, tfSeconds){
+  const per = Math.max(2, Math.round(tfSeconds / TICK));
+  let n = Math.floor(history.length / per);
+  // На 1ч истории может не хватить — тогда берём сколько есть,
+  // но ось всё равно покажет настоящее время, а не выдуманное.
+  if (n < 3) n = Math.min(3, Math.floor(history.length / 2));
+  if (n < 1) return {bars: [], stepSec: tfSeconds};
+  const start = history.length - n * per;
   const out = [];
-  // Меньше двух точек на свечу — это не свеча, а палочка: open == close.
-  // Ровно count свечей одинаковой ширины: иначе последний кусок короче
-  // и на графике появляется огрызок и лишние зазоры.
-  const n = Math.min(count, Math.floor(history.length / 2));
-  if (n < 1) return out;
-  const step = history.length / n;
-  for (let i = 0; i < n; i++){
-    const a = Math.floor(i * step);
-    const b = Math.max(a + 1, Math.floor((i + 1) * step));
-    const chunk = history.slice(a, b);
-    if (!chunk.length) continue;
+  for (let k = 0; k < n; k++){
+    const a = start + k * per;
+    const chunk = history.slice(a, a + per);
+    if (chunk.length < 1) continue;
     out.push({
       o: chunk[0], c: chunk[chunk.length - 1],
       h: Math.max.apply(null, chunk), l: Math.min.apply(null, chunk),
     });
   }
-  return out;
+  return {bars: out, stepSec: per * TICK};
 }
 // Цвета свечей. В SVG-атрибутах var() не работает — только конкретный цвет.
 const GREEN = "#9dc941", RED = "#e0407a";
@@ -941,7 +945,9 @@ let chart = null, series = null;
 function draw(){
   const s = cur();
   if (!s) return;
-  const bars = candles(s.history, TFS[S.tf][1]);
+  const res = candles(s.history, TFS[S.tf][1]);
+  const bars = res.bars;
+  if (!bars.length) return;
   const el = document.getElementById("cv");
   if (!el) return;
   if (!chart){
@@ -972,8 +978,12 @@ function draw(){
     new ResizeObserver(function(){ if (chart) chart.applyOptions({ width: el.clientWidth }); }).observe(el);
   }
   const now = Math.floor(Date.now() / 1000);
+  // Время честное: шаг = сколько секунд реально покрывает одна свеча.
   series.setData(bars.map(function(b, i){
-    return { time: now - (bars.length - i) * 60, open: b.o, high: b.h, low: b.l, close: b.c };
+    return {
+      time: now - (bars.length - i) * res.stepSec,
+      open: b.o, high: b.h, low: b.l, close: b.c,
+    };
   }));
   // fitContent() подгоняет шаг сам — из-за него и были зазоры.
   chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: bars.length - 0.5 });
