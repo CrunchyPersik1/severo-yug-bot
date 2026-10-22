@@ -4469,20 +4469,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .r-ultra{border-color:rgba(232,121,249,.9)} .r-teacher{border-color:rgba(194,65,12,.9)}
 .empty{text-align:center;color:var(--muted);padding:44px 16px;font-size:13px;line-height:1.6}
 
-.sheetwrap{position:fixed;inset:0;background:rgba(8,10,14,.72);display:none;
-  align-items:flex-end;justify-content:center;z-index:40}
-.sheetwrap.on{display:flex;animation:__fade .22s ease}
-@keyframes __fade{from{opacity:0}to{opacity:1}}
-.sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
-  border-radius:20px 20px 0 0;padding:18px;max-height:88vh;overflow-y:auto;
-  animation:__up .3s cubic-bezier(.2,.9,.3,1.05)}
-@keyframes __up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
-.sheet .top{display:flex;gap:13px;align-items:center}
-.sheet .art{width:76px;height:76px;border-radius:14px;object-fit:cover;flex:0 0 auto;
+/* Свой префикс: классы .sheet/.modal в общем слое конфликтуют. */
+.colmask{position:fixed;inset:0;background:rgba(6,8,12,.82);display:none;
+  align-items:flex-end;justify-content:center;z-index:9000}
+.colmask.on{display:flex}
+.colsheet{position:relative;width:100%;max-width:520px;background:var(--panel);
+  border:1px solid var(--line);border-radius:20px 20px 0 0;padding:18px 18px 26px;
+  max-height:86vh;overflow-y:auto;overscroll-behavior:contain;
+  z-index:1;animation:__colup .28s cubic-bezier(.2,.9,.3,1.05)}
+@keyframes __colup{from{transform:translateY(30px)}to{transform:none}}
+.colx{position:sticky;top:-18px;margin:-18px -18px 10px;padding:12px 16px;
+  display:flex;justify-content:flex-end;background:var(--panel);z-index:2;
+  border-bottom:1px solid var(--line)}
+.colx button{border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+  border-radius:10px;width:34px;height:34px;font-size:17px;font-weight:900;line-height:1}
+.colsheet .top{display:flex;gap:13px;align-items:center}
+.colsheet .art{width:76px;height:76px;border-radius:14px;object-fit:cover;flex:0 0 auto;
   background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:38px}
-.sheet .nm{font-size:19px;font-weight:900;line-height:1.15}
-.sheet .rr{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:2px}
-.sheet .pr{font-size:16px;font-weight:900;color:var(--acc2);margin-top:5px}
+.colsheet .nm{font-size:19px;font-weight:900;line-height:1.15}
+.colsheet .rr{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-top:2px}
+.colsheet .pr{font-size:16px;font-weight:900;color:var(--acc2);margin-top:5px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .stats div{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px;text-align:center}
 .stats b{display:block;font-size:16px;font-weight:900}
@@ -4529,8 +4535,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   <div id="list"></div>
 </div>
 
-<div class="sheetwrap" id="modal">
-  <div class="sheet" id="sheet"></div>
+<div class="colmask" id="modal">
+  <div class="colsheet" id="sheet"></div>
 </div>
 <div class="flash" id="flash"></div>
 <div id="toast"></div>
@@ -4578,6 +4584,7 @@ function openCard(id){
   if (!c) return;
   const can = S.data.balance >= S.data.upgrade_price && c.count > 0;
   document.getElementById("sheet").innerHTML =
+    '<div class="colx"><button id="colCloseBtn">\u2715</button></div>' +
     '<div class="top">' +
       (c.image ? '<img class="art" src="' + esc(c.image) + '" alt="">'
                : '<div class="art">' + c.emoji + '</div>') +
@@ -4597,13 +4604,24 @@ function openCard(id){
       money(S.data.upgrade_price) + ' очк.</button>' +
     '<button class="close" id="closeBtn">Закрыть</button>';
   document.getElementById("modal").classList.add("on");
+  document.body.style.overflow = "hidden";
   const b = document.getElementById("upgBtn");
   if (b) b.onclick = () => upgrade(c.id);
-  document.getElementById("closeBtn").onclick = closeModal;
+  const cb = document.getElementById("closeBtn");
+  if (cb) cb.onclick = closeModal;
+  const xb = document.getElementById("colCloseBtn");
+  if (xb) xb.onclick = closeModal;
 }
 function closeModal(){
   document.getElementById("modal").classList.remove("on");
+  document.body.style.overflow = "";
 }
+document.getElementById("modal").addEventListener("click", function(e){
+  if (e.target === this) closeModal();
+});
+document.addEventListener("keydown", function(e){
+  if (e.key === "Escape") closeModal();
+});
 async function upgrade(cardId){
   if (S.busy) return;
   S.busy = true;
