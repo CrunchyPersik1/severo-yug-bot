@@ -365,6 +365,8 @@ def card_rows() -> list[tuple[object, ...]]:
     """Строки для upsert в таблицу cards."""
     import json
 
+    from .cards_d import CARDS_D
+
     return [
         (
             card.card_id,
@@ -378,5 +380,5 @@ def card_rows() -> list[tuple[object, ...]]:
             json.dumps(card.ability.effects, ensure_ascii=False),
             card.surname,
         )
-        for card in CARDS
+        for card in CARDS + CARDS_D
     ]

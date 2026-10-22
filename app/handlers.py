@@ -40,6 +40,7 @@ from .team_service import TeamBattleError, TeamBattleService
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from .config import settings
 from .cards import CARDS, CARDS_BY_ID, cards_sorted_for_user, get_card, image_url
+from .cards_d import roll_card_d
 from .cases import OPEN_PER_DAY, roll_case_card
 from .db import Database
 from .gacha import DROPS_PER_DAY, day_key, next_reset, roll_card
@@ -3075,3 +3076,37 @@ async def cmd_vipgive(message: Message, db: Database, market: MarketRepo) -> Non
         f"👑 <b>VIP выдан</b>: {render.esc(target_name or str(target_id))}\n"
         f"Срок: <b>{days}</b> дн., до {until:%d.%m.%Y}.{extra}"
     )
+
+
+
+@router.message(NormalizedText(
+    "западо-восток", "западо восток", "западовосток",
+))
+async def cmd_drop_d(message: Message, db: Database) -> None:
+    """Вторая коллекция: тот же расход попытки, но свой пул карт."""
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+
+    today = day_key()
+    left = await db.claim_daily(user.id, today, DROPS_PER_DAY)
+    if left is None:
+        seconds = (next_reset() - datetime.now(timezone.utc)).total_seconds()
+        await message.reply(
+            f"⏳ Попытки на сегодня кончились. Следующая — через {_humanize(seconds)} "
+            "(сброс в 12:00 по ЕКБ)."
+        )
+        return
+
+    card = roll_card_d()
+    counts = await db.get_collection(user.id)
+    is_new = card.card_id not in counts
+    count = await db.add_card(user.id, card.card_id)
+    await db.add_points(user.id, card.points)
+    await db.add_drop(user.id, message.chat.id, card.card_id, today)
+
+    text = "🏫 <b>7Д класс</b>\n\n" + render.render_drop(card, count, is_new)
+    if left:
+        text += f"\n\n🎟 Осталось попыток сегодня: <b>{left}</b>"
+    await message.reply(text)

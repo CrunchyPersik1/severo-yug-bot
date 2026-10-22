@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
-from .cards import Card, _c
+import random
+
+from .cards import CARDS_BY_ID, CARDS_BY_RARITY, RARITIES, Card, _c
 
 # Порядок — от частых к самым редким. Используется и в кейсе, и в профиле.
 COLLECTION_D = "d"
@@ -124,7 +126,25 @@ CARDS_D: tuple[Card, ...] = (
        description="Её ход. И это уже конец."),
 )
 
+def roll_card_d(rng: random.Random | None = None) -> Card:
+    """Случайная карта «7Д». Редкости те же, что в «7Г».
+
+    Секретных-сюжетных и учительских тут нет, поэтому пул — вся коллекция.
+    """
+    rng = rng or random
+    keys = ["rare", "superrare", "epic", "mythic", "legendary", "secret", "ultra"]
+    weights = [RARITIES[key].weight for key in keys]
+    rarity = rng.choices(keys, weights=weights, k=1)[0]
+    return rng.choice(CARDS_D_BY_RARITY[rarity])
+
+
 CARDS_D_BY_ID: dict[str, Card] = {card.card_id: card for card in CARDS_D}
 CARDS_D_BY_RARITY: dict[str, list[Card]] = {}
 for _card in CARDS_D:
     CARDS_D_BY_RARITY.setdefault(_card.rarity, []).append(_card)
+
+# Регистрируем коллекцию в общих справочниках, чтобы get_card(), магазин,
+# профиль и рынок видели эти карты наравне с «7Г».
+CARDS_BY_ID.update(CARDS_D_BY_ID)
+for _rarity, _cards in CARDS_D_BY_RARITY.items():
+    CARDS_BY_RARITY[_rarity] = tuple(CARDS_BY_RARITY.get(_rarity, ())) + tuple(_cards)
