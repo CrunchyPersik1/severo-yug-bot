@@ -1065,7 +1065,6 @@ function paint(){
   });
   draw();
 }
-}
 function renderStep(){
   const presets = [1, 5, 10, 25];
   document.getElementById("stepBar").innerHTML = presets.map(n =>
