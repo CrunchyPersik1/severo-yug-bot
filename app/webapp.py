@@ -746,6 +746,9 @@ STOCKS_PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Северо-Юг · Биржа</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
@@ -833,6 +836,14 @@ svg{display:block;width:100%;height:230px}
   border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
   transform:translateY(220%);transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
+#cv{height:240px;width:100%;background:#131722;border-radius:10px;overflow:hidden}
+.chartbox{background:#131722!important;border-color:#1e222d!important}
+body{background:#131722!important}
+.pr,.ch,.row b,.row i,#pfSpent,#pfValue,#pfPnl,#stBuy,#stSell,#stShares,#stPnl,.step b{
+  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace!important;
+  font-variant-numeric:tabular-nums}
+.up{color:#26a69a!important}
+.down{color:#ef5350!important}
 </style>
 </head>
 <body>
@@ -870,8 +881,7 @@ svg{display:block;width:100%;height:230px}
 
 <div class="chart">
   <div class="chartbox">
-    <svg id="cv" viewBox="0 0 320 230" preserveAspectRatio="none"></svg>
-    <div class="axis" id="axis"></div>
+    <div id="cv"></div>
   </div>
   <div class="note" id="note"></div>
 </div>
@@ -918,38 +928,41 @@ function candles(history, count){
 // Цвета свечей. В SVG-атрибутах var() не работает — только конкретный цвет.
 const GREEN = "#9dc941", RED = "#e0407a";
 
+let chart = null, series = null;
 function draw(){
   const s = cur();
   if (!s) return;
   const bars = candles(s.history, TFS[S.tf][1]);
-  const hi = Math.max.apply(null, bars.map(b => b.h));
-  const lo = Math.min.apply(null, bars.map(b => b.l));
-  const pad = (hi - lo) * 0.12 || 1;
-  const top = hi + pad, bot = lo - pad;
-  const n = bars.length, w = 320 / n, bw = Math.max(4, w * 0.68);
-  const y = v => 8 + (1 - (v - bot) / (top - bot)) * 214;
-  let svg = "";
-  // сетка
-  for (let g = 0; g <= 4; g++){
-    const gy = 8 + g * 53.5;
-    svg += '<line x1="0" y1="' + gy + '" x2="320" y2="' + gy + '" stroke="var(--line)" stroke-width="0.5"/>';
+  const el = document.getElementById("cv");
+  if (!el) return;
+  if (!chart){
+    el.innerHTML = "";
+    chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth || 320,
+      height: 240,
+      layout: {
+        background: { type: "solid", color: "#131722" },
+        textColor: "#8b93a7",
+        fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+        fontSize: 11,
+      },
+      grid: { vertLines: { color: "#1e222d" }, horzLines: { color: "#1e222d" } },
+      rightPriceScale: { borderColor: "#1e222d", scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: "#1e222d", timeVisible: true, secondsVisible: false },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    });
+    series = chart.addCandlestickSeries({
+      upColor: "#26a69a", downColor: "#ef5350",
+      borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+      wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+    });
+    new ResizeObserver(function(){ if (chart) chart.applyOptions({ width: el.clientWidth }); }).observe(el);
   }
-  bars.forEach((b, i) => {
-    const x = i * w + w / 2;
-    const up = b.c >= b.o;
-    const col = up ? GREEN : RED;
-    svg += '<line x1="' + x + '" y1="' + y(b.h) + '" x2="' + x + '" y2="' + y(b.l) +
-           '" stroke="' + col + '" stroke-width="1"/>';
-    const y1 = Math.min(y(b.o), y(b.c)), y2 = Math.max(y(b.o), y(b.c));
-    svg += '<rect x="' + (x - bw / 2) + '" y="' + y1 + '" width="' + bw + '" height="' +
-           Math.max(2.5, y2 - y1) + '" fill="' + col + '" rx="1.5"/>';
-  });
-  const last = bars[bars.length - 1];
-  svg += '<line x1="0" y1="' + y(last.c) + '" x2="320" y2="' + y(last.c) +
-         '" stroke="var(--acc)" stroke-width="0.7" stroke-dasharray="3 3"/>';
-  document.getElementById("cv").innerHTML = svg;
-  const a = document.getElementById("axis");
-  a.innerHTML = [top, (top + bot) / 2, bot].map(v => "<span>" + money(v) + "</span>").join("");
+  const now = Math.floor(Date.now() / 1000);
+  series.setData(bars.map(function(b, i){
+    return { time: now - (bars.length - i) * 60, open: b.o, high: b.h, low: b.l, close: b.c };
+  }));
+  chart.timeScale().fitContent();
 }
 function paintPortfolio(){
   const p = S.data.portfolio;
