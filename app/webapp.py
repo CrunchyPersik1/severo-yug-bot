@@ -4490,6 +4490,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   border-bottom:1px solid var(--line)}
 .colx button{border:1px solid var(--line);background:var(--panel2);color:var(--ink);
   border-radius:10px;width:34px;height:34px;font-size:17px;font-weight:900;line-height:1}
+.cvback{margin:0 0 12px;border:1px solid var(--line);background:var(--panel);
+  color:var(--ink);border-radius:12px;padding:10px 16px;font-size:13px;font-weight:800}
+.cvcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
 .colsheet .top{display:flex;gap:13px;align-items:center}
 .colsheet .art{width:76px;height:76px;border-radius:14px;object-fit:cover;flex:0 0 auto;
   background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:38px}
@@ -4541,6 +4544,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     <button class="tab" id="tabUpg">Улучшенные</button>
   </div>
   <div id="list"></div>
+  <div id="cardView" style="display:none"></div>
 </div>
 
 <div class="colmask" id="modal">
@@ -4598,8 +4602,10 @@ function openCard(id){
   const c = S.data.cards.find(x => x.id === id);
   if (!c) return;
   const can = S.data.balance >= S.data.upgrade_price && c.count > 0;
-  document.getElementById("sheet").innerHTML =
-    '<div class="colx"><button id="colCloseBtn">\u2715</button></div>' +
+  var view = document.getElementById("cardView");
+  view.innerHTML =
+    '<button class="cvback" id="cvBack">\u2190 Назад</button>' +
+    '<div class="cvcard">' +
     '<div class="top">' +
       (c.image ? '<img class="art" src="' + esc(c.image) + '" alt="">'
                : '<div class="art">' + c.emoji + '</div>') +
@@ -4617,26 +4623,24 @@ function openCard(id){
     '<div id="upgResult"></div>' +
     '<button class="upg" id="upgBtn"' + (can ? "" : " disabled") + '>Улучшить за ' +
       money(S.data.upgrade_price) + ' очк.</button>' +
-    '<button class="close" id="closeBtn">Закрыть</button>';
-  document.getElementById("modal").classList.add("on");
-  document.body.style.overflow = "hidden";
+    '</div>';
+  document.getElementById("list").style.display = "none";
+  var tabs = document.querySelector(".tabs");
+  if (tabs) tabs.style.display = "none";
+  view.style.display = "block";
+  window.scrollTo(0, 0);
   const b = document.getElementById("upgBtn");
   if (b) b.onclick = () => upgrade(c.id);
-  const cb = document.getElementById("closeBtn");
-  if (cb) cb.onclick = closeModal;
-  const xb = document.getElementById("colCloseBtn");
-  if (xb) xb.onclick = closeModal;
+  const back = document.getElementById("cvBack");
+  if (back) back.onclick = closeModal;
 }
 function closeModal(){
-  document.getElementById("modal").classList.remove("on");
-  document.body.style.overflow = "";
+  var v = document.getElementById("cardView");
+  if (v) v.style.display = "none";
+  document.getElementById("list").style.display = "";
+  var tabs = document.querySelector(".tabs");
+  if (tabs) tabs.style.display = "";
 }
-document.getElementById("modal").addEventListener("click", function(e){
-  if (e.target === this) closeModal();
-});
-document.addEventListener("keydown", function(e){
-  if (e.key === "Escape") closeModal();
-});
 async function upgrade(cardId){
   if (S.busy) return;
   S.busy = true;
