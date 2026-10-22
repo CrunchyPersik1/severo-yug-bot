@@ -901,7 +901,7 @@ body{background:#131722!important}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-const TFS = [["1м", 18], ["5м", 15], ["15м", 11], ["1ч", 8]];
+const TFS = [["1м", 14], ["5м", 12], ["15м", 9], ["1ч", 7]];
 let S = {data: null, slug: null, tf: 0, shares: 1, busy: false};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
@@ -959,7 +959,8 @@ function draw(){
       rightPriceScale: { borderColor: "#1e222d", scaleMargins: { top: 0.1, bottom: 0.1 } },
       timeScale: {
         borderColor: "#1e222d", timeVisible: true, secondsVisible: false,
-        barSpacing: 14, rightOffset: 0, fixLeftEdge: true,
+        barSpacing: 26, minBarSpacing: 26, rightOffset: 0, fixLeftEdge: true,
+        lockVisibleTimeRangeOnResize: true,
       },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
