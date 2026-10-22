@@ -901,7 +901,7 @@ body{background:#131722!important}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-const TFS = [["1м", 30], ["5м", 22], ["15м", 14], ["1ч", 9]];
+const TFS = [["1м", 18], ["5м", 15], ["15м", 11], ["1ч", 8]];
 let S = {data: null, slug: null, tf: 0, shares: 1, busy: false};
 
 function esc(s){ return String(s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
@@ -917,11 +917,20 @@ function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 function candles(history, count){
   const out = [];
   // Меньше двух точек на свечу — это не свеча, а палочка: open == close.
-  const size = Math.max(2, Math.ceil(history.length / count));
-  for (let i = 0; i < history.length; i += size){
-    const chunk = history.slice(i, i + size);
+  // Ровно count свечей одинаковой ширины: иначе последний кусок короче
+  // и на графике появляется огрызок и лишние зазоры.
+  const n = Math.min(count, Math.floor(history.length / 2));
+  if (n < 1) return out;
+  const step = history.length / n;
+  for (let i = 0; i < n; i++){
+    const a = Math.floor(i * step);
+    const b = Math.max(a + 1, Math.floor((i + 1) * step));
+    const chunk = history.slice(a, b);
     if (!chunk.length) continue;
-    out.push({o: chunk[0], c: chunk[chunk.length - 1], h: Math.max.apply(null, chunk), l: Math.min.apply(null, chunk)});
+    out.push({
+      o: chunk[0], c: chunk[chunk.length - 1],
+      h: Math.max.apply(null, chunk), l: Math.min.apply(null, chunk),
+    });
   }
   return out;
 }
@@ -948,7 +957,10 @@ function draw(){
       },
       grid: { vertLines: { color: "#1e222d" }, horzLines: { color: "#1e222d" } },
       rightPriceScale: { borderColor: "#1e222d", scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: "#1e222d", timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderColor: "#1e222d", timeVisible: true, secondsVisible: false,
+        barSpacing: 14, rightOffset: 0, fixLeftEdge: true,
+      },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
     series = chart.addCandlestickSeries({
@@ -962,7 +974,8 @@ function draw(){
   series.setData(bars.map(function(b, i){
     return { time: now - (bars.length - i) * 60, open: b.o, high: b.h, low: b.l, close: b.c };
   }));
-  chart.timeScale().fitContent();
+  // fitContent() подгоняет шаг сам — из-за него и были зазоры.
+  chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: bars.length - 0.5 });
 }
 function paintPortfolio(){
   const p = S.data.portfolio;
