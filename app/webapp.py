@@ -309,8 +309,9 @@ main{padding:0 16px}
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : ""};
-let state = {items: [], tab: "card", balance: 0};
-const TABS = [["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
+// Вкладка кейса идёт первой: иначе товар не видно ни в одной категории.
+const TABS = [["case_d","🏫 Кейс 7Д"],["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
+let state = {items: [], tab: "case_d", balance: 0};
 
 function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 
