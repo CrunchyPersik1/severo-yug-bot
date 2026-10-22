@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import random
 
-from .cards import CARDS_BY_ID, CARDS_BY_RARITY, RARITIES, Card, _c
+from .cards import CARDS_BY_ID, RARITIES, Card, _c
 
 # Порядок — от частых к самым редким. Используется и в кейсе, и в профиле.
 COLLECTION_D = "d"
@@ -143,8 +143,7 @@ CARDS_D_BY_RARITY: dict[str, list[Card]] = {}
 for _card in CARDS_D:
     CARDS_D_BY_RARITY.setdefault(_card.rarity, []).append(_card)
 
-# Регистрируем коллекцию в общих справочниках, чтобы get_card(), магазин,
-# профиль и рынок видели эти карты наравне с «7Г».
+# В справочник по id кладём — иначе get_card() не найдёт карту в профиле,
+# магазине и на рынке. А вот CARDS_BY_RARITY НЕ трогаем: это пул «7Г»,
+# иначе обычные кейсы начнут выдавать карты «7Д».
 CARDS_BY_ID.update(CARDS_D_BY_ID)
-for _rarity, _cards in CARDS_D_BY_RARITY.items():
-    CARDS_BY_RARITY[_rarity] = tuple(CARDS_BY_RARITY.get(_rarity, ())) + tuple(_cards)
