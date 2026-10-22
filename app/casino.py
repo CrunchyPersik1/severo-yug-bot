@@ -51,6 +51,8 @@ BUYBACK_RARITIES = frozenset({"legendary", "secret", "ultra"})
 
 MIN_BET = 100
 MAX_BET = 100_000
+# VIP-подписка поднимает потолок ставки в десять раз.
+VIP_MAX_BET = 1_000_000
 
 
 def color_title(color: str) -> str:

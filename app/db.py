@@ -1232,6 +1232,69 @@ class Database:
         return True
 
     # ------------------------------------------------------------------ #
+    # VIP-подписка
+    # ------------------------------------------------------------------ #
+
+    async def vip_info(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select vip_until, vip_day from players where user_id = $1", user_id
+            )
+        if row is None or row["vip_until"] is None:
+            return {"active": False, "until": None}
+        from datetime import datetime, timezone
+
+        until = row["vip_until"]
+        return {"active": until > datetime.now(timezone.utc), "until": until}
+
+    async def vip_active(self, user_id: int) -> bool:
+        return bool((await self.vip_info(user_id))["active"])
+
+    async def vip_set(self, user_id: int, days: int) -> Any:
+        """Продлевает VIP на days дней (считая от текущего срока, если он жив)."""
+        days = max(1, min(3650, int(days)))
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "update players set vip_until = "
+                "greatest(coalesce(vip_until, now()), now()) + ($2 || ' days')::interval "
+                "where user_id = $1 returning vip_until",
+                user_id,
+                str(days),
+            )
+        return row["vip_until"] if row else None
+
+    async def vip_daily(self, user_id: int) -> dict[str, int] | None:
+        """Дневные бонусы VIP: 5 дропов, 5 спинов, 2 кейса. Один раз в сутки."""
+        from datetime import datetime, timezone
+
+        from .gacha import DROPS_PER_DAY, day_key
+        from .roulette import SPINS_PER_DAY, roulette_day_key
+
+        info = await self.vip_info(user_id)
+        if not info["active"]:
+            return None
+        today = datetime.now(timezone.utc).date()
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select vip_day from players where user_id = $1 for update", user_id
+                )
+                if row is None or row["vip_day"] == today:
+                    return None
+                await con.execute(
+                    "update players set vip_day = $2 where user_id = $1", user_id, today
+                )
+        await self.grant_drop_limit(user_id, day_key(), 5, DROPS_PER_DAY)
+        await self.grant_spin_limit(user_id, roulette_day_key(), 5, SPINS_PER_DAY)
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into cases (user_id, source) "
+                "select $1, 'vip' from generate_series(1, 2)",
+                user_id,
+            )
+        return {"drops": 5, "spins": 5, "cases": 2}
+
+    # ------------------------------------------------------------------ #
     # Бан
     # ------------------------------------------------------------------ #
 

@@ -3001,3 +3001,77 @@ async def cmd_bans(message: Message, db: Database) -> None:
             f"{render.esc(str(row['ban_reason'] or 'без причины'))}"
         )
     await message.answer("\n".join(lines))
+
+
+
+# --------------------------------------------------------------------------- #
+# VIP-подписка
+# --------------------------------------------------------------------------- #
+
+VIP_PRICE_TEXT = "100 ₽ в месяц"
+VIP_CONTACT = "@CrunchyPersik"
+
+
+@router.message(Command("vip", "вип"))
+@router.message(NormalizedText("вип", "vip"))
+async def cmd_vip(message: Message, db: Database) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    await db.ensure_player(user.id, user.username, user.first_name)
+    info = await db.vip_info(user.id)
+
+    lines = ["👑 <b>VIP-подписка</b>", ""]
+    if info["active"]:
+        lines.append(f"✅ У тебя есть VIP до <b>{info['until']:%d.%m.%Y}</b>")
+        granted = await db.vip_daily(user.id)
+        if granted:
+            lines.append("🎁 Бонусы на сегодня начислены: +5 круток, +5 спинов, +2 кейса.")
+        lines.append("")
+    else:
+        lines += [f"💳 <b>{VIP_PRICE_TEXT}</b>", ""]
+
+    lines += [
+        "Что даёт VIP:",
+        "🎲 <b>5</b> доп. круток «Северо-Юга» каждый день",
+        "🎡 <b>5</b> доп. спинов рулетки каждый день",
+        "📦 <b>2</b> кейса каждый день",
+        f"🎰 Ставка в казино до <b>{casino.VIP_MAX_BET}</b> вместо {casino.MAX_BET}",
+        "🖼 Премиум-рамка вокруг аватарки в профиле",
+        "🏷 Скидка на кейс новой коллекции: <b>250 000</b> вместо 350 000",
+        "",
+        "🎁 <b>Как получить</b>",
+        "Напиши владельцу: " + render.esc(VIP_CONTACT),
+        "VIP выдаётся вручную на 30 дней, продлевается так же.",
+    ]
+    await message.answer("\n".join(lines))
+
+
+@router.message(Command("vipgive", "выдатьвип"))
+async def cmd_vipgive(message: Message, db: Database, market: MarketRepo) -> None:
+    user = message.from_user
+    if user is None or user.id not in settings.admin_ids:
+        return
+    parts = (message.text or "").split()
+    target_id, target_name = await _profile_target(message, market, parts[1:2])
+    days = 30
+    for part in parts[1:]:
+        if part.isdigit():
+            days = int(part)
+            break
+    if target_id is None:
+        await message.answer(
+            "Формат: <code>/vipgive @ник [дней]</code>\n"
+            "Или ответом на сообщение. По умолчанию 30 дней."
+        )
+        return
+    await db.ensure_player(target_id, None, target_name)
+    until = await db.vip_set(target_id, days)
+    granted = await db.vip_daily(target_id)
+    extra = ""
+    if granted:
+        extra = "\n🎁 Бонусы сразу: +5 круток, +5 спинов, +2 кейса."
+    await message.answer(
+        f"👑 <b>VIP выдан</b>: {render.esc(target_name or str(target_id))}\n"
+        f"Срок: <b>{days}</b> дн., до {until:%d.%m.%Y}.{extra}"
+    )

@@ -1,0 +1,4 @@
+
+-- VIP-подписка: срок + отметка последней выдачи дневных бонусов.
+alter table players add column if not exists vip_until timestamptz;
+alter table players add column if not exists vip_day date;

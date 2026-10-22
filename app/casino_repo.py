@@ -97,12 +97,25 @@ class CasinoRepo:
         )
         return int(balance)
 
+    async def _max_bet(self, user_id: int) -> int:
+        """Потолок ставки: у VIP он в десять раз выше."""
+        from datetime import datetime, timezone
+
+        async with self.pool.acquire() as con:
+            until = await con.fetchval(
+                "select vip_until from players where user_id = $1", user_id
+            )
+        if until is not None and until > datetime.now(timezone.utc):
+            return casino.VIP_MAX_BET
+        return casino.MAX_BET
+
     async def bet_points(self, user_id: int, bet: int, color: str) -> dict[str, Any]:
         bet = int(bet)
         if bet < casino.MIN_BET:
             raise CasinoError(f"Минимальная ставка — {casino.MIN_BET} очков.")
-        if bet > casino.MAX_BET:
-            raise CasinoError(f"Максимальная ставка — {casino.MAX_BET} очков.")
+        top = await self._max_bet(user_id)
+        if bet > top:
+            raise CasinoError(f"Максимальная ставка — {top} очков.")
         rolled = casino.roll_color()
         won = casino.is_win(color, rolled)
         payout = casino.points_win(bet, color) if won else casino.points_lose(bet)
@@ -144,8 +157,9 @@ class CasinoRepo:
         bet = int(bet)
         if bet < casino.MIN_BET:
             raise CasinoError(f"Минимальная ставка — {casino.MIN_BET} очков.")
-        if bet > casino.MAX_BET:
-            raise CasinoError(f"Максимальная ставка — {casino.MAX_BET} очков.")
+        top = await self._max_bet(user_id)
+        if bet > top:
+            raise CasinoError(f"Максимальная ставка — {top} очков.")
         payout = bet * int(multiplier) if won else casino.points_lose(bet)
 
         async with self.pool.acquire() as con:
