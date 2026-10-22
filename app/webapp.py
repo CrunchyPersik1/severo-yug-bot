@@ -938,7 +938,8 @@ function cur(){ return S.data.stocks.find(s => s.slug === S.slug); }
 const CHART_MIN = 15;
 const PER_CANDLE = 2;
 function candles(history){
-  const per = PER_CANDLE;
+  // Если истории мало — режем по одному тику, чтобы свечей было больше.
+  const per = history.length < 40 ? 1 : PER_CANDLE;
   const need = Math.round(CHART_MIN * 60 / TICK / PER_CANDLE);
   let n = Math.min(need, Math.floor(history.length / per));
   // На 1ч истории может не хватить — тогда берём сколько есть,
