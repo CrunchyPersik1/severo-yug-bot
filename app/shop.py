@@ -34,10 +34,13 @@ class ShopError(Exception):
     """Ошибку можно показать игроку."""
 
 
+CASE_D_SKU = "case_d"
+
+
 @dataclass(frozen=True)
 class ShopEntry:
     sku: str
-    kind: str  # card | pack | accessory
+    kind: str  # card | pack | accessory | case_d
     title: str
     subtitle: str
     price: int
@@ -88,6 +91,18 @@ def catalog() -> list[ShopEntry]:
                 "cards": list(PACK_AUTUMN_CARDS),
                 "accessory": PACK_AUTUMN_ACCESSORY,
             },
+        )
+    )
+
+    # Кейс новой коллекции «7Д». VIP-подписчику цена ниже на 100 000.
+    entries.append(
+        ShopEntry(
+            sku=CASE_D_SKU,
+            kind="case_d",
+            title="Кейс «7Д класс»",
+            subtitle="27 карт второго класса · VIP — 250 000",
+            price=350_000,
+            payload={},
         )
     )
 
@@ -160,6 +175,17 @@ class ShopRepo:
     async def buy(self, user_id: int, sku: str) -> dict[str, Any]:
         """Покупка. Цена берётся из каталога, а не из запроса."""
         entry = find(sku)
+        # Кейс «7Д класс» VIP-подписчику дешевле: 350 000 -> 250 000.
+        price = entry.price
+        if entry.kind == "case_d":
+            async with self.pool.acquire() as con:
+                vip = await con.fetchval(
+                    "select 1 from players where user_id = $1 "
+                    "and vip_until is not null and vip_until > now()",
+                    user_id,
+                )
+            if vip:
+                price = entry.price - 100_000
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow(
@@ -169,7 +195,7 @@ class ShopRepo:
                     returning bonus_points
                     """,
                     user_id,
-                    entry.price,
+                    price,
                 )
                 if row is None:
                     balance = await con.fetchval(
@@ -177,10 +203,17 @@ class ShopRepo:
                         user_id,
                     )
                     raise ShopError(
-                        f"Не хватает очков: нужно {entry.price}, "
+                        f"Не хватает очков: нужно {price}, "
                         f"у тебя {int(balance or 0)}."
                     )
-                granted = await self._grant(con, user_id, entry)
+                if entry.kind == "case_d":
+                    await con.execute(
+                        "insert into cases (user_id, source) values ($1, 'case_d')",
+                        user_id,
+                    )
+                    granted = ["кейс «7Д класс»"]
+                else:
+                    granted = await self._grant(con, user_id, entry)
                 await con.execute(
                     "update players set xp = xp + $2::integer where user_id = $1",
                     user_id,
