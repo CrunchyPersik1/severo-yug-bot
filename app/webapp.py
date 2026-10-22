@@ -657,7 +657,7 @@ async def api_case_open(request: Request) -> JSONResponse:
     counts = await state.db.get_collection(uid)
     is_new = card.card_id not in counts
     count = await state.db.add_card(uid, card.card_id)
-    await state.db.add_points(uid, card.points)
+    await state.db.add_points(uid, market_price(card))
     left = len(await state.db.user_cases(uid))
     return JSONResponse(
         {
@@ -717,7 +717,7 @@ async def api_roulette_spin(request: Request) -> JSONResponse:
     else:
         card = get_card(str(value))
         await state.db.add_card(uid, card.card_id)
-        await state.db.add_points(uid, card.points)
+        await state.db.add_points(uid, market_price(card))
         label = f"🃏 Главный приз — {card.name}!"
     return JSONResponse(
         {
@@ -4737,7 +4737,7 @@ async def api_case_open_many(request: Request) -> JSONResponse:
         counts = await state.db.get_collection(uid)
         is_new = card.card_id not in counts
         await state.db.add_card(uid, card.card_id)
-        await state.db.add_points(uid, card.points)
+        await state.db.add_points(uid, market_price(card))
         opened.append(
             {
                 "id": card.card_id,

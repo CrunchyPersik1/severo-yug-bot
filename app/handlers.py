@@ -53,7 +53,7 @@ from .roulette import (
     roulette_day_key,
 )
 from .items import SLOT_ICONS
-from .market import UPGRADE_PRICE, effective_stats, parse_handle, sum_bonus
+from .market import (UPGRADE_PRICE, effective_stats, market_price, parse_handle, sum_bonus)
 from .boss_repo import BossError, BossRepo
 from .market_repo import MarketError, MarketRepo, item_of
 
@@ -322,7 +322,7 @@ async def cmd_drop(message: Message, db: Database) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
-    await db.add_points(user.id, card.points)
+    await db.add_points(user.id, market_price(card))
     await db.add_drop(user.id, message.chat.id, card.card_id, today)
 
     text = render.render_drop(card, count, is_new)
@@ -1084,7 +1084,7 @@ async def cb_clicker(callback: CallbackQuery, db: Database) -> None:
     else:
         card = value
         await db.add_card(user.id, card.card_id)
-        await db.add_points(user.id, card.points)
+        await db.add_points(user.id, market_price(card))
     answer = clicker.label(kind, value)
     rare = kind != clicker.POINTS
     await callback.answer(answer, show_alert=rare)
@@ -1250,7 +1250,7 @@ async def cmd_roulette(
     else:
         card = get_card(str(value))
         await db.add_card(user.id, card.card_id)
-        await db.add_points(user.id, card.points)
+        await db.add_points(user.id, market_price(card))
 
     balance = await market.balance(user.id)
     text = render.render_roulette(kind, value, balance)
@@ -1300,7 +1300,7 @@ async def cmd_case(message: Message, db: Database, bot: Bot) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
-    await db.add_points(user.id, card.points)
+    await db.add_points(user.id, market_price(card))
     left = len(await db.user_cases(user.id))
     await message.answer(render.render_case_open(card, is_new, count, left))
 
@@ -3105,7 +3105,7 @@ async def cmd_drop_d(message: Message, db: Database) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
-    await db.add_points(user.id, card.points)
+    await db.add_points(user.id, market_price(card))
     await db.add_drop(user.id, message.chat.id, card.card_id, today)
 
     text = "🏫 <b>7Д класс</b>\n\n" + render.render_drop(card, count, is_new)
