@@ -109,8 +109,15 @@ PRICE_MAX = 550_000
 
 
 def base_price(card: Card) -> int:
-    """Базовая цена карты без улучшений — по её редкости."""
-    return RARITY_PRICE.get(card.rarity, PRICE_MIN)
+    """Базовая цена карты без улучшений.
+
+    Таблица 75к-550к — только для коллекции «7Д». У «7Г» цена остаётся
+    от очков карты: иначе все легендарки стоили бы одинаково и раздулись
+    бы в разы.
+    """
+    if card.card_id.startswith("d_"):
+        return RARITY_PRICE.get(card.rarity, PRICE_MIN)
+    return max(1, round(card.points * rarity_coef(card)))
 
 
 def market_price(card: Card, bonus: dict[str, int] | None = None) -> int:

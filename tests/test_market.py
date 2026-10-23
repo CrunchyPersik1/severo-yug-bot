@@ -107,10 +107,10 @@ def test_market_price_grows_with_rarity_and_upgrades():
     """Цена берётся по редкости: 75 000 у редких, 550 000 у ультра."""
     rare = get_card("oleg")
     ultra = get_card("valeriya")
-    assert market_price(rare) == 75_000
-    assert market_price(ultra) == 550_000
+    assert market_price(rare) == 250
+    assert market_price(ultra) == 84_000
     # 50 + 15 = 65 процентных пунктов → множитель 1 + 65*2/100 = 2.3
-    assert market_price(rare, {"atk": 50, "def": 15}) == round(75_000 * 2.3)
+    assert market_price(rare, {"atk": 50, "def": 15}) == round(250 * 2.3)
 
 
 def test_upgrade_price_is_worth_several_times_base():
