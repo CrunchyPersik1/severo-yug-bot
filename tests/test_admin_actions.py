@@ -87,10 +87,10 @@ def test_case_for_one_player():
     con = FakeCon(player={"user_id": 42, "first_name": "Друг", "username": None})
     text = run(admin_actions.act_case(con, ["@друг", "5"]))
     assert "Друг" in text and "5" in text
-    assert con.executed[0][1] == (42, 5)
+    assert con.executed[0][1] == (42, 5, "admin")
 
 
 def test_case_arguments_order_does_not_matter():
     con = FakeCon(player={"user_id": 42, "first_name": "Друг", "username": None})
     run(admin_actions.act_case(con, ["5", "@друг"]))
-    assert con.executed[0][1] == (42, 5)
+    assert con.executed[0][1] == (42, 5, "admin")
