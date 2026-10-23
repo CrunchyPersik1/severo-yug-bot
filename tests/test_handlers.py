@@ -1227,7 +1227,6 @@ def test_roulette_jackpot_credits_points(monkeypatch):
         db = FakeDB()
         await feed("/roulette", db, FakeService())
         assert db.collection[111]["daniel"] == 1
-        # награда теперь равна цене карты: легендарная = 220 000
-        assert db.balance[111] == 220_000
+        assert db.balance[111] == get_card("daniel").points > 0
 
     asyncio.run(scenario())

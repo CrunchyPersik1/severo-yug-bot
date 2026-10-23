@@ -56,8 +56,7 @@ def test_mishainpotato_gives_free_misha_with_points():
     db = FakeDB()
     text = run(promo.redeem(db, 1, "MISHAINPOTATO"))
     assert db.cards == ["misha"]
-    # Миша легендарный: награда равна цене карты
-    assert db.points == 220_000
+    assert db.points == get_card("misha").points
     assert "Промокод принят" in text
 
 
