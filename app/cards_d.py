@@ -138,6 +138,23 @@ def roll_card_d(rng: random.Random | None = None) -> Card:
     return rng.choice(CARDS_D_BY_RARITY[rarity])
 
 
+# Очки карт «7Д» — по редкости, чтобы награда за дроп соответствовала
+# цене. Цена = таблица 75к-550к, очки = четверть цены: 18 750 ... 137 500.
+POINTS_D: dict[str, int] = {
+    "rare": 18_750,
+    "superrare": 22_500,
+    "epic": 30_000,
+    "mythic": 40_000,
+    "legendary": 55_000,
+    "secret": 75_000,
+    "ultimate": 100_000,
+    "ultra": 137_500,
+}
+
+from dataclasses import replace as _replace  # noqa: E402
+
+CARDS_D = tuple(_replace(card, points=POINTS_D[card.rarity]) for card in CARDS_D)
+
 CARDS_D_BY_ID: dict[str, Card] = {card.card_id: card for card in CARDS_D}
 CARDS_D_BY_RARITY: dict[str, list[Card]] = {}
 for _card in CARDS_D:
