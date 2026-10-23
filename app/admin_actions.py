@@ -286,9 +286,11 @@ async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
 
 
 async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
-    """case 5 — всем, case @ник 5 — лично игроку. Порядок аргументов не важен."""
+    """case 5 — всем, case @ник 5 — лично игроку, case 7d 2 — кейсы 7Д.
+
+    Порядок аргументов не важен."""
     if not args:
-        raise ValueError("формат: case 5 (всем) или case @ник 5 (одному)")
+        raise ValueError("формат: case 5 (всем), case @ник 5 (одному), case 7d 2 (кейсы 7Д)")
     named = [arg for arg in args if not arg.lstrip("+-").isdigit()]
     numbers = [int(arg) for arg in args if arg.lstrip("+-").isdigit()]
     count = numbers[0] if numbers else 1
@@ -297,28 +299,33 @@ async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
     if count > 100:
         raise ValueError("больше 100 кейсов за раз — перебор")
 
+    # Ключ 7d / 7д переключает выдачу на кейсы новой коллекции «7Д».
+    source = "admin"
+    if any(arg.lower() in ("7d", "7d", "7д") for arg in named):
+        source = "case_d"
+        named = [arg for arg in named if arg.lower() not in ("7d", "7д")]
+    label = "кейс(ов) 7Д" if source == "case_d" else "кейс(ов)"
+
     if named:
         player = await _resolve_player(con, named[0])
         await con.execute(
-            """
-            insert into cases (user_id, source)
-            select $1, 'admin' from generate_series(1, $2)
-            """,
+            "insert into cases (user_id, source) "
+            "select $1, $3 from generate_series(1, $2)",
             player["user_id"],
             count,
+            source,
         )
         who = player["first_name"] or player["username"] or player["user_id"]
-        return f"[ok] {who} получил {count} кейс(ов)"
+        return f"[ok] {who} получил {count} {label}"
 
     await con.execute(
-        """
-        insert into cases (user_id, source)
-        select p.user_id, 'admin' from players p cross join generate_series(1, $1)
-        """,
+        "insert into cases (user_id, source) "
+        "select p.user_id, $2 from players p cross join generate_series(1, $1)",
         count,
+        source,
     )
     total = await con.fetchval("select count(*) from players")
-    return f"[ok] {total} игрокам выдано по {count} кейс(ов)"
+    return f"[ok] {total} игрокам выдано по {count} {label}"
 
 
 async def act_card(con: asyncpg.Connection, args: list[str]) -> str:
