@@ -1858,7 +1858,7 @@ class Database:
         return state, cost
 
     async def yugi_buy_cases(self, user_id: int, count: int, cost: float) -> dict[str, Any] | None:
-        """Обмен Югов на кейс. Без лимитов: сколько заработал — столько и меняй."""
+        """Обмен Югов на кейс. Суточный лимит есть, минутного кулдауна нет."""
         from datetime import datetime, timezone
 
         if int(count) != 1:
@@ -1866,6 +1866,10 @@ class Database:
         now = datetime.now(timezone.utc)
         async with self._p().acquire() as con:
             async with con.transaction():
+                # Суточный лимит остаётся, минутный кулдаун убран.
+                limit = await self._case_limit(con, user_id, now)
+                if limit["left"] <= 0:
+                    return None
                 row = await self._yugi_lock(con, user_id)
                 state = self._yugi_state(row)
                 state = await self._yugi_offline(row, state, now)

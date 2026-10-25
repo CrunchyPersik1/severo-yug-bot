@@ -2,26 +2,25 @@
 """Юга-кликер: потолок и античит."""
 
 
-def test_cap_is_two_and_a_half_million():
+def test_no_practical_cap():
+    """Потолок снят: он мешал заданиям на накопление."""
     from app import yugi
 
-    assert yugi.MAX_TOTAL == 2_500_000
+    assert yugi.MAX_TOTAL >= 1e12, "потолок должен быть фактически отключён"
     total, balance = 0.0, 0.0
     for _ in range(200):
         total, balance = yugi.add_earned(total, balance, 1_000_000)
-    assert total == yugi.MAX_TOTAL, "потолок пробит"
-    assert balance == yugi.MAX_TOTAL
+    assert total == 200_000_000
     assert total == balance
-    # больше 25 кейсов за всю игру не выжать
-    assert int(yugi.MAX_TOTAL // yugi.CASE_PRICE) == 25
 
 
-def test_cap_never_overshoots_even_with_a_huge_gain():
+def test_huge_gain_credits_in_full():
+    """Огромный разовый доход зачисляется целиком — потолка нет."""
     from app import yugi
 
     total, balance = yugi.add_earned(0.0, 0.0, 999_999_999)
-    assert total == yugi.MAX_TOTAL
-    assert balance == yugi.MAX_TOTAL
+    assert total == 999_999_999
+    assert balance == 999_999_999
 
 
 def test_human_tapping_is_not_punished():

@@ -3569,6 +3569,12 @@ function render(){
   document.getElementById("perTap").textContent = "+" + fmt(d.per_tap) + " за тап";
   const done = Math.min(100, d.total / d.cap * 100);
   document.getElementById("capFill").style.width = done.toFixed(2) + "%";
+  if (d.cap > 1e12) {
+    document.getElementById("capFill").style.width = "100%";
+    document.getElementById("capLeft").textContent = "Без ограничений";
+    document.getElementById("capMax").textContent = "";
+    return;
+  }
   document.getElementById("capLeft").textContent = d.left <= 0
     ? "МАКСИМУМ собран"
     : "Осталось " + fmt(d.left) + " Югов";

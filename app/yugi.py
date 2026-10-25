@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-MAX_TOTAL = 2_500_000.0         # потолок за всю игру
+MAX_TOTAL = 1e15                # потолка фактически нет: раньше 2.5 млн
+                                # мешали выполнять задания на накопление
 CASE_PRICE = 100_000.0          # Югов за один кейс
 BASE_TAP = 1.0                  # сколько даёт один тап изначально
 OFFLINE_CAP_SECONDS = 8 * 3600  # больше 8 часов офлайна не копим
