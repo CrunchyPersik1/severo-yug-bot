@@ -5910,16 +5910,16 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const ZONE_H = 1100;
 const ZONES = [
-  {n: "Опушка",         g: "#3f5c26", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
-  {n: "Дубовая роща",   g: "#37521f", a: "#5c8a38", mob: 1.3,  sky: "#16200e"},
-  {n: "Болото",         g: "#2e4426", a: "#4a7040", mob: 1.7,  sky: "#121a12"},
-  {n: "Каменный перевал", g: "#3a3a42", a: "#5e5e6e", mob: 2.2, sky: "#15151c"},
-  {n: "Пепельный лес",  g: "#3e3128", a: "#6a5340", mob: 2.8,  sky: "#1a1410"},
-  {n: "Костяные поля",  g: "#43423a", a: "#6e6c5c", mob: 3.4,  sky: "#1b1a16"},
-  {n: "Багровые шахты", g: "#4a2424", a: "#7a3a3a", mob: 4.1,  sky: "#1e0e0e"},
-  {n: "Ледяные залы",   g: "#2a3a4a", a: "#4a6a8a", mob: 4.9,  sky: "#101820"},
-  {n: "Тёмный алтарь",  g: "#2e2238", a: "#4e3a62", mob: 5.8,  sky: "#150f1c"},
-  {n: "Бездна",         g: "#1a0f14", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
+  {n: "Опушка",         g: "#2a3d18", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
+  {n: "Дубовая роща",   g: "#243615", a: "#5c8a38", mob: 1.3,  sky: "#16200e"},
+  {n: "Болото",         g: "#1e2e1a", a: "#4a7040", mob: 1.7,  sky: "#121a12"},
+  {n: "Каменный перевал", g: "#26262e", a: "#5e5e6e", mob: 2.2, sky: "#15151c"},
+  {n: "Пепельный лес",  g: "#2a211b", a: "#6a5340", mob: 2.8,  sky: "#1a1410"},
+  {n: "Костяные поля",  g: "#2d2c26", a: "#6e6c5c", mob: 3.4,  sky: "#1b1a16"},
+  {n: "Багровые шахты", g: "#331818", a: "#7a3a3a", mob: 4.1,  sky: "#1e0e0e"},
+  {n: "Ледяные залы",   g: "#1b2733", a: "#4a6a8a", mob: 4.9,  sky: "#101820"},
+  {n: "Тёмный алтарь",  g: "#1f1726", a: "#4e3a62", mob: 5.8,  sky: "#150f1c"},
+  {n: "Бездна",         g: "#110a0e", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
 ];
 const WORLD = {
   w: Math.max(480, window.innerWidth || 480),
@@ -6062,7 +6062,7 @@ function spawnOne(){
   const pool = Math.min(MOB_TYPES.length, 2 + zc * 2 + Math.floor(stats.lvl / 6));
   const type = MOB_TYPES[Math.floor(Math.random() * Math.max(2, pool))];
   // мобы спавнятся в зоне игрока, поэтому слабый игрок выше не пройдёт
-  const zy = zc * ZONE_H + 100 + Math.random() * (ZONE_H - 200);
+  const zy = (ZONES.length - 1 - zc) * ZONE_H + 100 + Math.random() * (ZONE_H - 200);
   y = zy;
   const zoneMul = Math.pow(2.4, zc);
   const grow = (1 + (stats.lvl - 1) * 0.12) * zoneMul;
@@ -6595,12 +6595,16 @@ function render(){
     ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
   });
   ctx.restore();
-  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.30,
-                                      w / 2, h / 2, Math.max(w, h) * 0.78);
+  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.18,
+                                      w / 2, h / 2, Math.max(w, h) * 0.72);
   vg.addColorStop(0, "rgba(0,0,0,0)");
-  vg.addColorStop(0.6, "rgba(0,0,0,0.35)");
-  vg.addColorStop(1, "rgba(0,0,0,0.85)");
+  vg.addColorStop(0.45, "rgba(6,3,2,0.35)");
+  vg.addColorStop(0.75, "rgba(6,3,2,0.70)");
+  vg.addColorStop(1, "rgba(4,2,1,0.95)");
   ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
+  // общий тёмный тон
+  ctx.fillStyle = "rgba(10,6,14,0.18)";
   ctx.fillRect(0, 0, w, h);
   void h; void dtFix;
 }
