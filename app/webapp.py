@@ -5803,10 +5803,12 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
-#toast{position:fixed;left:14px;right:14px;bottom:300px;background:#1f2a3fee;color:#fff;
-  border-radius:11px;padding:12px 15px;font-size:13px;font-weight:700;text-align:center;
-  transform:translateY(240%);transition:.25s;z-index:60}
-#toast.on{transform:translateY(0)}
+#toast{position:fixed;left:50%;bottom:300px;width:auto;max-width:76vw;
+  background:#1a1410f0;color:#ffe9b8;border:2px solid #6b4a22;
+  border-radius:8px;padding:7px 12px;font-size:7px;line-height:1.5;
+  text-align:center;transform:translate(-50%,300%);transition:.22s;z-index:60;
+  box-shadow:0 0 0 2px #120c06,0 6px 16px #000000aa}
+#toast.on{transform:translate(-50%,0)}
 </style>
 </head>
 <body>
