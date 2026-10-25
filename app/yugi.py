@@ -131,37 +131,3 @@ def daily_report(state: dict[str, Any]) -> str:
     return (
         f"Югов: {fmt(state['balance'])} · в секунду: {fmt(state['per_second'])}"
     )
-
-
-# --------------------------------------------------------------------------- #
-# Здания кликера: цена растёт как 1.15 в степени купленного
-# --------------------------------------------------------------------------- #
-
-BUILDINGS: tuple[dict[str, Any], ...] = (
-    {"id": "cur", "name": "Курсор", "emoji": "👆", "base": 15, "cps": 0.1},
-    {"id": "yuga", "name": "Юга-мастер", "emoji": "🧑", "base": 100, "cps": 0.8},
-    {"id": "farm", "name": "Ферма", "emoji": "🌱", "base": 1_100, "cps": 5},
-    {"id": "mine", "name": "Шахта", "emoji": "⛏", "base": 12_000, "cps": 30},
-    {"id": "factory", "name": "Фабрика", "emoji": "🏭", "base": 130_000, "cps": 180},
-    {"id": "bank", "name": "Банк", "emoji": "🏦", "base": 1_400_000, "cps": 1_100},
-    {"id": "portal", "name": "Портал", "emoji": "🌀", "base": 20_000_000, "cps": 7_500},
-    {"id": "prism", "name": "Призма", "emoji": "💎", "base": 330_000_000, "cps": 50_000},
-    {"id": "ship", "name": "Корабль", "emoji": "🚀", "base": 5.1e9, "cps": 350_000},
-    {"id": "lab", "name": "Лаборатория", "emoji": "⚗️", "base": 7.5e10, "cps": 2_500_000},
-    {"id": "time", "name": "Машина времени", "emoji": "⏳", "base": 1e12, "cps": 18_000_000},
-    {"id": "anti", "name": "Антиматерия", "emoji": "🌌", "base": 1.4e13, "cps": 130_000_000},
-    {"id": "chance", "name": "Делатель удачи", "emoji": "🍀", "base": 1.7e14, "cps": 9e8},
-    {"id": "engine", "name": "Фрактал", "emoji": "🧩", "base": 2.1e15, "cps": 6e9},
-    {"id": "idle", "name": "Идлверс", "emoji": "💫", "base": 2.6e16, "cps": 4.5e10},
-)
-BUILDING_BY_ID: dict[str, dict[str, Any]] = {b["id"]: b for b in BUILDINGS}
-
-
-def building_cost(building_id: str, owned: int) -> int:
-    """Цена следующего здания: base × 1.15^куплено."""
-    spec = BUILDING_BY_ID[building_id]
-    return int(math.ceil(float(spec["base"]) * (1.15 ** int(owned))))
-
-
-def building_bulk_cost(building_id: str, owned: int, count: int) -> int:
-    return sum(building_cost(building_id, owned + i) for i in range(int(count)))

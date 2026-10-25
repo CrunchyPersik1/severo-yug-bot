@@ -460,15 +460,16 @@ class Database:
         return {str(r["building_id"]): int(r["count"]) for r in rows}
 
     async def yugi_buy_building(self, user_id: int, building_id: str, count: int = 1) -> int | None:
-        """Покупка здания за Юги. false-результат — не хватило баланса.
+        """Покупка здания за Юги. None — не хватило баланса.
 
-        Здания хранятся в yugi.buildings (jsonb): {"cur": 3, "farm": 1}.
+        Здания уже описаны в app/yugi.py (цена, рост, производство) и
+        лежат в yugi.buildings как jsonb.
         """
         import json
 
         from . import yugi as ymod
 
-        spec = ymod.BUILDING_BY_ID.get(building_id)
+        spec = ymod.BUILDINGS_BY_ID.get(building_id)
         if spec is None:
             return None
         count = max(1, min(100, int(count)))
@@ -481,15 +482,11 @@ class Database:
                 if row is None:
                     return None
                 raw = row["buildings"]
-                if isinstance(raw, str):
-                    try:
-                        owned_map = json.loads(raw or "{}")
-                    except Exception:  # noqa: BLE001
-                        owned_map = {}
-                else:
-                    owned_map = dict(raw or {})
+                owned_map = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
                 owned = int(owned_map.get(building_id, 0) or 0)
-                cost = ymod.building_bulk_cost(building_id, owned, count)
+                cost = sum(
+                    ymod.building_cost(spec, owned + i) for i in range(count)
+                )
                 if float(row["balance"]) < float(cost):
                     return None
                 owned_map[building_id] = owned + count
