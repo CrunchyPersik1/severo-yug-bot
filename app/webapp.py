@@ -5795,6 +5795,9 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   <button data-tab="settings">НАСТРОЙКИ</button>
 </div>
 <div class="coins">🪙 <span id="coins">0</span></div>
+<button id="bagbtn" style="position:fixed;top:52px;left:12px;z-index:10;
+  background:#161020dd;border:2px solid #3a2a4a;color:#cbb9d6;border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:10px">🎒 СУМКА</button>
 
 <div class="hpbar"><i id="hpfill"></i></div>
 <div class="hptxt" id="hptxt">HP 120 / 120</div>
@@ -6124,6 +6127,8 @@ function drawFighters(){
   });
 }
 const LPC = {};
+const LEGS = new Image();
+LEGS.src = "/static/lpc_legs.png";
 ["walk", "slash", "run"].forEach(function(k){
   const im = new Image();
   im.src = "/static/lpc_" + k + ".png";
@@ -6149,7 +6154,34 @@ function drawHero(x, y, attacking){
   ctx.globalAlpha = 0.25;
   ctx.fillStyle = "#000"; ctx.fillRect(x - 15, y - 2, 30, 7);
   ctx.globalAlpha = 1;
+  if (LEGS.complete && LEGS.naturalWidth){
+    ctx.drawImage(LEGS, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
+  }
   ctx.drawImage(img, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
+  // туника поверх тела — чтобы не был голым
+  const w2 = P.weapon;
+  const cloth = !w2 ? "#3a5a8a" : w2.kind === "bow" ? "#3a6a3a"
+              : w2.kind === "staff" ? "#5a3a7a" : "#7a3a3a";
+  ctx.fillStyle = cloth;
+  ctx.fillRect(x - 10, y - 30, 20, 20);
+  ctx.fillStyle = "#1a1410";
+  ctx.fillRect(x - 10, y - 13, 20, 4);              // пояс
+  ctx.fillStyle = cloth;
+  ctx.fillRect(x - 14, y - 29, 5, 12);              // рукав
+  ctx.fillRect(x + 9, y - 29, 5, 12);
+  // оружие в руке
+  if (w2){
+    ctx.strokeStyle = w2.kind === "staff" ? "#8a6a3a" : "#c9c9d6";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (w2.kind === "bow"){
+      ctx.arc(x + 16, y - 22, 10, -1.1, 1.1);
+    } else {
+      ctx.moveTo(x + 15, y - 16);
+      ctx.lineTo(x + 15 + (w2.kind === "staff" ? 16 : 11), y - 44);
+    }
+    ctx.stroke();
+  }
   ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
@@ -6362,6 +6394,10 @@ function paintInv(){
   });
 }
 paintInv();
+const bagBtn = document.getElementById("bagbtn");
+if (bagBtn) bagBtn.onclick = () => {
+  document.getElementById("cls").style.display = "flex";
+};
 document.getElementById("startbtn").onclick = () => {
   reset();
   document.getElementById("cls").style.display = "none";
