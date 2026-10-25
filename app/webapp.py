@@ -6305,15 +6305,33 @@ function faceRow(face){                    // LPC: 0 вверх, 1 влево, 2
   return face === 0 ? 2 : face === 1 ? 1 : face === 2 ? 3 : 0;
 }
 let animT = 0;
+const HEROES = {};
+["knight_m", "elf_m"].forEach(function(k){
+  const im = new Image();
+  im.src = "/static/hero_" + k + ".png";
+  HEROES[k] = im;
+});
 function drawHero(x, y, attacking){
-  // тот же атлас, что у монстров — стиль совпадает
-  const bob = attacking ? -2 : (P.moving ? Math.sin(animT * 9) * 1.5 : 0);
-  const lunge = attacking ? (P.atkCd > 0.25 ? 4 : 0) : 0;
+  const key = (P.weapon && P.weapon.kind === "bow") ? "elf_m" : "knight_m";
+  const im = HEROES[key];
+  const bob = attacking ? -2 : (P.moving ? Math.sin(animT * 10) * 1.2 : 0);
+  const lunge = attacking ? 4 : 0;
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 6, 28, 6);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 13, y + 6, 26, 6);
   ctx.globalAlpha = 1;
-  if (drawTile([1, 7], x + lunge, y + bob, 42, 0)) return;
-  person(x, y, "#4a9eff");
+  if (!im || !im.complete || !im.naturalWidth){
+    if (!drawTile([1, 7], x, y, 42, 0)) person(x, y, "#4a9eff");
+    return;
+  }
+  let frame;
+  if (attacking) frame = 4 + (Math.floor(animT * 16) % 4);        // run-кадры = замах
+  else if (P.moving) frame = 4 + (Math.floor(animT * 9) % 4);     // бег
+  else frame = Math.floor(animT * 4) % 4;                          // покой
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(im, frame * 16, 0, 16, 16,
+                x - 26 + lunge, y - 34 + bob, 52, 52);
+  ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
