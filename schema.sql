@@ -676,3 +676,8 @@ alter table players add column if not exists yugi_chips integer not null default
 alter table players add column if not exists yugi_resets integer not null default 0;
 
 alter table players add column if not exists yugi_tree jsonb not null default '[]'::jsonb;
+
+-- Золотые печеньки: когда истекает текущая, и активные баффы.
+alter table yugi add column if not exists golden_until timestamptz;
+alter table yugi add column if not exists frenzy_until timestamptz;
+alter table yugi add column if not exists click_until timestamptz;

@@ -451,6 +451,84 @@ class Database:
     # Кликер: здания
     # ------------------------------------------------------------------ #
 
+    async def yugi_golden_tick(self, user_id: int) -> dict[str, Any]:
+        """Золотая печенька: показать новую или сообщить про активную."""
+        from datetime import datetime, timedelta, timezone
+        import random
+
+        now = datetime.now(timezone.utc)
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select golden_until, frenzy_until, click_until from yugi "
+                "where user_id = $1",
+                user_id,
+            )
+            if row is None:
+                return {"active": False, "frenzy": False, "click": False}
+            until = row["golden_until"]
+            if until is not None and until > now:
+                return {
+                    "active": True,
+                    "until": until.isoformat(),
+                    "frenzy": bool(row["frenzy_until"] and row["frenzy_until"] > now),
+                    "click": bool(row["click_until"] and row["click_until"] > now),
+                }
+            # шанс появления на каждый опрос (~раз в 5-10 минут игры)
+            if random.random() < 0.08:
+                new_until = now + timedelta(seconds=13)
+                await con.execute(
+                    "update yugi set golden_until = $2 where user_id = $1",
+                    user_id,
+                    new_until,
+                )
+                return {"active": True, "until": new_until.isoformat(),
+                        "frenzy": False, "click": False}
+        return {"active": False, "frenzy": False, "click": False}
+
+    async def yugi_golden_catch(self, user_id: int) -> dict[str, Any] | None:
+        """Поймал печеньку: случайный бафф на сервере."""
+        from datetime import datetime, timedelta, timezone
+        import random
+
+        now = datetime.now(timezone.utc)
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select golden_until, balance, total, frenzy_until, click_until "
+                    "from yugi where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return None
+                until = row["golden_until"]
+                if until is None or until <= now:
+                    return None
+                roll = random.random()
+                await con.execute(
+                    "update yugi set golden_until = null where user_id = $1", user_id
+                )
+                if roll < 0.45:
+                    when = now + timedelta(seconds=77)
+                    await con.execute(
+                        "update yugi set frenzy_until = $2 where user_id = $1",
+                        user_id, when,
+                    )
+                    return {"kind": "frenzy", "seconds": 77}
+                if roll < 0.75:
+                    when = now + timedelta(seconds=13)
+                    await con.execute(
+                        "update yugi set click_until = $2 where user_id = $1",
+                        user_id, when,
+                    )
+                    return {"kind": "click", "seconds": 13}
+                bonus = max(50, int(float(row["balance"]) * 0.15))
+                await con.execute(
+                    "update yugi set balance = balance + $2, total = total + $2 "
+                    "where user_id = $1",
+                    user_id, float(bonus),
+                )
+                return {"kind": "lucky", "bonus": bonus}
+
     async def yugi_tree(self, user_id: int) -> list[str]:
         async with self._p().acquire() as con:
             raw = await con.fetchval("select yugi_tree from players where user_id = $1", user_id)
