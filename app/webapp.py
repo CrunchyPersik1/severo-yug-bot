@@ -5953,18 +5953,16 @@ const DECOR = (function(){
   return list;
 })();
 const VILLAGE = [
-  {kind: "cottage", x: 230, y: 380, w: 150, h: 150},
-  {kind: "cottage", x: 680, y: 330, w: 150, h: 150},
-  {kind: "cottage", x: 210, y: 900, w: 150, h: 150},
-  {kind: "cottage", x: 690, y: 1180, w: 150, h: 150},
-  {kind: "lamp",    x: 330, y: 560, w: 44, h: 88},
-  {kind: "lamp",    x: 570, y: 760, w: 44, h: 88},
-  {kind: "lamp",    x: 330, y: 1080, w: 44, h: 88},
-  {kind: "lamp",    x: 570, y: 1300, w: 44, h: 88},
-  {kind: "bench",   x: 380, y: 700, w: 76, h: 38},
-  {kind: "bench",   x: 520, y: 1000, w: 76, h: 38},
-  {kind: "bed",     x: 300, y: 460, w: 76, h: 38},
-  {kind: "bed",     x: 620, y: 880, w: 76, h: 38}
+  {kind: "cottage", x: 150, y: 330, w: 140, h: 140},
+  {kind: "cottage", x: 330, y: 290, w: 140, h: 140},
+  {kind: "cottage", x: 140, y: 760, w: 140, h: 140},
+  {kind: "cottage", x: 340, y: 850, w: 140, h: 140},
+  {kind: "lamp",    x: 240, y: 520, w: 40, h: 80},
+  {kind: "lamp",    x: 240, y: 960, w: 40, h: 80},
+  {kind: "bench",   x: 300, y: 620, w: 70, h: 35},
+  {kind: "bench",   x: 180, y: 1060, w: 70, h: 35},
+  {kind: "bed",     x: 100, y: 500, w: 70, h: 35},
+  {kind: "bed",     x: 390, y: 700, w: 70, h: 35}
 ];
 const PATH = (function(){
   const pts = [];
@@ -6530,12 +6528,18 @@ function render(){
     ctx.fill();
   });
   // здания и предметы деревни
-  VILLAGE.forEach(function(v){
-    if (v.kind === "cottage") drawFarm("cottage-blue", v.x, v.y, v.w, v.h);
-    else if (v.kind === "lamp") drawFarm("lamppost", v.x, v.y, v.w, v.h);
-    else if (v.kind === "bench") drawFarm("bench", v.x, v.y, v.w, v.h);
-    else if (v.kind === "bed") drawFarm("flower-bed", v.x, v.y, v.w, v.h);
-  });
+  for (let zi = 0; zi < ZONES.length; zi++){
+    const base = zi * ZONE_H;
+    if (Math.abs(base - P.y) > ZONE_H * 1.5) continue;
+    VILLAGE.forEach(function(v){
+      const vy = base + v.y;
+      const vx = (zi % 2) ? (WORLD.w - v.x) : v.x;
+      if (v.kind === "cottage") drawFarm("cottage-blue", vx, vy, v.w, v.h);
+      else if (v.kind === "lamp") drawFarm("lamppost", vx, vy, v.w, v.h);
+      else if (v.kind === "bench") drawFarm("bench", vx, vy, v.w, v.h);
+      else if (v.kind === "bed") drawFarm("flower-bed", vx, vy, v.w, v.h);
+    });
+  }
   // кусты/камни/трава под персонажем
   DECOR.forEach(function(d){
     if (d.k === "tree") return;
