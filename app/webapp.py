@@ -5908,7 +5908,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <div id="toast"></div>
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-const ZONE_H = 1600;
+const ZONE_H = 1100;
 const ZONES = [
   {n: "Опушка",         g: "#3f5c26", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
   {n: "Дубовая роща",   g: "#37521f", a: "#5c8a38", mob: 1.3,  sky: "#16200e"},
@@ -5921,7 +5921,7 @@ const ZONES = [
   {n: "Тёмный алтарь",  g: "#2e2238", a: "#4e3a62", mob: 5.8,  sky: "#150f1c"},
   {n: "Бездна",         g: "#1a0f14", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
 ];
-const WORLD = {w: 900, h: ZONE_H * ZONES.length};
+const WORLD = {w: 480, h: ZONE_H * ZONES.length};
 function zoneIndex(y){
   // низ карты = локация 1, верх = последняя
   const raw = Math.floor(y / ZONE_H);
@@ -6011,8 +6011,8 @@ let mobs = [], hits = [], drop = [];
 let bosses = [];
 for (let i = 0; i < ZONES.length; i++){
   const zid = ZONES.length - 1 - i;
-  bosses.push({x: WORLD.w / 2 - 180, y: i * ZONE_H + 420, r: 60, t: 0, zone: zid, idx: 0});
-  bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 1050, r: 60, t: 0, zone: zid, idx: 1});
+  bosses.push({x: WORLD.w / 2 - 180, y: i * ZONE_H + 300, r: 60, t: 0, zone: zid, idx: 0});
+  bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 780, r: 60, t: 0, zone: zid, idx: 1});
 }
 let boss = bosses[0];
 let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
@@ -6037,7 +6037,15 @@ const MOB_TYPES = [
   {n: "Паук",    hp: 90,  sp: 52, dmg: 13, c: "#6a4a7a", sz: 0.85, tile: [3, 9]},
   {n: "Тролль",  hp: 300, sp: 17, dmg: 24, c: "#3f6a4a", sz: 1.45, tile: [1, 8]},
   {n: "Демон",   hp: 520, sp: 30, dmg: 38, c: "#8a2a2a", sz: 1.3,  tile: [2, 8]},
-  {n: "Призрак", hp: 430, sp: 24, dmg: 32, c: "#4a5a9a", sz: 1.15, tile: [1, 9]}
+  {n: "Призрак", hp: 430, sp: 24, dmg: 32, c: "#4a5a9a", sz: 1.15, tile: [1, 9]},
+  {n: "Крыса",    hp: 26,  sp: 58, dmg: 5,  c: "#8a7a5a", sz: 0.7,  tile: [0, 9]},
+  {n: "Зомби",    hp: 110, sp: 22, dmg: 15, c: "#5a7a4a", sz: 1.0,  tile: [0, 7]},
+  {n: "Гуль",     hp: 160, sp: 34, dmg: 22, c: "#7a6a5a", sz: 1.05, tile: [2, 8]},
+  {n: "Рыцарь",   hp: 240, sp: 26, dmg: 30, c: "#8a8a9a", sz: 1.1,  tile: [1, 7]},
+  {n: "Оборотень",hp: 380, sp: 46, dmg: 40, c: "#6a5a4a", sz: 1.15, tile: [1, 8]},
+  {n: "Вампир",   hp: 600, sp: 38, dmg: 55, c: "#7a1a2a", sz: 1.15, tile: [2, 8]},
+  {n: "Голем",    hp: 900, sp: 16, dmg: 70, c: "#5a5a4a", sz: 1.5,  tile: [1, 8]},
+  {n: "Дракон",   hp: 1400, sp: 30, dmg: 95, c: "#a04a1a", sz: 1.45, tile: [2, 8]}
 ];
 let spawnTimer = 0;
 function spawnOne(){
@@ -6047,12 +6055,16 @@ function spawnOne(){
   else if (edge === 1){ x = rnd(80, WORLD.w - 80); y = WORLD.h - 70; }
   else if (edge === 2){ x = 70; y = rnd(80, WORLD.h - 80); }
   else { x = WORLD.w - 70; y = rnd(80, WORLD.h - 80); }
-  const pool = Math.min(MOB_TYPES.length, 1 + Math.floor(stats.lvl / 2));
-  const type = MOB_TYPES[Math.floor(Math.random() * pool)];
-  const zy = (typeof y === "number") ? y : WORLD.h - 80;
-  const grow = (1 + (stats.lvl - 1) * 0.18) * zoneAt(zy).mob;
+  const zc = zoneIndex(P.y);
+  const pool = Math.min(MOB_TYPES.length, 2 + zc * 2 + Math.floor(stats.lvl / 6));
+  const type = MOB_TYPES[Math.floor(Math.random() * Math.max(2, pool))];
+  // мобы спавнятся в зоне игрока, поэтому слабый игрок выше не пройдёт
+  const zy = zc * ZONE_H + 100 + Math.random() * (ZONE_H - 200);
+  y = zy;
+  const zoneMul = Math.pow(2.4, zc);
+  const grow = (1 + (stats.lvl - 1) * 0.12) * zoneMul;
   mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
-             sp: type.sp, dmg: type.dmg, c: type.c, sz: type.sz, nm: type.n,
+             sp: type.sp, dmg: type.dmg * (1 + zc * 0.9), c: type.c, sz: type.sz, nm: type.n,
              t: rnd(0, 6), hit: 0});
 }
 function spawnNpcs(n){
@@ -6485,8 +6497,8 @@ function render(){
   // декорации текущей локации
   const zc = zoneIndex(P.y);
   const zin = ZONES[zc];
-  for (let d = 0; d < 26; d++){
-    const hx = (d * 137 + zc * 53) % (WORLD.w - 120) + 60;
+  for (let d = 0; d < 70; d++){
+    const hx = (d * 137 + zc * 53) % (WORLD.w - 80) + 40;
     const hy = zc * ZONE_H + (d * 71) % ZONE_H;
     if (d % 3 === 0){
       ctx.fillStyle = zin.a;
