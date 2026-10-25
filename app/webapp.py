@@ -5722,15 +5722,20 @@ DUNGEON_PAGE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Прототип · Подземелье Тимура</title>
 <style>
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
-html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;
-  font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:#e8ebf2}
-#cv{display:block;width:100%;height:100%;touch-action:none;background:#1a2018}
+html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
+  font-family:"Press Start 2P",ui-monospace,monospace;color:#e6dcc8;
+  image-rendering:pixelated;font-size:11px;line-height:1.5}
+#cv{display:block;width:100%;height:100%;touch-action:none;background:#0d0a10;
+  image-rendering:pixelated}
 .top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
   background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
-.top button{flex:1;border:1px solid #2a3346;background:#151a25cc;color:#8b93a7;
-  border-radius:9px;padding:9px 4px;font-size:10.5px;font-weight:800;font-family:inherit}
-.top button.on{background:#1f4fd8;border-color:#3b6fff;color:#fff}
+.top button{flex:1;border:2px solid #3a2a4a;background:#120e18ee;color:#8a7a9a;
+  border-radius:0;padding:11px 3px;font-size:7.5px;font-family:inherit;
+  box-shadow:inset 0 -3px 0 #00000080}
+.top button.on{background:#5c1020;border-color:#c8402e;color:#ffd9a0;
+  box-shadow:inset 0 -3px 0 #00000080,0 0 14px #c8402e55}
 .hpbar{position:fixed;left:14px;right:14px;bottom:104px;height:16px;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
@@ -5743,10 +5748,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;
 .joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
   border-radius:50%;background:#ffffff2e;border:2px solid #ffffff44}
 .btns{position:fixed;right:16px;bottom:14px;display:flex;align-items:flex-end;gap:10px;z-index:11}
-.ab{width:64px;height:64px;border-radius:50%;border:3px solid #ffffff33;
-  background:#ffffff18;color:#fff;font-size:20px;font-family:inherit;position:relative;
-  display:flex;align-items:center;justify-content:center}
-.ab.atk{width:82px;height:82px;background:#e2464633;border-color:#e24646aa}
+.ab{width:62px;height:62px;border-radius:6px;border:3px solid #3a2a4a;
+  background:#161020ee;color:#cbb9d6;font-size:19px;font-family:inherit;position:relative;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #000a}
+.ab:active{transform:translateY(2px);box-shadow:0 2px 0 #000a}
+.ab.atk{width:78px;height:78px;background:#3a0f14ee;border-color:#c8402e;color:#ffd9a0;
+  box-shadow:0 4px 0 #000a,0 0 16px #c8402e44}
 .ab .cd{position:absolute;inset:-3px;border-radius:50%;background:#000a;display:none;
   align-items:center;justify-content:center;font-size:13px;font-weight:900}
 .ab.cool .cd{display:flex}
@@ -5890,6 +5897,18 @@ function spawnMobs(n){
                hp: 30, max: 30, sp: rnd(18, 34), t: rnd(0, 6), hit: 0});
   }
 }
+let spawnTimer = 0;
+function spawnOne(){
+  const edge = Math.floor(Math.random() * 4);
+  let x, y;
+  if (edge === 0){ x = rnd(80, WORLD.w - 80); y = 70; }
+  else if (edge === 1){ x = rnd(80, WORLD.w - 80); y = WORLD.h - 70; }
+  else if (edge === 2){ x = 70; y = rnd(80, WORLD.h - 80); }
+  else { x = WORLD.w - 70; y = rnd(80, WORLD.h - 80); }
+  const tier = 1 + Math.floor(stats.lvl / 3);
+  mobs.push({x: x, y: y, hp: 30 * tier, max: 30 * tier,
+             sp: rnd(20, 38), t: rnd(0, 6), hit: 0, tier: tier});
+}
 function spawnNpcs(n){
   npcs = [];
   for (let i = 0; i < n; i++){
@@ -5958,9 +5977,12 @@ function killMob(m){
     toast("Уровень " + stats.lvl + "! Урон и HP выросли"); }
   if (Math.random() < 0.22){
     const loot = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
-    if (P.bag.indexOf(loot.id) < 0) P.bag.push(loot.id);
-    drop.push({x: m.x, y: m.y, kind: "weapon", t: 6});
-    toast("Выпало: " + loot.name);
+    const isNew = P.bag.indexOf(loot.id) < 0;
+    if (isNew) P.bag.push(loot.id);
+    drop.push({x: m.x, y: m.y, kind: "weapon", t: 8, name: loot.name});
+    toast((isNew ? "НОВОЕ! " : "") + loot.name +
+          " · " + loot.cls + " · урон " + loot.dmg + " · дальн. " + loot.range +
+          (isNew ? " — загляни в сумку" : ""));
   }
   if (mobs.length < 4) spawnMobs(2);
   sync();
@@ -6055,18 +6077,38 @@ function drawFighters(){
     c.fillRect(66, 112, 68, 82);
   });
 }
-function person(x, y, color, label, alpha){
+function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
-  ctx.fillStyle = "#0006";
-  ctx.beginPath(); ctx.ellipse(x, y + 16, 13, 5, 0, 0, 7); ctx.fill();
+  const px = 4;                 // размер «пикселя»
+  const bob = walk ? Math.sin(Date.now() / 140) * 1.5 : 0;
+  // тень
+  ctx.fillStyle = "#00000066";
+  ctx.fillRect(x - 12, y + 16, 24, 5);
+  // ноги
+  ctx.fillStyle = "#241a2e";
+  ctx.fillRect(x - 7, y + 8, 6, 10);
+  ctx.fillRect(x + 1, y + 8, 6, 10);
+  // тело
   ctx.fillStyle = color;
-  ctx.beginPath(); ctx.arc(x, y - 12, 10, 0, 7); ctx.fill();
-  ctx.fillRect(x - 9, y - 2, 18, 22);
+  ctx.fillRect(x - 9, y - 6 + bob, 18, 16);
+  ctx.fillStyle = "#00000033";
+  ctx.fillRect(x - 9, y + 4 + bob, 18, 6);
+  // голова
+  ctx.fillStyle = "#e8c99a";
+  ctx.fillRect(x - 8, y - 20 + bob, 16, 14);
+  // глаза
+  ctx.fillStyle = "#120e18";
+  ctx.fillRect(x - 5, y - 15 + bob, 3, 4);
+  ctx.fillRect(x + 2, y - 15 + bob, 3, 4);
+  // капюшон/шлем по цвету класса
+  ctx.fillStyle = color;
+  ctx.fillRect(x - 9, y - 24 + bob, 18, 6);
   if (label){
-    ctx.fillStyle = "#8b93a7"; ctx.font = "9px ui-monospace,monospace";
-    ctx.textAlign = "center"; ctx.fillText(label, x, y + 34);
+    ctx.fillStyle = "#8a7a9a"; ctx.font = "7px 'Press Start 2P',monospace";
+    ctx.textAlign = "center"; ctx.fillText(label, x, y + 32);
   }
   ctx.globalAlpha = 1;
+  void px;
 }
 function loop(now){
   requestAnimationFrame(loop);
@@ -6109,6 +6151,8 @@ function loop(now){
     }
     m.hit = Math.max(0, m.hit - dt);
   });
+  spawnTimer -= dt;
+  if (spawnTimer <= 0){ spawnTimer = 2.5; if (mobs.length < 9) spawnOne(); }
   hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
   drop = drop.filter(d => { d.t -= dt; return d.t > 0; });
 
@@ -6162,8 +6206,12 @@ function render(){
 
   npcs.forEach(n => person(n.x, n.y, "#3a4152", n.name, 0.55));
   drop.forEach(d => {
-    ctx.fillStyle = "#f6c94a"; ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = "#f6c94a"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("🗡", d.x, d.y);
+    if (d.name){
+      ctx.fillStyle = "#ffd9a0"; ctx.font = "7px 'Press Start 2P',monospace";
+      ctx.fillText(d.name.slice(0, 18), d.x, d.y - 16);
+    }
   });
   mobs.forEach(m => {
     person(m.x, m.y, m.hit > 0 ? "#ff8a8a" : "#8a5a6a");
