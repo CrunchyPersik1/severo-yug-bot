@@ -1,0 +1,269 @@
+"""Живая проверка кооп-босса: поднимает мини-сервер и бьёт его по HTTP.
+
+Что проверяется:
+  * настоящая проверка подписи initData (без неё — 401);
+  * join/state/hit/leave через реальные ручки /api/dungeon/boss/*;
+  * второй игрок попадает в ту же комнату, HP босса умножается;
+  * удар снимает HP, кулдаун держит, босс бьёт по времени;
+  * за собой убираем: тестовые игроки и комнаты удаляются.
+
+Запуск (DSN берётся из DATABASE_URL или из admin.local.bat):
+
+    .venv\\Scripts\\python.exe scripts\\check_coop.py
+    .venv\\Scripts\\python.exe scripts\\check_coop.py --port 8811 --keep-rows
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import hashlib
+import hmac
+import io
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+TEST_USERS = (900001, 900002)
+PROBLEMS = 0
+
+
+def check(label: str, got, want=None, cmp=None) -> None:
+    global PROBLEMS
+    ok = cmp(got, want) if cmp else got == want
+    if not ok:
+        PROBLEMS += 1
+    print(("  ok   " if ok else "  FAIL ") + label + ": " + repr(got) +
+          ("" if ok else " (ждали " + repr(want) + ")"))
+
+
+def find_dsn() -> str:
+    env = os.environ.get("DATABASE_URL", "").strip()
+    if env:
+        return env
+    local = ROOT / "admin.local.bat"
+    if local.exists():
+        text = io.open(local, encoding="utf-8", errors="replace").read()
+        found = re.search(r'DATABASE_URL=([^"\r\n]+)', text)
+        if found:
+            return found.group(1).strip()
+    raise SystemExit("нет DATABASE_URL: задай переменную окружения")
+
+
+def sign_init_data(token: str, user_id: int, name: str) -> str:
+    """Такую же строку присылает Telegram в заголовке X-Telegram-Init-Data."""
+    pairs = {
+        "auth_date": "1700000000",
+        "query_id": "AA" + str(user_id),
+        "user": json.dumps({"id": user_id, "first_name": name}, ensure_ascii=False),
+    }
+    data_check = "\n".join(f"{key}={value}" for key, value in sorted(pairs.items()))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    pairs["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    return urllib.parse.urlencode(pairs)
+
+
+def http(method: str, url: str, init_data: str, body: dict | None = None):
+    data = None
+    headers = {"X-Telegram-Init-Data": init_data}
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.status, json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        raw = error.read().decode()
+        try:
+            return error.code, json.loads(raw)
+        except ValueError:
+            return error.code, {"raw": raw}
+
+
+async def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Живая проверка кооп-босса")
+    parser.add_argument("--port", type=int, default=8811)
+    parser.add_argument("--keep-rows", action="store_true", help="не чистить базу")
+    args = parser.parse_args(argv)
+
+    dsn = find_dsn()
+    token = "123456:COOP_CHECK_TOKEN"
+    os.environ.setdefault("BOT_TOKEN", token)
+    os.environ.setdefault("DATABASE_URL", dsn)
+    os.environ.setdefault("ADMIN_IDS", "111")
+    os.environ.setdefault("PUBLIC_URL", "http://127.0.0.1")
+
+    sys.path.insert(0, str(ROOT))
+    import uvicorn
+    from fastapi import FastAPI
+
+    from app.config import settings
+    from app.db import Database
+    from app.dungeon_repo import DungeonBossRepo
+    from app.webapp import router as webapp_router
+
+    db = Database(dsn)
+    await db.connect()
+    await db.init_schema()
+
+    repo = DungeonBossRepo(db)
+    api = FastAPI()
+    api.include_router(webapp_router)
+    api.state.settings = settings
+    api.state.db = db
+    api.state.dungeon = repo
+
+    config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
+    server = uvicorn.Server(config)
+    serving = asyncio.create_task(server.serve())
+    for _ in range(200):
+        if server.started:
+            break
+        await asyncio.sleep(0.05)
+    if not server.started:
+        server.should_exit = True
+        await serving
+        raise SystemExit("сервер не поднялся")
+
+    base = f"http://127.0.0.1:{args.port}"
+    first = sign_init_data(token, TEST_USERS[0], "Тимка")
+    second = sign_init_data(token, TEST_USERS[1], "Саня")
+
+    async def call(method: str, path: str, init_data: str, body: dict | None = None):
+        return await asyncio.to_thread(http, method, base + path, init_data, body)
+
+    async def wipe() -> None:
+        async with db._p().acquire() as con:
+            await con.execute(
+                "delete from dungeon_boss_players where user_id = any($1::bigint[])",
+                list(TEST_USERS),
+            )
+            await con.execute(
+                "delete from dungeon_boss where id not in "
+                "(select boss_id from dungeon_boss_players)"
+            )
+            await con.execute(
+                "delete from players where user_id = any($1::bigint[])", list(TEST_USERS)
+            )
+
+    if not args.keep_rows:
+        await wipe()
+
+    try:
+        status, denied = await call("POST", "/api/dungeon/boss/join", "", {"zone": 0})
+        check("без подписи — отказ", status, 401)
+        check("текст отказа на месте", isinstance(denied.get("error"), str), True)
+
+        status, joined = await call("POST", "/api/dungeon/boss/join", first, {"zone": 0})
+        check("join отвечает 200", status, 200)
+        room = joined.get("boss") or {}
+        check("комната в ожидании", room.get("status"), "waiting")
+        check("HP одиночного босса", room.get("max_hp"), 300)
+        boss_id = room.get("id")
+        # Один запрос через пулер идёт около двух секунд, а окно ожидания — 10.
+        # Растягиваем окно, иначе тест проверяет сеть, а не логику.
+        await hold_room(db, boss_id, 120)
+
+        status, partner = await call("POST", "/api/dungeon/boss/join", second, {"zone": 0})
+        partner_room = partner.get("boss") or {}
+        check("второй попал в ту же комнату", partner_room.get("id"), boss_id)
+        check("бой начался", partner_room.get("status"), "fight")
+        check("кооп-множитель HP", partner_room.get("max_hp"), 540)
+        check("флаг коопа", partner_room.get("coop"), True)
+
+        status, polled = await call("GET", "/api/dungeon/boss/state", first)
+        check("state отвечает 200", status, 200)
+        check("state показывает двоих", len((polled.get("boss") or {}).get("players") or []), 2)
+
+        status, punch = await call("POST", "/api/dungeon/boss/hit", first, {"damage": 120})
+        hit_room = punch.get("boss") or {}
+        check("удар снял HP", hit_room.get("hp"), 420)
+        check("урон записан", hit_room.get("hit"), 120)
+        check("кулдаун включился", (hit_room.get("cooldown") or 0) > 0, True)
+
+        # Кулдаун проверяем на уровне репозитория: по HTTP между двумя
+        # запросами легко проходит больше 0.55 с, и тест станет плавающим.
+        from datetime import datetime, timedelta, timezone
+
+        moment = datetime.now(timezone.utc)
+        blocked_a = await repo.hit(TEST_USERS[0], 50, moment)
+        blocked_b = await repo.hit(TEST_USERS[0], 50, moment + timedelta(milliseconds=50))
+        check("кулдаун держит", (blocked_b.get("cooldown") or 0) > 0, True)
+        check("HP не изменился", blocked_b["hp"], blocked_a["hp"])
+
+        status, left = await call("POST", "/api/dungeon/boss/leave", first, {})
+        check("выход принят", status, 200)
+        check("вышел из комнаты", (left.get("left") or {}).get("status"), "left")
+
+        status, alone = await call("GET", "/api/dungeon/boss/state", second)
+        check("второй остался", (alone.get("boss") or {}).get("status"), "fight")
+        check("кооп-флаг снят", (alone.get("boss") or {}).get("coop"), False)
+
+        status, closed = await call("POST", "/api/dungeon/boss/leave", second, {})
+        check("второй вышел", status, 200)
+
+        status, empty = await call("GET", "/api/dungeon/boss/state", first)
+        check("комнаты больше нет", (empty.get("boss") or {}).get("status"), "none")
+
+        status, fresh = await call("POST", "/api/dungeon/boss/join", first, {"zone": 2})
+        fresh_room = fresh.get("boss") or {}
+        check("новая локация", fresh_room.get("zone"), 2)
+        await start_room(db, fresh_room.get("id"))
+        await call("GET", "/api/dungeon/boss/state", first)
+        await rewind(db, fresh_room.get("id"), 30)
+        status, hurt = await call("GET", "/api/dungeon/boss/state", first)
+        me = ((hurt.get("boss") or {}).get("me") or {})
+        check("босс бьёт, пока не смотришь", me.get("hp", 120) < 120, True)
+        await call("POST", "/api/dungeon/boss/leave", first, {})
+    finally:
+        if not args.keep_rows:
+            await wipe()
+        server.should_exit = True
+        await serving
+        await db.close()
+
+    print("\nпроблем: %d" % PROBLEMS)
+    return 1 if PROBLEMS else 0
+
+
+async def rewind(db, boss_id, seconds: int) -> None:
+    async with db._p().acquire() as con:
+        await con.execute(
+            "update dungeon_boss_players set "
+            "last_boss_hit_at = now() - ($2::int * interval '1 second'), "
+            "seen_at = now() where boss_id = $1::bigint",
+            int(boss_id or 0),
+            int(seconds),
+        )
+
+
+async def start_room(db, boss_id) -> None:
+    """Сдвигаем ожидание в прошлое, чтобы бой начался без десяти секунд."""
+    async with db._p().acquire() as con:
+        await con.execute(
+            "update dungeon_boss set ready_at = now() - interval '1 second' "
+            "where id = $1::bigint",
+            int(boss_id or 0),
+        )
+
+
+async def hold_room(db, boss_id, seconds: int) -> None:
+    """Растягиваем окно ожидания, чтобы медленная сеть не ломала сценарий."""
+    async with db._p().acquire() as con:
+        await con.execute(
+            "update dungeon_boss set ready_at = now() + ($2::int * interval '1 second') "
+            "where id = $1::bigint",
+            int(boss_id or 0),
+            int(seconds),
+        )
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main()))

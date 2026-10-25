@@ -681,3 +681,42 @@ alter table players add column if not exists yugi_tree jsonb not null default '[
 alter table yugi add column if not exists golden_until timestamptz;
 alter table yugi add column if not exists frenzy_until timestamptz;
 alter table yugi add column if not exists click_until timestamptz;
+
+-- ===================================================================== --
+-- Кооп-босс подземелья (/proto_dungeon): один босс на двоих
+-- ===================================================================== --
+
+create table if not exists dungeon_boss (
+    id          bigserial primary key,
+    zone        integer not null default 0,
+    hp          bigint  not null,
+    max_hp      bigint  not null,
+    status      text    not null default 'waiting',
+    ready_at    timestamptz not null default now(),
+    started_at  timestamptz,
+    finished_at timestamptz,
+    created_at  timestamptz not null default now(),
+    updated_at  timestamptz not null default now()
+);
+create index if not exists dungeon_boss_zone_status_idx
+    on dungeon_boss (zone, status);
+create index if not exists dungeon_boss_status_updated_idx
+    on dungeon_boss (status, updated_at);
+
+create table if not exists dungeon_boss_players (
+    boss_id          bigint  not null references dungeon_boss(id) on delete cascade,
+    user_id          bigint  not null,
+    slot             integer not null default 1,
+    hp               integer not null,
+    max_hp           integer not null,
+    damage           bigint  not null default 0,
+    hits             integer not null default 0,
+    dead             boolean not null default false,
+    left_at          timestamptz,
+    last_hit_at      timestamptz,
+    last_boss_hit_at timestamptz,
+    seen_at          timestamptz not null default now(),
+    primary key (boss_id, user_id)
+);
+create index if not exists dungeon_boss_players_user_idx
+    on dungeon_boss_players (user_id, boss_id);

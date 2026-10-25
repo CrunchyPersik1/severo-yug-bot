@@ -1,0 +1,496 @@
+"""Кооп-босс подземелья: комнаты, удары и состояние боя в транзакциях.
+
+Бой симулируется лениво: никакого планировщика нет, удары босса досчитываются
+в момент, когда кто-то читает состояние. Так же живёт кликер в yugi.
+
+Параметры в SQL идут с явными кастами: без них Postgres ругается «could not
+determine data type of parameter» (на этом уже один раз зависла биржа).
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+
+import asyncpg
+
+from . import dungeon
+from .db import Database
+
+# Статусы комнаты:
+#   waiting — ждём второго игрока, бой начнётся по времени ready_at
+#   fight   — бьёмся
+#   dead    — босс повержен
+#   failed  — все пали
+#   closed  — комната брошена
+OPEN_STATUSES = ("waiting", "fight")
+FINAL_STATUSES = ("dead", "failed")
+
+
+class DungeonError(Exception):
+    """Ошибку можно показать игроку."""
+
+
+class DungeonBossRepo:
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    @property
+    def pool(self) -> asyncpg.Pool:
+        return self.db._p()
+
+    # ------------------------------------------------------------------ #
+    # Публичное API
+    # ------------------------------------------------------------------ #
+
+    async def join(self, user_id: int, zone: object, now: datetime) -> dict:
+        """Открыть комнату или зайти во вторую половину чужой."""
+        zone_number = dungeon.clamp_zone(zone)
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                current = await self._room_for(con, user_id)
+                if current is not None:
+                    boss = await self._advance(con, current["id"], now)
+                    if boss is not None and boss["status"] in OPEN_STATUSES:
+                        await self._touch(con, boss["id"], user_id, now)
+                        return await self._payload(con, boss, user_id, now)
+
+                partner_room = await self._find_waiting(con, zone_number, now)
+                if partner_room is not None:
+                    seats = await con.fetchval(
+                        "select count(*) from dungeon_boss_players "
+                        "where boss_id = $1::bigint and left_at is null",
+                        partner_room["id"],
+                    )
+                    if int(seats or 0) < dungeon.MAX_PLAYERS:
+                        await con.execute(
+                            """
+                            insert into dungeon_boss_players
+                                (boss_id, user_id, slot, hp, max_hp, seen_at)
+                            values ($1::bigint, $2::bigint, $3::integer,
+                                    $4::integer, $4::integer, $5::timestamptz)
+                            on conflict (boss_id, user_id) do nothing
+                            """,
+                            partner_room["id"],
+                            user_id,
+                            int(seats or 0) + 1,
+                            dungeon.PLAYER_HP,
+                            now,
+                        )
+                        await con.execute(
+                            """
+                            update dungeon_boss
+                               set status = 'fight',
+                                   started_at = $2::timestamptz,
+                                   hp = $3::bigint,
+                                   max_hp = $3::bigint,
+                                   updated_at = $2::timestamptz
+                             where id = $1::bigint and status = 'waiting'
+                            """,
+                            partner_room["id"],
+                            now,
+                            dungeon.base_hp(zone_number, int(seats or 0) + 1),
+                        )
+                        await con.execute(
+                            "update dungeon_boss_players "
+                            "set last_boss_hit_at = $2::timestamptz, seen_at = $2::timestamptz "
+                            "where boss_id = $1::bigint",
+                            partner_room["id"],
+                            now,
+                        )
+                        boss = await self._reload(con, partner_room["id"])
+                        return await self._payload(con, boss, user_id, now)
+
+                row = await con.fetchrow(
+                    """
+                    insert into dungeon_boss (zone, hp, max_hp, status, ready_at)
+                    values ($1::integer, $2::bigint, $2::bigint, 'waiting',
+                            $3::timestamptz)
+                    returning *
+                    """,
+                    zone_number,
+                    dungeon.base_hp(zone_number, 1),
+                    now + timedelta(seconds=dungeon.WAIT_SECONDS),
+                )
+                await con.execute(
+                    """
+                    insert into dungeon_boss_players
+                        (boss_id, user_id, slot, hp, max_hp, seen_at)
+                    values ($1::bigint, $2::bigint, 1, $3::integer, $3::integer,
+                            $4::timestamptz)
+                    """,
+                    row["id"],
+                    user_id,
+                    dungeon.PLAYER_HP,
+                    now,
+                )
+                return await self._payload(con, row, user_id, now)
+
+    async def start_now(self, user_id: int, now: datetime) -> dict:
+        """Начать бой, не дожидаясь конца окна: «в бой один»."""
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                room = await self._room_for(con, user_id)
+                if room is None:
+                    raise DungeonError("Боя нет — подойди к боссу")
+                if room["status"] == "waiting":
+                    await con.execute(
+                        "update dungeon_boss set ready_at = $2::timestamptz, "
+                        "updated_at = $2::timestamptz where id = $1::bigint "
+                        "and status = 'waiting'",
+                        room["id"],
+                        now,
+                    )
+                boss = await self._advance(con, room["id"], now)
+                if boss is None:
+                    return {"status": "none"}
+                await self._touch(con, boss["id"], user_id, now)
+                return await self._payload(con, boss, user_id, now)
+
+    async def state(self, user_id: int, now: datetime) -> dict:
+        """Текущее состояние комнаты игрока, с досчитанными ударами босса."""
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                room = await self._room_for(con, user_id)
+                if room is None:
+                    return {"status": "none"}
+                boss = await self._advance(con, room["id"], now)
+                if boss is None:
+                    return {"status": "none"}
+                if boss["status"] in OPEN_STATUSES:
+                    await self._touch(con, boss["id"], user_id, now)
+                return await self._payload(con, boss, user_id, now)
+
+    async def hit(self, user_id: int, damage: object, now: datetime) -> dict:
+        """Удар по боссу. Возвращает состояние плюс сколько сняли."""
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                room = await self._room_for(con, user_id)
+                if room is None:
+                    raise DungeonError("Боя нет — подойди к боссу")
+                boss = await self._advance(con, room["id"], now)
+                if boss is None or boss["status"] not in OPEN_STATUSES:
+                    payload = await self._payload(con, boss, user_id, now) if boss else {"status": "none"}
+                    payload["error"] = "Бой уже закончился"
+                    return payload
+
+                player = await con.fetchrow(
+                    "select * from dungeon_boss_players "
+                    "where boss_id = $1::bigint and user_id = $2::bigint "
+                    "for update",
+                    boss["id"],
+                    user_id,
+                )
+                if player is None:
+                    raise DungeonError("Ты не в этом бою")
+                if player["left_at"] is not None:
+                    raise DungeonError("Ты вышел из боя")
+                if player["dead"]:
+                    raise DungeonError("Ты выбыл — товарищ ещё дерётся")
+
+                left = dungeon.cooldown_left(player["last_hit_at"], now)
+                if left > 0:
+                    payload = await self._payload(con, boss, user_id, now)
+                    payload["cooldown"] = round(left, 2)
+                    return payload
+
+                dealt = dungeon.clamp_damage(damage)
+                hp = max(0, int(boss["hp"]) - dealt)
+                await con.execute(
+                    """
+                    update dungeon_boss
+                       set hp = $2::bigint,
+                           status = case when $2::bigint <= 0 then 'dead'
+                                         else status end,
+                           finished_at = case when $2::bigint <= 0 then $3::timestamptz
+                                              else finished_at end,
+                           updated_at = $3::timestamptz
+                     where id = $1::bigint
+                    """,
+                    boss["id"],
+                    hp,
+                    now,
+                )
+                await con.execute(
+                    """
+                    update dungeon_boss_players
+                       set hits = hits + 1,
+                           damage = damage + $3::bigint,
+                           last_hit_at = $4::timestamptz,
+                           seen_at = $4::timestamptz
+                     where boss_id = $1::bigint and user_id = $2::bigint
+                    """,
+                    boss["id"],
+                    user_id,
+                    dealt,
+                    now,
+                )
+                boss = await self._reload(con, boss["id"])
+                payload = await self._payload(con, boss, user_id, now)
+                payload["hit"] = dealt
+                return payload
+
+    async def leave(self, user_id: int, now: datetime) -> dict:
+        """Выйти из боя. Комната закрывается, когда в ней никого не осталось."""
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                room = await self._room_for(con, user_id)
+                if room is None:
+                    return {"status": "none"}
+                await con.execute(
+                    """
+                    update dungeon_boss_players
+                       set left_at = $3::timestamptz,
+                           dead = true,
+                           seen_at = $3::timestamptz
+                     where boss_id = $1::bigint and user_id = $2::bigint
+                       and left_at is null
+                    """,
+                    room["id"],
+                    user_id,
+                    now,
+                )
+                alive = await con.fetchval(
+                    "select count(*) from dungeon_boss_players "
+                    "where boss_id = $1::bigint and left_at is null",
+                    room["id"],
+                )
+                if int(alive or 0) == 0:
+                    await con.execute(
+                        """
+                        update dungeon_boss
+                           set status = 'closed',
+                               finished_at = coalesce(finished_at, $2::timestamptz),
+                               updated_at = $2::timestamptz
+                         where id = $1::bigint and status in ('waiting', 'fight')
+                        """,
+                        room["id"],
+                        now,
+                    )
+                return {"status": "left", "id": int(room["id"])}
+
+    # ------------------------------------------------------------------ #
+    # Внутреннее
+    # ------------------------------------------------------------------ #
+
+    async def _room_for(self, con: asyncpg.Connection, user_id: int) -> asyncpg.Record | None:
+        """Активная комната игрока, а если её нет — только что закончившаяся."""
+        row = await con.fetchrow(
+            """
+            select b.* from dungeon_boss b
+              join dungeon_boss_players p on p.boss_id = b.id
+             where p.user_id = $1::bigint and p.left_at is null
+               and b.status in ('waiting', 'fight')
+             order by b.id desc limit 1
+            """,
+            user_id,
+        )
+        if row is not None:
+            return row
+        return await con.fetchrow(
+            """
+            select b.* from dungeon_boss b
+              join dungeon_boss_players p on p.boss_id = b.id
+             where p.user_id = $1::bigint and p.left_at is null
+               and b.status in ('dead', 'failed')
+               and b.finished_at > now() - interval '90 seconds'
+             order by b.id desc limit 1
+            """,
+            user_id,
+        )
+
+    async def _find_waiting(
+        self, con: asyncpg.Connection, zone: int, now: datetime
+    ) -> asyncpg.Record | None:
+        """Ждущая комната в этой локации, куда можно сесть вторым.
+
+        for update: два игрока, нажавшие «в бой» одновременно, не сядут
+        в одну комнату вдвоём.
+        """
+        return await con.fetchrow(
+            """
+            select b.* from dungeon_boss b
+             where b.status = 'waiting'
+               and b.zone = $1::integer
+               and b.ready_at > $2::timestamptz
+               and (select count(*) from dungeon_boss_players p
+                     where p.boss_id = b.id and p.left_at is null) < $3::integer
+             order by b.id
+             limit 1
+             for update
+            """,
+            zone,
+            now,
+            dungeon.MAX_PLAYERS,
+        )
+
+    async def _reload(self, con: asyncpg.Connection, boss_id: int) -> asyncpg.Record:
+        row = await con.fetchrow(
+            "select * from dungeon_boss where id = $1::bigint", int(boss_id)
+        )
+        if row is None:
+            raise DungeonError("Бой пропал")
+        return row
+
+    async def _touch(
+        self, con: asyncpg.Connection, boss_id: int, user_id: int, now: datetime
+    ) -> None:
+        await con.execute(
+            "update dungeon_boss_players set seen_at = $3::timestamptz "
+            "where boss_id = $1::bigint and user_id = $2::bigint",
+            int(boss_id),
+            int(user_id),
+            now,
+        )
+
+    async def _advance(
+        self, con: asyncpg.Connection, boss_id: int, now: datetime
+    ) -> asyncpg.Record | None:
+        """Догоняет бой до текущего момента: старт по времени, удары босса."""
+        boss = await con.fetchrow(
+            "select * from dungeon_boss where id = $1::bigint for update",
+            int(boss_id),
+        )
+        if boss is None:
+            return None
+        if boss["status"] not in OPEN_STATUSES:
+            return boss
+
+        players = await con.fetch(
+            "select * from dungeon_boss_players where boss_id = $1::bigint "
+            "order by slot",
+            int(boss_id),
+        )
+
+        # Брошенная комната: никто не заглядывал дольше IDLE_SECONDS.
+        seen = [p["seen_at"] for p in players if p["seen_at"] is not None]
+        if seen and (now - max(seen)).total_seconds() > dungeon.IDLE_SECONDS:
+            await con.execute(
+                "update dungeon_boss set status = 'closed', "
+                "finished_at = coalesce(finished_at, $2::timestamptz), "
+                "updated_at = $2::timestamptz where id = $1::bigint",
+                int(boss_id),
+                now,
+            )
+            return await self._reload(con, boss_id)
+
+        if boss["status"] == "waiting" and now >= boss["ready_at"]:
+            # Второй не пришёл — начинаем с теми, кто есть.
+            max_hp = dungeon.base_hp(boss["zone"], len(players))
+            await con.execute(
+                """
+                update dungeon_boss
+                   set status = 'fight',
+                       started_at = $2::timestamptz,
+                       hp = $3::bigint,
+                       max_hp = $3::bigint,
+                       updated_at = $2::timestamptz
+                 where id = $1::bigint
+                """,
+                int(boss_id),
+                now,
+                max_hp,
+            )
+            await con.execute(
+                "update dungeon_boss_players set last_boss_hit_at = $2::timestamptz "
+                "where boss_id = $1::bigint",
+                int(boss_id),
+                now,
+            )
+            boss = await self._reload(con, boss_id)
+            players = await con.fetch(
+                "select * from dungeon_boss_players where boss_id = $1::bigint "
+                "order by slot",
+                int(boss_id),
+            )
+
+        if boss["status"] == "fight":
+            damage = dungeon.boss_damage(boss["zone"])
+            for player in players:
+                if player["dead"] or player["left_at"] is not None:
+                    continue
+                last = player["last_boss_hit_at"] or boss["started_at"] or now
+                ticks = dungeon.ticks_since(last, now, dungeon.BOSS_HIT_EVERY)
+                if ticks <= 0:
+                    continue
+                hp = max(0, int(player["hp"]) - damage * ticks)
+                await con.execute(
+                    """
+                    update dungeon_boss_players
+                       set hp = $3::integer,
+                           dead = $3::integer <= 0,
+                           last_boss_hit_at = $4::timestamptz
+                     where boss_id = $1::bigint and user_id = $2::bigint
+                    """,
+                    int(boss_id),
+                    int(player["user_id"]),
+                    hp,
+                    dungeon.next_tick_at(last, ticks, dungeon.BOSS_HIT_EVERY) or now,
+                )
+            alive = await con.fetchval(
+                "select count(*) from dungeon_boss_players "
+                "where boss_id = $1::bigint and dead = false and left_at is null",
+                int(boss_id),
+            )
+            if int(alive or 0) == 0:
+                await con.execute(
+                    "update dungeon_boss set status = 'failed', "
+                    "finished_at = coalesce(finished_at, $2::timestamptz), "
+                    "updated_at = $2::timestamptz where id = $1::bigint",
+                    int(boss_id),
+                    now,
+                )
+            boss = await self._reload(con, boss_id)
+        return boss
+
+    async def _payload(
+        self, con: asyncpg.Connection, boss: asyncpg.Record, user_id: int, now: datetime
+    ) -> dict:
+        """Состояние для страницы: всё, что нужно нарисовать без лишних запросов."""
+        rows = await con.fetch(
+            """
+            select p.*,
+                   coalesce(nullif(pl.first_name, ''), pl.username, 'Игрок') as name
+              from dungeon_boss_players p
+              left join players pl on pl.user_id = p.user_id
+             where p.boss_id = $1::bigint
+             order by p.slot
+            """,
+            int(boss["id"]),
+        )
+        players = []
+        me = None
+        me_row = None
+        for row in rows:
+            item = {
+                "name": str(row["name"]),
+                "slot": int(row["slot"]),
+                "hp": int(row["hp"]),
+                "max_hp": int(row["max_hp"]),
+                "damage": int(row["damage"]),
+                "hits": int(row["hits"]),
+                "dead": bool(row["dead"]),
+                "left": row["left_at"] is not None,
+                "me": int(row["user_id"]) == int(user_id),
+            }
+            players.append(item)
+            if item["me"]:
+                me = item
+                me_row = row
+        status = str(boss["status"])
+        cooldown = 0.0
+        if me_row is not None:
+            cooldown = round(dungeon.cooldown_left(me_row["last_hit_at"], now), 2)
+        return {
+            "id": int(boss["id"]),
+            "zone": int(boss["zone"]),
+            "zone_name": dungeon.zone_name(boss["zone"]),
+            "hp": int(boss["hp"]),
+            "max_hp": int(boss["max_hp"]),
+            "status": status,
+            "status_text": dungeon.status_text(status),
+            "coop": len([p for p in players if not p["left"]]) > 1,
+            "ready_in": dungeon.ready_in(boss["ready_at"], now) if status == "waiting" else 0,
+            "players": players,
+            "me": me,
+            "cooldown": cooldown,
+        }

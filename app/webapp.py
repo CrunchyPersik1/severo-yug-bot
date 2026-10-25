@@ -46,6 +46,7 @@ from .cards import (
 )
 from .casino_repo import CasinoRepo
 from .cases import roll_case_card
+from .dungeon_repo import DungeonError
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
 from .items import ACCESSORIES
@@ -5815,6 +5816,47 @@ body.fxon #fx{opacity:1}
   font-size:9px;text-align:left;line-height:1.5}
 #gfx button.on{border-color:#c9a227;background:#3a2a12;color:#fff}
 #gfx .fps{margin-top:8px;font-size:7px;color:#8a7a5a;line-height:1.6}
+/* кооп-босс: общий бой на двоих */
+#coop{position:fixed;inset:0;z-index:45;display:none;flex-direction:column;
+  align-items:center;justify-content:center;padding:14px;
+  background:radial-gradient(circle at 50% 28%,#1c0d12f2,#07060af8)}
+#coop.on{display:flex}
+.cwrap{width:100%;max-width:420px;display:flex;flex-direction:column;gap:9px}
+.chead{display:flex;justify-content:space-between;font-size:8px;color:#c9a227;
+  letter-spacing:1px}
+.cboss{border:3px solid #6b1a22;border-radius:12px;padding:10px;
+  background:linear-gradient(#230e12ee,#120709ee);box-shadow:0 0 24px #ff3b5244}
+.cnm{font-size:11px;color:#ffb4b4;margin-bottom:7px}
+.cbar{height:16px;border-radius:99px;background:#000a;border:2px solid #4a1a20;
+  overflow:hidden}
+.cbar i{display:block;height:100%;width:100%;transition:width .25s;
+  background:linear-gradient(#ff7a3c,#c81e2e)}
+.chpt{font-size:8px;color:#ffd0a0;margin-top:6px;font-family:ui-monospace,monospace}
+.cteam{display:flex;gap:8px}
+.cp{flex:1;min-width:0;border:2px solid #2a3346;border-radius:10px;padding:8px;
+  background:#151a25dd}
+.cp.mine{border-color:#3b6fff;box-shadow:0 0 14px #3b6fff44}
+.cp.out{opacity:.4}
+.cp b{display:block;font-size:9px;color:#ffe9b8;margin-bottom:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp .bar{height:11px;border-radius:99px;background:#000a;border:1px solid #2a3346;
+  overflow:hidden}
+.cp .bar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
+  transition:width .2s}
+.cp span{display:block;font-size:7px;color:#8a7a5a;margin-top:5px;
+  font-family:ui-monospace,monospace}
+.clog{height:92px;overflow:hidden;border:2px solid #2a3346;border-radius:10px;
+  background:#0d1016cc;padding:8px;font-size:8px;line-height:1.7;color:#9aa4b8;
+  font-family:ui-monospace,monospace}
+.clog b{color:#ffd98a}
+.cact{display:flex;gap:10px}
+.cact button{flex:1;height:56px;border:0;border-radius:14px;font-family:inherit;
+  font-size:12px;color:#fff;background:linear-gradient(#c81e2e,#7a121c);
+  box-shadow:0 4px 0 #3a0a10;transition:transform .06s}
+.cact button:active{transform:translateY(3px);box-shadow:0 1px 0 #3a0a10}
+.cact button.leave{flex:0 0 92px;background:linear-gradient(#2a3346,#161c28);
+  box-shadow:0 4px 0 #0b0f16;font-size:10px;color:#9aa4b8}
+.cact button:disabled{opacity:.45;box-shadow:0 4px 0 #000a}
 /* перебиваем общий стиль темы: он тянет тост на всю ширину */
 body #toast{position:fixed!important;left:50%!important;right:auto!important;
   width:auto!important;max-width:76vw;bottom:304px;
@@ -5918,6 +5960,22 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   </div>
 </div>
 
+<div id="coop">
+  <div class="cwrap">
+    <div class="chead"><span id="czone">ЛОКАЦИЯ</span><span id="cstat">ОЖИДАНИЕ</span></div>
+    <div class="cboss">
+      <div class="cnm" id="cname">БОСС</div>
+      <div class="cbar"><i id="cbhp"></i></div>
+      <div class="chpt" id="cbhpt">…</div>
+    </div>
+    <div class="cteam" id="cteam"></div>
+    <div class="clog" id="clog"></div>
+    <div class="cact">
+      <button id="chit">⚔ УДАР</button>
+      <button id="cleave" class="leave">ВЫЙТИ</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 <div id="gfx"></div>
 <script>
@@ -6400,6 +6458,200 @@ void main(){
   };
   return api;
 })();
+
+/* ---------- кооп-босс: один босс на двоих ---------- */
+const TG_INIT = (function(){
+  try { return (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) || ""; }
+  catch (e){ return ""; }
+})();
+const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
+const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false};
+
+async function coopApi(path, body){
+  const opts = {headers: {"X-Telegram-Init-Data": TG_INIT}};
+  if (body !== undefined){
+    opts.method = "POST";
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  let data = null;
+  try {
+    const res = await fetch(path, opts);
+    try { data = await res.json(); } catch (e){ data = null; }
+    if (!data) data = {error: "Сервер не ответил"};
+    if (!res.ok && !data.error) data.error = "Ошибка " + res.status;
+  } catch (e){
+    data = {error: "Нет связи с сервером"};
+  }
+  return data;
+}
+
+function coopLog(text){
+  COOP.log.unshift(text);
+  COOP.log = COOP.log.slice(0, 7);
+  const el = document.getElementById("clog");
+  if (el) el.innerHTML = COOP.log.map(function(s){ return "<div>" + s + "</div>"; }).join("");
+}
+
+function coopTitle(room){
+  if (room.status === "waiting") return "ЖДЁМ ВТОРОГО · " + room.ready_in + " с";
+  if (room.status === "fight") return room.coop ? "БОЙ ВДВОЁМ" : "БОЙ";
+  if (room.status === "dead") return "БОСС ПОВЕРЖЕН";
+  if (room.status === "failed") return "ВСЕ ПАЛИ";
+  return "КОМНАТА ЗАКРЫТА";
+}
+
+function coopApply(room){
+  if (!room) return;
+  const before = COOP.room ? COOP.room.status : null;
+  COOP.room = room;
+  const zone = document.getElementById("czone");
+  const stat = document.getElementById("cstat");
+  const name = document.getElementById("cname");
+  if (zone) zone.textContent = (room.zone + 1) + "/10 · " + room.zone_name;
+  if (stat) stat.textContent = coopTitle(room);
+  if (name) name.textContent = "БОСС · " + String(room.zone_name).toUpperCase();
+  const fill = document.getElementById("cbhp");
+  if (fill) fill.style.width = Math.max(0, Math.min(100, room.hp / Math.max(1, room.max_hp) * 100)) + "%";
+  const hpt = document.getElementById("cbhpt");
+  if (hpt){
+    hpt.textContent = "HP " + room.hp + " / " + room.max_hp +
+      (room.status === "waiting"
+        ? " · старт через " + room.ready_in + " с"
+        : " · твой урон " + ((room.me && room.me.damage) || 0));
+  }
+  const team = document.getElementById("cteam");
+  if (team){
+    team.innerHTML = room.players.map(function(p){
+      const cls = "cp" + (p.me ? " mine" : "") + (p.dead || p.left ? " out" : "");
+      const width = Math.max(0, Math.round(p.hp / Math.max(1, p.max_hp) * 100));
+      const label = p.me ? "ТЫ · " + p.name : p.name;
+      return '<div class="' + cls + '"><b>' + label + "</b>" +
+        '<div class="bar"><i style="width:' + width + '%"></i></div>' +
+        "<span>HP " + p.hp + " / " + p.max_hp + " · " + p.damage +
+        " урона · " + p.hits + " уд.</span></div>";
+    }).join("");
+  }
+  const hitBtn = document.getElementById("chit");
+  if (hitBtn){
+    if (room.status === "waiting"){
+      hitBtn.disabled = false;
+      hitBtn.textContent = "⚔ НАЧАТЬ ОДИН";
+    } else {
+      const canHit = room.status === "fight" && room.me && !room.me.dead && room.cooldown <= 0;
+      hitBtn.disabled = !canHit;
+      hitBtn.textContent = room.status === "fight"
+        ? (room.cooldown > 0 ? "⚔ " + room.cooldown.toFixed(1) + " с" : "⚔ УДАР")
+        : "⚔ ЖДЁМ";
+    }
+  }
+  if (before === "waiting" && room.status === "fight"){
+    toast(room.coop ? "Напарник зашёл — бьём вдвоём!" : "Бой начался");
+  }
+  if (room.status === "dead" && before !== "dead") toast("Босс повержен!");
+  if (room.status === "failed" && before !== "failed") toast("Вы пали. Возвращайся сильнее");
+  if (room.status !== "waiting" && room.status !== "fight" && COOP.timer){
+    clearInterval(COOP.timer);
+    COOP.timer = 0;
+  }
+}
+
+async function coopJoin(zone){
+  const data = await coopApi("/api/dungeon/boss/join", {zone: zone});
+  if (!data || !data.ok || !data.boss){
+    if (data && data.error) toast(data.error);
+    startBattle();                        // без Телеграма и без связи — локальный бой
+    return;
+  }
+  COOP.open = true;
+  COOP.id = data.boss.id;
+  COOP.log = [];
+  document.getElementById("coop").classList.add("on");
+  coopLog("<b>Комната открыта</b> · " + data.boss.zone_name);
+  if (data.boss.status === "waiting") coopLog("Ждём второго игрока на точке");
+  coopApply(data.boss);
+  if (!COOP.timer) COOP.timer = setInterval(coopPoll, 1500);
+}
+
+async function coopPoll(){
+  if (!COOP.open || COOP.busy) return;
+  COOP.busy = true;
+  try {
+    const data = await coopApi("/api/dungeon/boss/state");
+    if (!data || !data.ok){
+      if (data && data.error) coopLog(data.error);
+      return;
+    }
+    if (!data.boss || data.boss.status === "none"){ await coopClose(true); return; }
+    coopApply(data.boss);
+  } finally {
+    COOP.busy = false;
+  }
+}
+
+async function coopHit(){
+  const room = COOP.room;
+  if (!COOP.open || !room) return;
+  if (room.status === "waiting"){ await coopStart(); return; }
+  if (room.status !== "fight" || !room.me || room.me.dead) return;
+  const dmg = (P.weapon && P.weapon.dmg) || 12;
+  const data = await coopApi("/api/dungeon/boss/hit", {damage: dmg});
+  if (!data || !data.ok){
+    if (data && data.error) coopLog(data.error);
+    return;
+  }
+  const before = room.hp;
+  coopApply(data.boss);
+  if (data.boss.hit) coopLog("Удар на <b>" + data.boss.hit + "</b> · осталось " + data.boss.hp);
+  else if (data.boss.cooldown > 0) coopLog("Кулдаун " + data.boss.cooldown.toFixed(1) + " с");
+  if (data.boss.status === "dead" && before > 0) coopLog("<b>Босс повержен!</b>");
+}
+
+async function coopStart(){
+  const data = await coopApi("/api/dungeon/boss/start", {});
+  if (!data || !data.ok){
+    if (data && data.error) coopLog(data.error);
+    return;
+  }
+  coopLog("Начинаем вдвоём, если напарник успел");
+  coopApply(data.boss);
+}
+
+async function coopClose(silent){
+  if (!COOP.open) return;
+  const room = COOP.room;
+  COOP.open = false;
+  document.getElementById("coop").classList.remove("on");
+  if (COOP.timer){ clearInterval(COOP.timer); COOP.timer = 0; }
+  COOP.room = null;
+  COOP.id = 0;
+  P.bossCd = 4;
+  if (!silent && room && (room.status === "waiting" || room.status === "fight")){
+    await coopApi("/api/dungeon/boss/leave", {});
+  }
+}
+
+function coopUiTick(dt){
+  const room = COOP.room;
+  if (!COOP.open || !room) return;
+  if (room.cooldown > 0){
+    room.cooldown = Math.max(0, room.cooldown - dt);
+    if (room.cooldown <= 0) coopApply(room);
+    else {
+      const btn = document.getElementById("chit");
+      if (btn) btn.textContent = "⚔ " + room.cooldown.toFixed(1) + " с";
+    }
+  }
+}
+
+function bossEngage(bs){
+  if (TG_INIT){ coopJoin(bs ? bs.zone : zoneIndex(P.y)); return; }
+  startBattle();                          // вне Телеграма — старый локальный бой
+}
+
+document.getElementById("chit").onclick = coopHit;
+document.getElementById("cleave").onclick = function(){ coopClose(false); };
+
 const ZONE_H = 1100;
 const ZONES = [
   {n: "Опушка",         g: "#2a3d18", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
@@ -6868,7 +7120,8 @@ function loop(now){
   loop.last = now;
   FX.tick(dt);
   FX.step(dt);
-  if (!P.weapon || inBattle){ render(dt); return; }
+  coopUiTick(dt);
+  if (!P.weapon || inBattle || COOP.open){ render(dt); return; }
 
   let vx = joyV.x, vy = joyV.y;
   if (keys["w"] || keys["ц"] || keys["arrowup"]) vy = -1;
@@ -6957,12 +7210,12 @@ function loop(now){
       }
       bs.warned = false;
       bs.t += dt;
-      if (bs.t >= 5){
+      if (bs.t >= BOSS_WAIT){
         bs.t = 0;
         boss = bs;
         FX.burst(bs.x, bs.y, 26, "#ff7a3c", 220, 20);
         FX.shake(7);
-        startBattle();
+        bossEngage(bs);
         return;
       }
       if (Math.random() < dt * 8) FX.emit(bs.x + rnd(-bs.r, bs.r), bs.y + rnd(-bs.r, bs.r) * 0.4,
@@ -7117,7 +7370,7 @@ function render(dt){
     if (bs.t > 0.01){
       ctx.strokeStyle = "#ffd98a"; ctx.lineWidth = 7;
       ctx.beginPath();
-      ctx.arc(bs.x, bs.y, bs.r + 9, -1.5708, -1.5708 + 6.2832 * Math.min(1, bs.t / 5));
+      ctx.arc(bs.x, bs.y, bs.r + 9, -1.5708, -1.5708 + 6.2832 * Math.min(1, bs.t / BOSS_WAIT));
       ctx.stroke();
     }
     ctx.restore();
@@ -7125,7 +7378,7 @@ function render(dt){
     ctx.fillText("БОСС " + (bs.idx + 1) + " · " + ZONES[bs.zone].n, bs.x, bs.y - 8);
     if (bs.t > 0.01){
       ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
-      ctx.fillText(Math.ceil(5 - bs.t), bs.x, bs.y + 30);
+      ctx.fillText(Math.ceil(BOSS_WAIT - bs.t), bs.x, bs.y + 30);
     }
   });
 
@@ -7300,5 +7553,102 @@ requestAnimationFrame(loop);
 
 @router.get("/proto_dungeon", response_class=HTMLResponse)
 async def proto_dungeon() -> HTMLResponse:
-    """Прототип «Подземелья Тимура»: карта, мобы, босс. База не затрагивается."""
+    """Прототип «Подземелья Тимура»: карта, мобы, кооп-босс.
+
+    Экономику не трогает: пишет только в dungeon_boss / dungeon_boss_players.
+    """
     return HTMLResponse(DUNGEON_PAGE)
+
+# --------------------------------------------------------------------------- #
+# Кооп-босс подземелья: один босс на двоих
+# --------------------------------------------------------------------------- #
+#
+# Состояние живёт в dungeon_boss / dungeon_boss_players. Бой симулируется
+# лениво: каждая ручка сначала догоняет бой до текущего момента (старт по
+# времени, удары босса), поэтому планировщик не нужен.
+
+
+async def _json_body(request: Request) -> dict[str, Any]:
+    """Тело запроса как словарь; мусор и пустое тело — пустой словарь."""
+    try:
+        body = await request.json()
+    except (TypeError, ValueError):
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+async def _dungeon_boss(request: Request):
+    """Игрок и репозиторий кооп-босса — общая часть для всех ручек."""
+    user = await _player(request)
+    repo = getattr(request.app.state, "dungeon", None)
+    if repo is None:
+        raise DungeonError("Кооп-босс ещё не включён")
+    return user, repo
+
+
+@router.post("/api/dungeon/boss/join")
+async def api_dungeon_boss_join(request: Request) -> JSONResponse:
+    """Открыть комнату на точке или занять второе место в чужой."""
+    try:
+        user, repo = await _dungeon_boss(request)
+        body = await _json_body(request)
+        room = await repo.join(int(user["id"]), body.get("zone"), datetime.now(timezone.utc))
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "boss": room})
+
+
+@router.get("/api/dungeon/boss/state")
+async def api_dungeon_boss_state(request: Request) -> JSONResponse:
+    """Опрос состояния: страница тянет его раз в секунду."""
+    try:
+        user, repo = await _dungeon_boss(request)
+        room = await repo.state(int(user["id"]), datetime.now(timezone.utc))
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "boss": room})
+
+
+@router.post("/api/dungeon/boss/hit")
+async def api_dungeon_boss_hit(request: Request) -> JSONResponse:
+    """Удар по общему боссу. Урон присылает страница — как и в прототипе."""
+    try:
+        user, repo = await _dungeon_boss(request)
+        body = await _json_body(request)
+        room = await repo.hit(
+            int(user["id"]), body.get("damage"), datetime.now(timezone.utc)
+        )
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "boss": room})
+
+
+@router.post("/api/dungeon/boss/leave")
+async def api_dungeon_boss_leave(request: Request) -> JSONResponse:
+    """Выйти из боя: второй игрок остаётся драться один."""
+    try:
+        user, repo = await _dungeon_boss(request)
+        result = await repo.leave(int(user["id"]), datetime.now(timezone.utc))
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "left": result})
+
+@router.post("/api/dungeon/boss/start")
+async def api_dungeon_boss_start(request: Request) -> JSONResponse:
+    """Начать бой, не дожидаясь окна: игрок не хочет ждать напарника."""
+    try:
+        user, repo = await _dungeon_boss(request)
+        room = await repo.start_now(int(user["id"]), datetime.now(timezone.utc))
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "boss": room})

@@ -125,6 +125,14 @@ function call(name, args){
   if (!has(name)) return undefined;
   return vm.runInContext(name, context).apply(null, args || []);
 }
+function check(label, got, want){
+  const ok = got === want;
+  if (!ok){
+    errors.push("проверка «" + label + "»: " + JSON.stringify(got) +
+                " вместо " + JSON.stringify(want));
+  }
+  console.log("  " + (ok ? "ok  " : "FAIL") + " " + label + ": " + JSON.stringify(got));
+}
 
 run("инициализация", () => vm.runInContext(code, context, {filename: file}));
 
@@ -159,8 +167,68 @@ const summary = has("FX")
 console.log("инициализация ok · обращений к canvas-API: " + canvasCalls +
             " · состояние: " + JSON.stringify(summary));
 
-if (errors.length){
-  console.error("ОШИБКИ (" + errors.length + "):\n" + errors.join("\n---\n"));
-  process.exit(1);
+/* ---------- кооп-босс: подсовываем фейковый сервер и прокликиваем ---------- */
+
+function bossPayload(over){
+  const base = {
+    id: 1, zone: 0, zone_name: "Опушка", hp: 540, max_hp: 540, status: "waiting",
+    status_text: "ждём второго", coop: false, ready_in: 10, cooldown: 0, hit: 0,
+    players: [{name: "Ты", slot: 1, hp: 120, max_hp: 120, damage: 0, hits: 0,
+               dead: false, left: false, me: true}],
+    me: {name: "Ты", slot: 1, hp: 120, max_hp: 120, damage: 0, hits: 0,
+         dead: false, left: false, me: true}
+  };
+  return Object.assign(base, over || {});
 }
-console.log("стенд: страница работает без исключений");
+
+async function coopScenario(){
+  const seen = [];
+  let next = {boss: bossPayload()};
+  sandbox.fetch = async function(url, opts){
+    seen.push(String(url) + " " + ((opts && opts.method) || "GET"));
+    return {ok: true, status: 200, json: async () => ({ok: true, boss: next.boss})};
+  };
+  const run1 = (expr) => vm.runInContext(expr, context);
+  const room = () => run1("COOP.room");
+  const pairs = [
+    {name: "Саня", slot: 2, hp: 120, max_hp: 120, damage: 0, hits: 0,
+     dead: false, left: false, me: false}
+  ];
+
+  await run1("coopJoin(0)");
+  check("кооп: комната открыта", run1("COOP.open"), true);
+  check("кооп: статус ожидания", room().status, "waiting");
+
+  next = {boss: bossPayload({status: "fight", coop: true, ready_in: 0,
+                             players: [bossPayload().me].concat(pairs)})};
+  await run1("coopPoll()");
+  check("кооп: бой начался", room().status, "fight");
+  check("кооп: в команде двое", room().players.length, 2);
+
+  next = {boss: bossPayload({status: "fight", coop: true, hp: 420, hit: 120, cooldown: 0.4})};
+  await run1("coopHit()");
+  check("кооп: удар снял HP", room().hp, 420);
+  check("кооп: урон попал в лог", run1("COOP.log.length") > 0, true);
+
+  next = {boss: bossPayload({status: "dead", hp: 0, coop: true})};
+  await run1("coopPoll()");
+  check("кооп: победа видна", room().status, "dead");
+
+  await run1("coopClose(false)");
+  check("кооп: закрыли оверлей", run1("COOP.open"), false);
+  check("кооп: ручки дёргались", seen.length >= 4, true);
+  console.log("  запросы: " + seen.map(function(s){ return s.replace(/^http:\/\/x/, ""); }).join(" | "));
+}
+
+(async function(){
+  if (has("COOP")){
+    try { await coopScenario(); }
+    catch (e){ errors.push("сценарий кооп-боя: " + ((e && e.stack) || e)); }
+  }
+  if (errors.length){
+    console.error("ОШИБКИ (" + errors.length + "):\n" + errors.join("\n---\n"));
+    process.exitCode = 1;
+    return;
+  }
+  console.log("стенд: страница работает без исключений");
+})();

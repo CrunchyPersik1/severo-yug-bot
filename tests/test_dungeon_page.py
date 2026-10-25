@@ -54,10 +54,22 @@ def test_bloom_has_downsample_chain():
 
 
 def test_boss_battle_is_wired_up():
-    assert "bs.t >= 5" in DUNGEON_PAGE
+    assert "bs.t >= BOSS_WAIT" in DUNGEON_PAGE
     assert "startBattle()" in DUNGEON_PAGE
+    assert "bossEngage(bs)" in DUNGEON_PAGE
     assert "zoneReq(bs.y)" in DUNGEON_PAGE
     assert "P.bossCd" in DUNGEON_PAGE
+
+
+def test_coop_overlay_and_api():
+    assert 'id="coop"' in DUNGEON_PAGE
+    assert 'id="chit"' in DUNGEON_PAGE
+    assert "const BOSS_WAIT = 10;" in DUNGEON_PAGE
+    for path in ("/api/dungeon/boss/join", "/api/dungeon/boss/state",
+                 "/api/dungeon/boss/hit", "/api/dungeon/boss/leave",
+                 "/api/dungeon/boss/start"):
+        assert path in DUNGEON_PAGE, path
+    assert "X-Telegram-Init-Data" in DUNGEON_PAGE
 
 
 def test_graphics_panel_replaces_stub():
