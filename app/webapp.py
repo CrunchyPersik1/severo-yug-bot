@@ -6099,10 +6099,11 @@ let HERO = null;
 let animT = 0;
 function drawHero(x, y, attacking){
   if (!HERO){ person(x, y, "#4a9eff"); return; }
-  const fw = 32, fh = 24;
-  const dw = 52, dh = 39;                            // рисуем крупнее
-  let row = 1, col = Math.floor(animT * 6) % 4;      // ходьба
-  if (attacking){ row = 8; col = Math.floor(animT * 10) % 4; }
+  const fw = 32, fh = 32;                            // кадр 32x32, не 32x24
+  const dw = 56, dh = 56;
+  const face = P.facing || 0;                         // 0 вниз, 1 влево, 2 вправо, 3 вверх
+  let row = 1 + face, col = Math.floor(animT * 7) % 4;
+  if (attacking){ row = 5 + face; col = Math.floor(animT * 11) % 4; }
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = 0.25;
@@ -6160,7 +6161,10 @@ function loop(now){
   const speed = 210;
   P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
   P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
-  if (len > 0.05) P.dir = Math.atan2(vy, vx);
+  if (len > 0.05){
+    P.dir = Math.atan2(vy, vx);
+    P.facing = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : (vy < 0 ? 3 : 0);
+  }
 
   P.atkCd = Math.max(0, P.atkCd - dt);
   P.shCd = Math.max(0, P.shCd - dt);
