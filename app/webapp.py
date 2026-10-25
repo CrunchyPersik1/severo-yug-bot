@@ -5151,20 +5151,36 @@ const BUILDINGS = [
   {id:"engine", n:"Фрактал", e:"🧩", base:2.1e15, cps:6e9},
   {id:"idle", n:"Идлверс", e:"🌌", base:2.6e16, cps:4.5e10},
 ];
-const UPGRADES = [
-  {id:"tap2", n:"Крепкая рука", d:"+1 к клику", cost:100, check:()=>S.clicks>=10},
-  {id:"tap5", n:"Двойной тап", d:"×2 к клику", cost:2000, check:()=>S.clicks>=100},
-  {id:"tap10", n:"Стальные пальцы", d:"×3 к клику", cost:500000, check:()=>S.clicks>=500},
-  {id:"cur2", n:"Курсоры ×2", d:"курсоры вдвое", cost:500, check:()=>own("cur")>=5},
-  {id:"yuga2", n:"Юга ×2", d:"юга вдвое", cost:5000, check:()=>own("yuga")>=5},
-  {id:"farm2", n:"Фермы ×2", d:"фермы вдвое", cost:25000, check:()=>own("farm")>=5},
-  {id:"mine2", n:"Шахты ×2", d:"шахты вдвое", cost:250000, check:()=>own("mine")>=5},
-  {id:"all5", n:"Общий рост", d:"+5% ко всему", cost:100000, check:()=>S.total>=50000},
-  {id:"all10", n:"Общий рост II", d:"+10% ко всему", cost:5e6, check:()=>S.total>=1e6},
-  {id:"all15", n:"Общий рост III", d:"+15% ко всему", cost:5e8, check:()=>S.total>=1e8},
-  {id:"all20", n:"Общий рост IV", d:"+20% ко всему", cost:5e10, check:()=>S.total>=1e10},
-  {id:"all25", n:"Общий рост V", d:"+25% ко всему", cost:5e12, check:()=>S.total>=1e12},
-];
+const UPGRADES = [];
+(function(){
+  // 6 уровней на каждое из 15 зданий = 90
+  var th = [5, 10, 25, 50, 100, 150];
+  var cm = [20, 200, 2000, 20000, 200000, 2000000];
+  BUILDINGS.forEach(function(b){
+    th.forEach(function(need, i){
+      UPGRADES.push({
+        id: b.id + "_" + i,
+        n: b.n + " ×2",
+        d: "нужно " + need + " шт",
+        cost: Math.ceil(b.base * cm[i]),
+        bid: b.id,
+        check: (function(bb, nn){ return function(){ return own(bb.id) >= nn; }; })(b, need)
+      });
+    });
+  });
+  // 10 глобальных «+N% ко всему» = 100
+  for (var p = 5; p <= 50; p += 5){
+    (function(pp){
+      UPGRADES.push({
+        id: "g" + pp,
+        n: "Общий рост +" + pp + "%",
+        d: "+" + pp + "% ко всему",
+        cost: Math.ceil(50000 * Math.pow(30, pp / 5 - 1)),
+        check: function(){ return S.total >= 50000 * Math.pow(30, pp / 5 - 1); }
+      });
+    })(p);
+  }
+})();
 const ACH = [
   {id:"c1", n:"10 кликов", check:()=>S.clicks>=10},
   {id:"c2", n:"100 кликов", check:()=>S.clicks>=100},
@@ -5196,17 +5212,13 @@ function tapPower(){
   return v;
 }
 function cps(){
-  let v = 0;
-  BUILDINGS.forEach(b => { v += own(b.id) * b.cps; });
-  if (has("cur2")) v += own("cur") * BUILDINGS[0].cps;
-  if (has("yuga2")) v += own("yuga") * BUILDINGS[1].cps;
-  if (has("farm2")) v += own("farm") * BUILDINGS[2].cps;
-  if (has("mine2")) v += own("mine") * BUILDINGS[3].cps;
-  if (has("all5")) v *= 1.05;
-  if (has("all10")) v *= 1.10;
-  if (has("all15")) v *= 1.15;
-  if (has("all20")) v *= 1.20;
-  if (has("all25")) v *= 1.25;
+  var v = 0;
+  BUILDINGS.forEach(function(b){
+    var m = 1;
+    for (var i = 0; i < 6; i++){ if (has(b.id + "_" + i)) m *= 2; }
+    v += own(b.id) * b.cps * m;
+  });
+  for (var p = 5; p <= 50; p += 5){ if (has("g" + p)) v *= (1 + p / 100); }
   v *= (1 + S.chips * 0.01);
   v *= (1 + achCount() * 0.01);
   if (buffActive("frenzy")) v *= 7;

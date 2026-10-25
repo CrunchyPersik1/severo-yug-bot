@@ -657,3 +657,20 @@ create table if not exists pvp_pairs (
     fights integer not null default 0,
     primary key (a_id, b_id)
 );
+
+-- ===== Кликер: здания, апгрейды и фишки престижа =====
+create table if not exists yugi_buildings (
+    user_id     bigint  not null,
+    building_id text    not null,
+    count       integer not null default 0,
+    primary key (user_id, building_id)
+);
+
+create table if not exists yugi_upgrades (
+    user_id   bigint not null,
+    upgrade_id text  not null,
+    primary key (user_id, upgrade_id)
+);
+
+alter table players add column if not exists yugi_chips integer not null default 0;
+alter table players add column if not exists yugi_resets integer not null default 0;
