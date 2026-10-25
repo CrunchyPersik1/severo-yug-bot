@@ -498,9 +498,9 @@ async def main(argv: list[str] | None = None) -> int:
               isinstance((items.get("upgrades") or {}).get("reward_text"), str), True)
         status, claim = await call("POST", "/api/quests/claim", first, {"key": "upgrades"})
         check("квесты: награда выдана", status, 200)
-        check("квесты: очки", (claim.get("reward") or {}).get("points"), 15000)
-        check("квесты: кейс", (claim.get("reward") or {}).get("cases"), 1)
-        check("квесты: баланс вырос", (claim.get("balance") or 0) >= 15000, True)
+        check("квесты: очки", (claim.get("reward") or {}).get("points"), 20000)
+        check("квесты: награда без кейса", (claim.get("reward") or {}).get("cases"), None)
+        check("квесты: баланс вырос", (claim.get("balance") or 0) >= 20000, True)
         status, again_claim = await call("POST", "/api/quests/claim", first,
                                          {"key": "upgrades"})
         check("квесты: второй раз отказ", status, 400)

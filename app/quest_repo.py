@@ -37,7 +37,7 @@ class QuestRepo:
                 sql = quests.source_sql(key)
                 current = int(await con.fetchval(sql, int(user_id)) or 0) if sql else 0
                 need = quests.need_for(key)
-                reward = quests.reward_for(index)
+                reward = quests.reward_for(key)
                 result.append(
                     {
                         "key": key,
@@ -77,7 +77,7 @@ class QuestRepo:
                 )
                 if fresh is None:
                     raise QuestError("Награда уже получена")
-                reward = quests.reward_for(index)
+                reward = quests.reward_for(name)
                 if reward.get("points"):
                     await con.execute(
                         "update players set bonus_points = bonus_points + $2 "
@@ -91,6 +91,33 @@ class QuestRepo:
                         "select $1::bigint, 'quest' from generate_series(1, $2::integer)",
                         int(user_id),
                         int(reward["cases"]),
+                    )
+                if reward.get("drops"):
+                    await con.execute(
+                        "update players set drop_limit = drop_limit + $2 "
+                        "where user_id = $1::bigint",
+                        int(user_id),
+                        int(reward["drops"]),
+                    )
+                if reward.get("roulette"):
+                    await con.execute(
+                        "update players set roulette_limit = roulette_limit + $2 "
+                        "where user_id = $1::bigint",
+                        int(user_id),
+                        int(reward["roulette"]),
+                    )
+                if reward.get("yugi"):
+                    await con.execute(
+                        """
+                        insert into yugi (user_id, balance, total)
+                        values ($1::bigint, $2::numeric, $2::numeric)
+                        on conflict (user_id) do update
+                           set balance = yugi.balance + $2::numeric,
+                               total = yugi.total + $2::numeric,
+                               updated_at = now()
+                        """,
+                        int(user_id),
+                        int(reward["yugi"]),
                     )
                 balance = int(
                     await con.fetchval(

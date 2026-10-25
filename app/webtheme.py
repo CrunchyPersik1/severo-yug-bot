@@ -295,8 +295,40 @@ BOOTSTRAP = POLISH + r"""<script>
 """
 
 
+TG_SCRIPT = '<script src="https://telegram.org/js/telegram-web-app.js"></script>'
+
+INIT_KEEP = """<script>
+/* initData теряется при переходах внутри мини-аппки: Telegram отдаёт его
+   только на старте. Держим копию в sessionStorage и возвращаем на место
+   сразу после загрузки SDK — иначе после перехода любая ручка отвечает 401. */
+(function(){
+  try{
+    var tg = window.Telegram && window.Telegram.WebApp;
+    if (!tg) return;
+    if (tg.initData){
+      window.__TG_INIT = tg.initData;
+      try { sessionStorage.setItem("tginit", tg.initData); } catch(e){}
+      return;
+    }
+    var saved = null;
+    try { saved = sessionStorage.getItem("tginit"); } catch(e){}
+    if (saved){
+      window.__TG_INIT = saved;
+      try { tg.initData = saved; } catch(e){}
+    }
+  }catch(e){}
+})();
+</script>"""
+
+
 def inject(html: str) -> str:
-    """Подмешивает тему, новый стиль и частицы в любую мини-аппку."""
+    """Подмешивает тему, новый стиль и частицы в любую мини-аппку.
+
+    Заодно возвращает initData после переходов внутри мини-аппки: страницы
+    ходят друг к другу по ссылкам, а Telegram отдаёт данные только на старте.
+    """
+    if TG_SCRIPT in html and "sessionStorage" not in html:
+        html = html.replace(TG_SCRIPT, TG_SCRIPT + INIT_KEEP, 1)
     if "</body>" in html:
         return html.replace("</body>", BOOTSTRAP + "</body>", 1)
     return html + BOOTSTRAP

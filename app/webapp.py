@@ -2329,6 +2329,8 @@ HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "casino", "title": "Казино", "note": "кости и ставки", "kind": "app", "path": "/casino_app"},
     {"id": "rtable", "title": "Рулетка-стол", "note": "колесо и шарик", "kind": "app", "path": "/roulette_table"},
     {"id": "yugi", "title": "Юга-кликер", "note": "тапай и качай", "kind": "app", "path": "/yugi"},
+    {"id": "dungeon", "title": "Подземелье", "note": "мобы и кооп-босс", "kind": "app", "path": "/proto_dungeon"},
+    {"id": "quests", "title": "Задания", "note": "квесты и награды", "kind": "app", "path": "/quests"},
     {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
     {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
     {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},
@@ -3745,10 +3747,21 @@ body .tapbtn b{font-size:56px;line-height:1;font-weight:900;letter-spacing:-2px}
   border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
   transform:translateY(220%);transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
+.apps{display:flex;gap:6px;margin:0 0 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:999px;padding:4px}
+.apps a{flex:1;text-align:center;text-decoration:none;color:var(--muted);
+  font-weight:800;font-size:12px;padding:9px 4px;border-radius:999px;white-space:nowrap}
+.apps a.on{background:var(--acc);color:var(--acc-ink)}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <nav class="apps">
+    <a class="on" href="/yugi">🍁 Кликер</a>
+    <a href="/proto_dungeon">🗡 Подземелье</a>
+    <a href="/quests">📜 Задания</a>
+  </nav>
+
   <div class="hero">
     <div class="b" id="bal">0</div>
     <div class="u">Югов</div>
@@ -5297,10 +5310,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
   font-size:13px;transform:translateY(220%);transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
+.apps{display:flex;gap:6px;margin:0 0 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:999px;padding:4px}
+.apps a{flex:1;text-align:center;text-decoration:none;color:var(--muted);
+  font-weight:800;font-size:12px;padding:9px 4px;border-radius:999px;white-space:nowrap}
+.apps a.on{background:var(--acc);color:var(--acc-ink)}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <nav class="apps">
+    <a href="/yugi">🍁 Кликер</a>
+    <a href="/proto_dungeon">🗡 Подземелье</a>
+    <a class="on" href="/quests">📜 Задания</a>
+  </nav>
+
   <div class="top">
     <div class="b" id="cnt">…</div>
     <div class="b ok" id="streak">…</div>
@@ -6053,7 +6077,7 @@ body.fxon #fx{opacity:1}
 #gfx button.on{border-color:#c9a227;background:#3a2a12;color:#fff}
 #gfx .fps{margin-top:8px;font-size:7px;color:#8a7a5a;line-height:1.6}
 /* подсказка, если страницу открыли не как мини-аппку */
-#tghint{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:9;
+#tghint{position:fixed;top:96px;left:50%;transform:translateX(-50%);z-index:9;
   font-size:7px;line-height:1.5;color:#ffb4b4;background:#2a0e12ee;
   border:1px solid #6b1a22;border-radius:8px;padding:5px 9px;
   pointer-events:none;text-align:center;max-width:80vw}
@@ -6145,6 +6169,13 @@ body #toast{position:fixed!important;left:50%!important;right:auto!important;
   text-align:center;transform:translate(-50%,320%);transition:.22s;z-index:60;
   box-shadow:0 0 0 2px #120c06,0 6px 16px #000000aa;animation:none!important}
 body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
+/* переключатель разделов мини-аппки */
+.apps{position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:9;
+  display:flex;gap:4px;background:#120d0af0;border:2px solid #6b4a22;
+  border-radius:999px;padding:3px}
+.apps a{font-family:inherit;font-size:8px;color:#c9a227;text-decoration:none;
+  padding:6px 8px;border-radius:999px;white-space:nowrap;line-height:1}
+.apps a.on{background:#ffd98a;color:#1b1206}
 </style>
 </head>
 <body>
@@ -6162,6 +6193,11 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <button data-tab="settings" title="Настройки">⚙</button>
   </div>
 </div>
+<nav class="apps">
+  <a href="/yugi">🍁 Кликер</a>
+  <a class="on" href="/proto_dungeon">🗡 Подземелье</a>
+  <a href="/quests">📜 Задания</a>
+</nav>
 <div class="coins">🪙 <span id="coins">0</span></div>
 <div id="zone" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);
   z-index:9;font-size:8px;color:#d8b45a;text-shadow:0 2px 6px #000;pointer-events:none">…</div>
@@ -6762,17 +6798,27 @@ void main(){
 // Telegram Desktop иногда отдаёт пустой initData, хотя данные лежат в адресе
 // строкой tgWebAppData=... Достаём оттуда — иначе кооп молча не работает.
 function readInitData(){
+  let raw = "";
   try {
     if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData){
-      return Telegram.WebApp.initData;
+      raw = Telegram.WebApp.initData;
     }
   } catch (e){}
+  if (!raw){
+    // Telegram Desktop иногда оставляет данные в адресе
+    try {
+      const url = String(location.hash || "") + "&" + String(location.search || "");
+      const found = url.match(/tgWebAppData=([^&]+)/);
+      if (found) raw = decodeURIComponent(found[1]);
+    } catch (e){}
+  }
+  // При переходе между страницами мини-аппки hash теряется: держим копию,
+  // иначе кооп и прогресс молча отваливаются в 401.
   try {
-    const raw = String(location.hash || "") + "&" + String(location.search || "");
-    const found = raw.match(/tgWebAppData=([^&]+)/);
-    if (found) return decodeURIComponent(found[1]);
+    if (raw) sessionStorage.setItem("tginit", raw);
+    else raw = sessionStorage.getItem("tginit") || "";
   } catch (e){}
-  return "";
+  return raw;
 }
 const TG_INIT = readInitData();
 // Без этого Telegram не раскрывает мини-апп на весь экран.
@@ -8319,7 +8365,7 @@ function openGfx(){
 document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   const t = b.dataset.tab;
   if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
-  if (t === "clicker"){ toast("Вернуться в кликер — в большой версии"); return; }
+  if (t === "clicker"){ location.href = "/yugi"; return; }
   if (t === "quests"){ toast("Задания — заглушка прототипа"); return; }
   if (t === "board"){ openTop(); return; }
   if (t === "settings"){ openGfx(); return; }
