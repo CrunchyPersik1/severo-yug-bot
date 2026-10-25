@@ -5801,7 +5801,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 
 <div class="joy" id="joy"><i id="knob"></i></div>
 <div class="btns">
-  <button class="ab" id="shield">🛡<span class="cd" id="cdShield"></span></button>
+  <button class="ab" id="shield">💨<span class="cd" id="cdShield"></span></button>
   <button class="ab" id="ability">✋<span class="cd" id="cdAbility"></span></button>
   <button class="ab atk" id="attack">⚔<span class="cd" id="cdAttack"></span></button>
 </div>
@@ -5846,7 +5846,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const WORLD = {w: 1800, h: 1400};
 let P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, coins: 0,
-         weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0,
+         weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0, dashCd: 0, dashT: 0,
          shield: 0, dir: 0};
 const WEAPONS = (function(){
   var kinds = [
@@ -5927,7 +5927,7 @@ function spawnNpcs(n){
 }
 function reset(){
   P.x = WORLD.w / 2; P.y = WORLD.h / 2;
-  P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0;
+  P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
   spawnMobs(9); spawnNpcs(6);
@@ -6000,9 +6000,11 @@ function killMob(m){
   sync();
 }
 function shieldUp(){
-  if (P.shCd > 0) return;
-  P.shCd = 7; P.shield = 2.5;
-  toast("Щит на 2.5 сек");
+  if (P.dashCd > 0 || inBattle) return;
+  P.dashCd = 2.2; P.dashT = 0.22; P.shield = 0.22;
+  const a = (typeof P.dir === "number") ? P.dir : 0;
+  P.dashVX = Math.cos(a) * 700;
+  P.dashVY = Math.sin(a) * 700;
 }
 function ability(){
   if (P.abCd > 0) return;
@@ -6090,53 +6092,52 @@ function drawFighters(){
     c.fillRect(66, 112, 68, 82);
   });
 }
-let HERO = null;
-(function(){
-  const img = new Image();
-  img.onload = function(){ HERO = img; };
-  img.src = "/static/hero.png";
-})();
+const LPC = {};
+["walk", "slash", "run"].forEach(function(k){
+  const im = new Image();
+  im.src = "/static/lpc_" + k + ".png";
+  LPC[k] = im;
+});
+const LPC_FRAMES = {walk: 9, slash: 6, run: 8};
+function faceRow(face){                    // LPC: 0 вверх, 1 влево, 2 вниз, 3 вправо
+  return face === 0 ? 2 : face === 1 ? 1 : face === 2 ? 3 : 0;
+}
 let animT = 0;
 function drawHero(x, y, attacking){
-  if (!HERO){ person(x, y, "#4a9eff"); return; }
-  const fw = 32, fh = 32;                 // измерено: кадр 32x32, 4 колонки, 9 рядов
-  const dw = 78, dh = 78;                 // сам персонаж внутри ~12x14, потому крупно
-  const face = P.facing || 0;             // 0 вниз, 1 влево, 2 вправо, 3 вверх
-  let row = 1 + face, col = Math.floor(animT * 7) % 4;
-  if (attacking){ row = 5 + face; col = Math.floor(animT * 11) % 4; }
-  if (row > 8) row = 8;
+  let key = "walk";
+  if (attacking) key = "slash";
+  else if (P.dashT > 0) key = "run";
+  const img = LPC[key];
+  if (!img || !img.complete || !img.naturalWidth){ person(x, y, "#4a9eff"); return; }
+  const fw = 64, fh = 64;
+  const frames = LPC_FRAMES[key];
+  const row = faceRow(P.facing || 0);
+  const col = Math.floor(animT * (key === "slash" ? 14 : 9)) % frames;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 16, y + 2, 32, 7);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 15, y - 2, 30, 7);
   ctx.globalAlpha = 1;
-  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - dw / 2, y - 56, dw, dh);
+  ctx.drawImage(img, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
   ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
-  const px = 4;                 // размер «пикселя»
   const bob = walk ? Math.sin(Date.now() / 140) * 1.5 : 0;
-  // тень
   ctx.fillStyle = "#00000066";
   ctx.fillRect(x - 12, y + 16, 24, 5);
-  // ноги
   ctx.fillStyle = "#241a2e";
   ctx.fillRect(x - 7, y + 8, 6, 10);
   ctx.fillRect(x + 1, y + 8, 6, 10);
-  // тело
   ctx.fillStyle = color;
   ctx.fillRect(x - 9, y - 6 + bob, 18, 16);
   ctx.fillStyle = "#00000033";
   ctx.fillRect(x - 9, y + 4 + bob, 18, 6);
-  // голова
   ctx.fillStyle = "#e8c99a";
   ctx.fillRect(x - 8, y - 20 + bob, 16, 14);
-  // глаза
   ctx.fillStyle = "#120e18";
   ctx.fillRect(x - 5, y - 15 + bob, 3, 4);
   ctx.fillRect(x + 2, y - 15 + bob, 3, 4);
-  // капюшон/шлем по цвету класса
   ctx.fillStyle = color;
   ctx.fillRect(x - 9, y - 24 + bob, 18, 6);
   if (label){
@@ -6144,7 +6145,6 @@ function person(x, y, color, label, alpha, walk){
     ctx.textAlign = "center"; ctx.fillText(label, x, y + 32);
   }
   ctx.globalAlpha = 1;
-  void px;
 }
 function loop(now){
   requestAnimationFrame(loop);
@@ -6162,6 +6162,12 @@ function loop(now){
   const speed = 210;
   P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
   P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
+  P.dashCd = Math.max(0, P.dashCd - dt);
+  if (P.dashT > 0){
+    P.dashT -= dt;
+    P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + (P.dashVX || 0) * dt));
+    P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + (P.dashVY || 0) * dt));
+  }
   if (len > 0.05){
     P.dir = Math.atan2(vy, vx);
     P.facing = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : (vy < 0 ? 3 : 0);
@@ -6210,7 +6216,7 @@ function loop(now){
   document.getElementById("coins").textContent = P.coins;
   ["attack", "shield", "ability"].forEach(k => {
     const el = document.getElementById(k);
-    const cd = k === "attack" ? P.atkCd : k === "shield" ? P.shCd : P.abCd;
+    const cd = k === "attack" ? P.atkCd : k === "shield" ? P.dashCd : P.abCd;
     el.classList.toggle("cool", cd > 0.05);
     const s = document.getElementById("cd" + k[0].toUpperCase() + k.slice(1));
     if (s) s.textContent = cd > 0.05 ? Math.ceil(cd) : "";
