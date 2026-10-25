@@ -865,17 +865,11 @@ header{background:#131722!important;border-bottom:1px solid #1e222d!important}
 </style>
 </head>
 <body>
-<div class="top">
-  <div class="grp">
-    <button data-tab="clicker" title="В кликер">◀</button>
-    <button data-tab="bag" title="Сумка">🎒</button>
-    <button data-tab="quests" title="Задания">📜</button>
-  </div>
-  <div class="grp">
-    <button data-tab="board" title="Лидерборд">👤</button>
-    <button data-tab="settings" title="Настройки">⚙</button>
-  </div>
-</div>
+<header style="display:flex;justify-content:space-between;
+align-items:center;padding:10px 14px">
+<b style="font-size:14px">БИРЖА</b>
+<a href="/hub" style="color:#8b93a7;text-decoration:none;
+font-size:12px;font-weight:800">← ХАБ</a></header>
   <div class="sp"></div>
 </div>
 
@@ -5809,10 +5803,15 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 <canvas id="cv"></canvas>
 
 <div class="top">
-  <button data-tab="clicker">КЛИКЕР</button>
-  <button data-tab="dungeon" class="on">ПОДЗЕМЕЛЬЕ</button>
-  <button data-tab="profile">ПРОФИЛЬ</button>
-  <button data-tab="settings">НАСТРОЙКИ</button>
+  <div class="grp">
+    <button data-tab="clicker" title="В кликер">◀</button>
+    <button data-tab="bag" title="Сумка">🎒</button>
+    <button data-tab="quests" title="Задания">📜</button>
+  </div>
+  <div class="grp">
+    <button data-tab="board" title="Лидерборд">👤</button>
+    <button data-tab="settings" title="Настройки">⚙</button>
+  </div>
 </div>
 <div class="coins">🪙 <span id="coins">0</span></div>
 <button id="bagbtn" style="position:fixed;top:92px;left:12px;z-index:25;
@@ -6328,13 +6327,7 @@ function render(){
     for (let x = 0; x < WORLD.w; x += 64){
       ctx.fillStyle = ((x / 64 + y / 64) % 2) ? "#182411" : "#151f0e";
       ctx.fillRect(x, y, 64, 64);
-      if (KENNEY.complete && KENNEY.naturalWidth){
-        ctx.save();
-        ctx.imageSmoothingEnabled = false;
-        ctx.globalAlpha = 0.9;
-        ctx.drawImage(KENNEY, 6 * 16, 5 * 16, 16, 16, x, y, 64, 64);
-        ctx.restore();
-      }
+
     }
   }
   // тропа: пунктир из точек
