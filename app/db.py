@@ -207,6 +207,12 @@ class Database:
                 username,
                 first_name,
             )
+        # Дневные бонусы VIP начисляются сами при первом действии дня,
+        # а не только когда игрок откроет /vip. Не VIP — сразу выход.
+        try:
+            await self.vip_daily(user_id)
+        except Exception:  # noqa: BLE001
+            pass
 
     async def claim_daily(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         """Атомарно тратит одну попытку. Возвращает остаток или None, если нельзя.
