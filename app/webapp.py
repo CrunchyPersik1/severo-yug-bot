@@ -5955,7 +5955,9 @@ addEventListener("pointercancel", joyEnd);
 function attack(){
   if (P.atkCd > 0 || inBattle) return;
   const w = P.weapon;
-  const range = w.range, dmg = w.dmg;
+  if (!w) return;
+  const range = Number(w.range) || 80;
+  const dmg = Number(w.dmg) || 12;
   P.atkCd = w.kind === "bow" ? 0.7 * w.spd : 0.45 * w.spd;
   let hitAny = false;
   mobs.forEach(m => {
@@ -5973,8 +5975,8 @@ function killMob(m){
   if (i >= 0) mobs.splice(i, 1);
   P.coins += 3 + Math.floor(Math.random() * 5);
   stats.kills += 1; stats.exp += 12;
-  if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.dmg += 2; P.max += 8; P.hp = P.max;
-    toast("Уровень " + stats.lvl + "! Урон и HP выросли"); }
+  if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.max += 8; P.hp = P.max;
+    toast("Уровень " + stats.lvl + "! HP вырос"); }
   if (Math.random() < 0.22){
     const loot = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
     const isNew = P.bag.indexOf(loot.id) < 0;
@@ -5994,23 +5996,25 @@ function shieldUp(){
 }
 function ability(){
   if (P.abCd > 0) return;
+  const dmgA = Number(P.weapon && P.weapon.dmg) || 12;
   P.abCd = 8;
-  if (P.cls === "mage"){
+  const kind = P.weapon ? P.weapon.kind : "sword";
+  if (kind === "staff"){
     mobs.slice().forEach(m => {
-      if (Math.hypot(m.x - P.x, m.y - P.y) < 210){ m.hp -= P.dmg * 1.6; m.hit = .3;
-        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 1.6), c: "#9fd6ff"});
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 210){ m.hp -= dmgA * 1.6; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(dmgA * 1.6), c: "#9fd6ff"});
         if (m.hp <= 0) killMob(m); }
     });
-  } else if (P.cls === "bow"){
+  } else if (kind === "bow"){
     mobs.slice().forEach(m => {
-      if (Math.hypot(m.x - P.x, m.y - P.y) < 260){ m.hp -= P.dmg * 0.8; m.hit = .3;
-        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 0.8), c: "#8bd65a"});
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 260){ m.hp -= dmgA * 0.8; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(dmgA * 0.8), c: "#8bd65a"});
         if (m.hp <= 0) killMob(m); }
     });
   } else {
     mobs.slice().forEach(m => {
-      if (Math.hypot(m.x - P.x, m.y - P.y) < 110){ m.hp -= P.dmg * 2.2; m.hit = .3;
-        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 2.2), c: "#e24646"});
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 110){ m.hp -= dmgA * 2.2; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(dmgA * 2.2), c: "#e24646"});
         if (m.hp <= 0) killMob(m); }
     });
   }
@@ -6037,7 +6041,6 @@ function endBattle(win){
   if (win){
     P.coins += 120;
     toast("Босс повержен! +120 монет и оружие");
-    P.dmg += 3;
   } else {
     toast("Ты проиграл. Возвращайся сильнее");
     P.hp = P.max;
@@ -6052,14 +6055,14 @@ function syncBattle(){
 }
 document.getElementById("battack").onclick = () => {
   if (!B || B.pcd > 0) return;
-  B.hp -= P.dmg * 1.4; B.pcd = 0.55;
+  B.hp -= (Number(P.weapon && P.weapon.dmg) || 12) * 1.4; B.pcd = 0.55;
   syncBattle();
   if (B.hp <= 0) endBattle(true);
 };
 document.getElementById("bshield").onclick = () => { if (B) P.shield = 1.6; };
 document.getElementById("bability").onclick = () => {
   if (!B || P.abCd > 0) return;
-  P.abCd = 7; B.hp -= P.dmg * 2.6; syncBattle();
+  P.abCd = 7; B.hp -= (Number(P.weapon && P.weapon.dmg) || 12) * 2.6; syncBattle();
   if (B.hp <= 0) endBattle(true);
 };
 document.getElementById("bflee").onclick = () => endBattle(false);
@@ -6114,7 +6117,7 @@ function loop(now){
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
   loop.last = now;
-  if (!P.cls || inBattle){ render(dt); return; }
+  if (!P.weapon || inBattle){ render(dt); return; }
 
   let vx = joyV.x, vy = joyV.y;
   if (keys["w"] || keys["ц"] || keys["arrowup"]) vy = -1;
@@ -6218,7 +6221,7 @@ function render(){
     ctx.fillStyle = "#000a"; ctx.fillRect(m.x - 18, m.y - 40, 36, 5);
     ctx.fillStyle = "#e24646"; ctx.fillRect(m.x - 18, m.y - 40, 36 * Math.max(0, m.hp / m.max), 5);
   });
-  person(P.x, P.y, P.shield > 0 ? "#9fd6ff" : (P.cls === "bow" ? "#8bd65a" : P.cls === "mage" ? "#b98aff" : "#4a9eff"), null);
+  person(P.x, P.y, P.shield > 0 ? "#9fd6ff" : ((P.weapon && P.weapon.kind) === "bow" ? "#8bd65a" : (P.weapon && P.weapon.kind) === "staff" ? "#b98aff" : "#4a9eff"), null);
   hits.forEach(h => {
     ctx.fillStyle = h.c; ctx.font = "bold 15px ui-monospace,monospace"; ctx.textAlign = "center";
     ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
