@@ -6099,17 +6099,18 @@ let HERO = null;
 let animT = 0;
 function drawHero(x, y, attacking){
   if (!HERO){ person(x, y, "#4a9eff"); return; }
-  const fw = 32, fh = 32;                            // кадр 32x32, не 32x24
-  const dw = 56, dh = 56;
-  const face = P.facing || 0;                         // 0 вниз, 1 влево, 2 вправо, 3 вверх
+  const fw = 32, fh = 32;                 // измерено: кадр 32x32, 4 колонки, 9 рядов
+  const dw = 78, dh = 78;                 // сам персонаж внутри ~12x14, потому крупно
+  const face = P.facing || 0;             // 0 вниз, 1 влево, 2 вправо, 3 вверх
   let row = 1 + face, col = Math.floor(animT * 7) % 4;
   if (attacking){ row = 5 + face; col = Math.floor(animT * 11) % 4; }
+  if (row > 8) row = 8;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 14, 28, 6);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 16, y + 2, 32, 7);
   ctx.globalAlpha = 1;
-  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - dw / 2, y + 20 - dh, dw, dh);
+  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - dw / 2, y - 56, dw, dh);
   ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
