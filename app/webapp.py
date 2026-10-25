@@ -5895,13 +5895,18 @@ const DECOR = (function(){
   return list;
 })();
 const VILLAGE = [
-  {kind: "house", x: 180, y: 300, size: 132},
-  {kind: "house", x: 720, y: 420, size: 132},
-  {kind: "house", x: 200, y: 900, size: 132},
-  {kind: "house", x: 700, y: 1050, size: 132},
-  {kind: "well",  x: 450, y: 620, size: 64},
-  {kind: "crate", x: 330, y: 470, size: 40},
-  {kind: "crate", x: 560, y: 980, size: 40}
+  {kind: "cottage", x: 230, y: 380, w: 150, h: 150},
+  {kind: "cottage", x: 680, y: 330, w: 150, h: 150},
+  {kind: "cottage", x: 210, y: 900, w: 150, h: 150},
+  {kind: "cottage", x: 690, y: 1180, w: 150, h: 150},
+  {kind: "lamp",    x: 330, y: 560, w: 44, h: 88},
+  {kind: "lamp",    x: 570, y: 760, w: 44, h: 88},
+  {kind: "lamp",    x: 330, y: 1080, w: 44, h: 88},
+  {kind: "lamp",    x: 570, y: 1300, w: 44, h: 88},
+  {kind: "bench",   x: 380, y: 700, w: 76, h: 38},
+  {kind: "bench",   x: 520, y: 1000, w: 76, h: 38},
+  {kind: "bed",     x: 300, y: 460, w: 76, h: 38},
+  {kind: "bed",     x: 620, y: 880, w: 76, h: 38}
 ];
 const PATH = (function(){
   const pts = [];
@@ -6170,6 +6175,21 @@ const KENNEY = new Image();
 KENNEY.src = "/static/kenney.png";
 const TOWN = new Image();
 TOWN.src = "/static/town.png";
+const FARM = {};
+["cottage-blue", "lamppost", "bench", "flower-bed", "baker"].forEach(function(k){
+  const im = new Image();
+  im.src = "/static/farm/" + k + ".png";
+  FARM[k] = im;
+});
+function drawFarm(key, x, y, w, h){
+  const im = FARM[key];
+  if (!im || !im.complete || !im.naturalWidth) return false;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(im, x - w / 2, y - h, w, h);
+  ctx.restore();
+  return true;
+}
 // блок тайлов из атласа деревни: (колонка, ряд, сколько тайлов)
 function drawBlock(col, row, tiles, x, y, size){
   if (!TOWN.complete || !TOWN.naturalWidth) return false;
@@ -6379,9 +6399,10 @@ function render(){
   });
   // здания и предметы деревни
   VILLAGE.forEach(function(v){
-    if (v.kind === "house") drawBlock(4, 4, 3, v.x, v.y, v.size);
-    else if (v.kind === "well") drawBlock(7, 7, 2, v.x, v.y, v.size);
-    else drawBlock(8, 7, 1, v.x, v.y, v.size);
+    if (v.kind === "cottage") drawFarm("cottage-blue", v.x, v.y, v.w, v.h);
+    else if (v.kind === "lamp") drawFarm("lamppost", v.x, v.y, v.w, v.h);
+    else if (v.kind === "bench") drawFarm("bench", v.x, v.y, v.w, v.h);
+    else if (v.kind === "bed") drawFarm("flower-bed", v.x, v.y, v.w, v.h);
   });
   // кусты/камни/трава под персонажем
   DECOR.forEach(function(d){
