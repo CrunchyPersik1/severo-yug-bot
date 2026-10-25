@@ -647,3 +647,13 @@ alter table players add column if not exists banned_at timestamptz;
 -- VIP-подписка: срок и отметка последней выдачи дневных бонусов.
 alter table players add column if not exists vip_until timestamptz;
 alter table players add column if not exists vip_day date;
+
+-- PvP: стрик побед и учёт пар «игрок–игрок» для античита.
+alter table players add column if not exists pvp_streak integer not null default 0;
+
+create table if not exists pvp_pairs (
+    a_id   bigint not null,
+    b_id   bigint not null,
+    fights integer not null default 0,
+    primary key (a_id, b_id)
+);

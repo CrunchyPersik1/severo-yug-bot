@@ -985,9 +985,63 @@ class Database:
                     winner_id,
                 )
                 await con.execute(
-                    "update players set losses = losses + 1 where user_id = $1",
+                    "update players set losses = losses + 1, pvp_streak = 0 "
+                    "where user_id = $1",
                     loser_id,
                 )
+
+                # Стрик побед и награды за него: 3 подряд — 5 кейсов, 10 — 15.
+                streak = int(
+                    await con.fetchval(
+                        "update players set pvp_streak = pvp_streak + 1 "
+                        "where user_id = $1 returning pvp_streak",
+                        winner_id,
+                    )
+                    or 0
+                )
+                if streak == 3:
+                    await con.execute(
+                        "insert into cases (user_id, source) "
+                        "select $1, 'pvp_streak' from generate_series(1, 5)",
+                        winner_id,
+                    )
+                elif streak == 10:
+                    await con.execute(
+                        "insert into cases (user_id, source) "
+                        "select $1, 'pvp_streak' from generate_series(1, 15)",
+                        winner_id,
+                    )
+
+                # Античит: одна и та же пара не может драться больше 10 раз.
+                a, b = (winner_id, loser_id) if winner_id < loser_id else (loser_id, winner_id)
+                fights = int(
+                    await con.fetchval(
+                        "insert into pvp_pairs (a_id, b_id, fights) values ($1, $2, 1) "
+                        "on conflict (a_id, b_id) do update "
+                        "set fights = pvp_pairs.fights + 1 "
+                        "returning fights",
+                        a,
+                        b,
+                    )
+                    or 0
+                )
+                if fights > 10:
+                    # Обоим: стрик аннулируется, минус 250 000 очков (можно
+                    # в минус) и сгорают ВСЕ кейсы, а не только заработанные.
+                    for cheater in (winner_id, loser_id):
+                        await con.execute(
+                            "update players set pvp_streak = 0, "
+                            "bonus_points = bonus_points - 250000 "
+                            "where user_id = $1",
+                            cheater,
+                        )
+                        await con.execute(
+                            "delete from cases where user_id = $1 and opened = false",
+                            cheater,
+                        )
+                    await con.execute(
+                        "delete from pvp_pairs where a_id = $1 and b_id = $2", a, b
+                    )
                 if winner_card_id:
                     await con.execute(
                         "update collection set kills = kills + 1 where user_id = $1 and card_id = $2",
