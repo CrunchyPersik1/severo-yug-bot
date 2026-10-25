@@ -5891,6 +5891,15 @@ const DECOR = (function(){
   list.sort(function(a, b){ return a.y - b.y; });
   return list;
 })();
+const VILLAGE = [
+  {kind: "house", x: 180, y: 300, size: 132},
+  {kind: "house", x: 720, y: 420, size: 132},
+  {kind: "house", x: 200, y: 900, size: 132},
+  {kind: "house", x: 700, y: 1050, size: 132},
+  {kind: "well",  x: 450, y: 620, size: 64},
+  {kind: "crate", x: 330, y: 470, size: 40},
+  {kind: "crate", x: 560, y: 980, size: 40}
+];
 const PATH = (function(){
   const pts = [];
   for (let i = 0; i <= 40; i++){
@@ -6156,6 +6165,18 @@ const TORSO = new Image();
 TORSO.src = "/static/lpc_torso.png";
 const KENNEY = new Image();
 KENNEY.src = "/static/kenney.png";
+const TOWN = new Image();
+TOWN.src = "/static/town.png";
+// блок тайлов из атласа деревни: (колонка, ряд, сколько тайлов)
+function drawBlock(col, row, tiles, x, y, size){
+  if (!TOWN.complete || !TOWN.naturalWidth) return false;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(TOWN, col * 16, row * 16, tiles * 16, tiles * 16,
+                x - size / 2, y - size + 8, size, size);
+  ctx.restore();
+  return true;
+}
 function drawTile(t, x, y, size, bob){
   if (!t || !KENNEY.complete || !KENNEY.naturalWidth) return false;
   ctx.save();
@@ -6325,17 +6346,31 @@ function render(){
   ctx.fillStyle = "#16210f"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
   for (let y = 0; y < WORLD.h; y += 64){
     for (let x = 0; x < WORLD.w; x += 64){
-      ctx.fillStyle = ((x / 64 + y / 64) % 2) ? "#182411" : "#151f0e";
-      ctx.fillRect(x, y, 64, 64);
+      ctx.fillStyle = "#2f4a1e"; ctx.fillRect(x, y, 64, 64);
+      if (TOWN.complete && TOWN.naturalWidth){
+        ctx.save(); ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(TOWN, 0, 0, 16, 16, x, y, 64, 64);
+        ctx.restore();
+      }
 
     }
   }
   // тропа: пунктир из точек
-  PATH.forEach(function(pt, i){
+  PATH.forEach(function(pt){
     ctx.beginPath();
-    ctx.arc(pt.x, pt.y, i % 2 ? 4 : 7, 0, 7);
-    ctx.fillStyle = i % 2 ? "#4a3a24" : "#5c482c";
+    ctx.arc(pt.x, pt.y, 22, 0, 7);
+    ctx.fillStyle = "#c9a06a";
     ctx.fill();
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 15, 0, 7);
+    ctx.fillStyle = "#d9b47e";
+    ctx.fill();
+  });
+  // здания и предметы деревни
+  VILLAGE.forEach(function(v){
+    if (v.kind === "house") drawBlock(4, 4, 3, v.x, v.y, v.size);
+    else if (v.kind === "well") drawBlock(7, 7, 2, v.x, v.y, v.size);
+    else drawBlock(8, 7, 1, v.x, v.y, v.size);
   });
   // кусты/камни/трава под персонажем
   DECOR.forEach(function(d){
