@@ -445,6 +445,63 @@ class Database:
             rows = await con.fetch(query, user_id)
         return [dict(row) for row in rows]
 
+
+
+    # ------------------------------------------------------------------ #
+    # Кликер: здания
+    # ------------------------------------------------------------------ #
+
+    async def yugi_buildings(self, user_id: int) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select building_id, count from yugi_buildings where user_id = $1",
+                user_id,
+            )
+        return {str(r["building_id"]): int(r["count"]) for r in rows}
+
+    async def yugi_buy_building(self, user_id: int, building_id: str, count: int = 1) -> int | None:
+        """Покупка здания за Юги. false-результат — не хватило баланса.
+
+        Здания хранятся в yugi.buildings (jsonb): {"cur": 3, "farm": 1}.
+        """
+        import json
+
+        from . import yugi as ymod
+
+        spec = ymod.BUILDING_BY_ID.get(building_id)
+        if spec is None:
+            return None
+        count = max(1, min(100, int(count)))
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select balance, buildings from yugi where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return None
+                raw = row["buildings"]
+                if isinstance(raw, str):
+                    try:
+                        owned_map = json.loads(raw or "{}")
+                    except Exception:  # noqa: BLE001
+                        owned_map = {}
+                else:
+                    owned_map = dict(raw or {})
+                owned = int(owned_map.get(building_id, 0) or 0)
+                cost = ymod.building_bulk_cost(building_id, owned, count)
+                if float(row["balance"]) < float(cost):
+                    return None
+                owned_map[building_id] = owned + count
+                await con.execute(
+                    "update yugi set balance = balance - $2, buildings = $3::jsonb "
+                    "where user_id = $1",
+                    user_id,
+                    float(cost),
+                    json.dumps(owned_map),
+                )
+        return int(cost)
+
     async def _case_limit(self, con: Any, user_id: int, now: Any) -> dict[str, Any]:
         from . import cases as cases_mod
 
