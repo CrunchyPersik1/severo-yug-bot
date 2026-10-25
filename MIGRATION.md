@@ -15,8 +15,8 @@ Render заморозил аккаунт: закончились 750 инста�
 Обязательные:
 
 ```
-BOT_TOKEN=8835185511:AAG_TTsJmLf1fN4v6DCcBP3SKABNR7l86-Y
-DATABASE_URL=postgresql://postgres.mcobvefvmlwdxludagkf:mas7aEdziuNoWiGJ@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
+BOT_TOKEN=<токен от @BotFather>
+DATABASE_URL=<строка подключения Supabase>
 ADMIN_IDS=1806176773
 ```
 
@@ -46,8 +46,8 @@ cd severo-yug-bot
 fly launch --no-deploy --copy-config
 
 # 4. Секреты (по одному)
-fly secrets set BOT_TOKEN="8835185511:AAG_TTsJmLf1fN4v6DCcBP3SKABNR7l86-Y"
-fly secrets set DATABASE_URL="postgresql://postgres.mcobvefvmlwdxludagkf:mas7aEdziuNoWiGJ@aws-0-eu-west-1.pooler.supabase.com:5432/postgres"
+fly secrets set BOT_TOKEN="<токен>"
+fly secrets set DATABASE_URL="<строка подключения>"
 fly secrets set ADMIN_IDS="1806176773"
 fly secrets set WEBHOOK_SECRET="$(openssl rand -hex 16)"
 fly secrets set WEBHOOK_TOKEN="$(openssl rand -hex 16)"
