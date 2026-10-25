@@ -1,11 +1,12 @@
-"""Прогресс героя подземелья: уровень, монеты, сумка, оружие.
+"""Прогресс героя подземелья: уровень, монеты, сумка, оружие, броня.
 
 Страница раньше жила только в памяти вкладки: перезагрузил — и герой снова
 первого уровня. Теперь прогресс лежит в dungeon_hero, одна строка на игрока.
 
 Данные приходят с клиента (прототип), поэтому всё режем: уровни, монеты,
 идентификаторы оружия и размер сумки проверяются здесь, а не «на честном
-слове».
+слове». Правила брони живут в dungeon.py — их читает и бой, чтобы урон
+босса считался в одном месте.
 """
 
 from __future__ import annotations
@@ -16,6 +17,12 @@ import re
 import asyncpg
 
 from .db import Database
+from .dungeon import (
+    ARMOR_MAX,
+    armor_discount,
+    armor_offer,
+    armor_price,
+)
 from .dungeon_repo import DungeonError
 
 MAX_LEVEL = 999
@@ -28,14 +35,20 @@ WEAPON_ID = re.compile(r"^(sword|bow|staff)_([0-9])_([0-4])$")
 
 UPGRADE_BASE = 200     # цена первого улучшения, дальше растёт квадратично
 
-EMPTY = {
+EMPTY: dict = {
     "level": 1,
     "exp": 0,
     "coins": 0,
     "kills": 0,
     "weapon": None,
     "bag": [],
+    "armor": 0,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Санитайзеры
+# --------------------------------------------------------------------------- #
 
 
 def clamp_int(value: object, low: int, high: int, default: int | None = None) -> int:
@@ -69,6 +82,11 @@ def clean_bag(value: object) -> list[str]:
         if len(result) >= MAX_BAG:
             break
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Улучшение оружия
+# --------------------------------------------------------------------------- #
 
 
 def parse_weapon(weapon_id: object) -> tuple[str, int, int] | None:
@@ -111,6 +129,7 @@ def upgrade_offer(weapon_id: object) -> dict | None:
 
 
 def sanitize(payload: dict) -> dict:
+    """Приводит присланное клиентом к безопасному виду."""
     bag = clean_bag(payload.get("bag"))
     weapon = clean_weapon(payload.get("weapon"))
     if weapon is None and bag:
@@ -128,10 +147,14 @@ def sanitize(payload: dict) -> dict:
 
 
 def hero_payload(row: asyncpg.Record | None) -> dict:
+    """Готовый к отправке прогресс: всё, что нужно странице."""
     if row is None:
         payload = dict(EMPTY)
         payload["upgrade"] = None
+        payload["armor_discount"] = 0.0
+        payload["armor_offer"] = armor_offer(0)
         return payload
+    armor = int(row["armor"]) if "armor" in row else 0
     payload = {
         "level": int(row["level"]),
         "exp": int(row["exp"]),
@@ -139,9 +162,17 @@ def hero_payload(row: asyncpg.Record | None) -> dict:
         "kills": int(row["kills"]),
         "weapon": row["weapon"],
         "bag": clean_bag(row["bag"]),
+        "armor": armor,
     }
     payload["upgrade"] = upgrade_offer(payload["weapon"])
+    payload["armor_discount"] = armor_discount(armor)
+    payload["armor_offer"] = armor_offer(armor)
     return payload
+
+
+# --------------------------------------------------------------------------- #
+# База
+# --------------------------------------------------------------------------- #
 
 
 class DungeonHeroRepo:
@@ -188,7 +219,6 @@ class DungeonHeroRepo:
             )
         return hero_payload(row)
 
-
     async def upgrade(self, user_id: int, weapon_id: object) -> dict:
         """Поднять тир оружия за монеты. Списываем из сохранённого прогресса."""
         source = str(weapon_id or "").strip()
@@ -229,3 +259,75 @@ class DungeonHeroRepo:
                     weapon,
                 )
         return hero_payload(row)
+
+    async def buy_armor(self, user_id: int) -> dict:
+        """Поднять броню за Юги кликера. Цена зависит от перерождений."""
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select * from dungeon_hero where user_id = $1::bigint for update",
+                    int(user_id),
+                )
+                if row is None:
+                    raise DungeonError("Сначала зайди в подземелье")
+                resets = int(
+                    await con.fetchval(
+                        "select coalesce(yugi_resets, 0) from players "
+                        "where user_id = $1::bigint",
+                        int(user_id),
+                    )
+                    or 0
+                )
+                price = armor_price(row["armor"], resets)
+                if price is None:
+                    raise DungeonError("Броня уже максимальная")
+                balance = float(
+                    await con.fetchval(
+                        "select coalesce(balance, 0) from yugi where user_id = $1::bigint",
+                        int(user_id),
+                    )
+                    or 0
+                )
+                if balance < price:
+                    raise DungeonError(
+                        "Не хватает Югов: нужно %d, есть %d" % (price, int(balance))
+                    )
+                await con.execute(
+                    "update yugi set balance = balance - $2::numeric, updated_at = now() "
+                    "where user_id = $1::bigint",
+                    int(user_id),
+                    price,
+                )
+                row = await con.fetchrow(
+                    "update dungeon_hero set armor = armor + 1, updated_at = now() "
+                    "where user_id = $1::bigint returning *",
+                    int(user_id),
+                )
+        return hero_payload(row)
+
+    async def top(self, limit: int = 10) -> list[dict]:
+        """Таблица лидеров подземелья: уровень, убийства, монеты."""
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                select h.user_id, h.level, h.kills, h.coins, h.armor,
+                       coalesce(nullif(p.first_name, ''), p.username, 'Игрок') as name
+                  from dungeon_hero h
+                  left join players p on p.user_id = h.user_id
+                 where h.level > 1 or h.kills > 0 or h.coins > 0
+                 order by h.level desc, h.kills desc, h.coins desc
+                 limit $1::integer
+                """,
+                max(1, min(50, int(limit))),
+            )
+        return [
+            {
+                "id": int(row["user_id"]),
+                "name": str(row["name"])[:32],
+                "level": int(row["level"]),
+                "kills": int(row["kills"]),
+                "coins": int(row["coins"]),
+                "armor": int(row["armor"]) if "armor" in row else 0,
+            }
+            for row in rows
+        ]

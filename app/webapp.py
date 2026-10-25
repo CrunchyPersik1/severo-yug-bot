@@ -3818,6 +3818,52 @@ async function flush(){
   finally { flushing = false; }
 }
 document.getElementById("tap").onclick = doTap;
+/* ---------- золотая печенька ---------- */
+(function(){
+  if (!document.body || !document.body.appendChild) return;
+  const el = document.createElement("button");
+  el.id = "golden";
+  el.textContent = "🍪";
+  el.title = "Золотая печенька";
+  el.hidden = true;
+  el.style.cssText =
+    "position:fixed;right:18px;bottom:132px;width:76px;height:76px;border:0;" +
+    "border-radius:50%;font-size:38px;line-height:1;z-index:40;padding:0;" +
+    "background:radial-gradient(circle at 35% 30%,#ffe9a8,#f6b73c);" +
+    "box-shadow:0 0 26px #ffd166bb,0 6px 16px #00000055";
+  document.body.appendChild(el);
+
+  let until = 0;
+  async function refresh(){
+    try{
+      const r = await fetch("/api/yugi", {headers});
+      const d = await r.json();
+      if (d.error || !d.golden) return;
+      const at = d.golden.until ? Date.parse(d.golden.until) : 0;
+      until = d.golden.active ? at : 0;
+      el.hidden = !(until > Date.now());
+    }catch(e){}
+  }
+
+  el.onclick = async function(){
+    el.hidden = true;
+    try{
+      const r = await fetch("/api/yugi/golden", {method: "POST", headers});
+      const d = await r.json();
+      if (d.error){ toast(d.error); return; }
+      if (d.kind === "frenzy") toast("🍪 Безумие: доход x2 на 77 секунд");
+      else if (d.kind === "click") toast("🍪 Печенька: клик сильнее на 13 секунд");
+      else toast("🍪 Печенька: +" + fmt(d.bonus || 0) + " Югов");
+      const rr = await fetch("/api/yugi", {headers});
+      const dd = await rr.json();
+      if (!dd.error){ S.data = dd; render(); }
+    }catch(e){ toast("Не смог поймать"); }
+  };
+
+  setInterval(function(){ if (!S.pending || !el.hidden) refresh(); }, 12000);
+  setTimeout(refresh, 2500);
+})();
+
 if(tg){ tg.ready(); tg.expand(); }
 (async () => {
   try{
@@ -5866,6 +5912,26 @@ body.fxon #fx{opacity:1}
   font-size:7px;line-height:1.5;color:#ffb4b4;background:#2a0e12ee;
   border:1px solid #6b1a22;border-radius:8px;padding:5px 9px;
   pointer-events:none;text-align:center;max-width:80vw}
+/* таблица лидеров */
+#top{position:fixed;inset:0;z-index:52;display:none;flex-direction:column;
+  align-items:center;justify-content:flex-start;padding:18px 14px;background:#07060af0;
+  overflow-y:auto}
+#top.on{display:flex}
+.tpwrap{width:100%;max-width:420px;border:3px solid #2a3346;border-radius:12px;
+  background:#0d1016f2;padding:12px;display:flex;flex-direction:column;gap:8px}
+.tphead{display:flex;justify-content:space-between;align-items:center;
+  font-size:8px;color:#c9a227;letter-spacing:1px}
+.tphead button{border:0;background:none;color:#8a7a5a;font-size:14px;
+  font-family:inherit;padding:0 4px}
+.tplist{display:flex;flex-direction:column;gap:6px}
+.tprow{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  border:1px solid #1e2530;border-radius:9px;padding:8px 10px;background:#151a25}
+.tprow.mine{border-color:#3b6fff;box-shadow:0 0 12px #3b6fff33}
+.tprow b{font-size:9px;color:#ffe9b8;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+.tprow span{font-size:7px;color:#8a7a5a;font-family:ui-monospace,monospace;
+  white-space:nowrap}
+.tprow i{font-style:normal;color:#c9a227;font-size:8px;width:18px}
 /* чат подземелья */
 #chat{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;
   align-items:center;justify-content:flex-end;padding:14px;background:#07060ad8}
@@ -5970,6 +6036,9 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <div class="wstat"><span>Дальность</span><b id="wrange">0</b></div>
     <div class="wstat"><span>Скорость</span><b id="wspd">0</b></div>
     <div style="display:flex;gap:6px;margin-top:6px">
+      <button id="warmor" style="width:100%;border:2px solid #6b4a22;background:#2a1c10;
+        color:#9fd6ff;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px;
+        margin-bottom:6px">БРОНЯ</button>
       <button id="wupg" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
         color:#c9a227;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px">УЛУЧШИТЬ</button>
       <button id="wchat" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
@@ -6043,6 +6112,12 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
       <button id="chit">⚔ УДАР</button>
       <button id="cleave" class="leave">ВЫЙТИ</button>
     </div>
+  </div>
+</div>
+<div id="top">
+  <div class="tpwrap">
+    <div class="tphead"><span>ЛИДЕРЫ ПОДЗЕМЕЛЬЯ</span><button id="tpclose">✕</button></div>
+    <div class="tplist" id="tplist"></div>
   </div>
 </div>
 <div id="chat">
@@ -6785,6 +6860,89 @@ function bossEngage(bs){
 document.getElementById("chit").onclick = coopHit;
 document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
+
+/* ---------- таблица лидеров ---------- */
+async function openTop(){
+  const box = document.getElementById("top");
+  const list = document.getElementById("tplist");
+  if (!box || !list) return;
+  box.classList.add("on");
+  list.textContent = "Загружаю…";
+  const data = await coopApi("/api/dungeon/top");
+  if (!data || !data.ok){
+    list.textContent = (data && data.error) || "Не смог загрузить";
+    return;
+  }
+  const rows = data.players || [];
+  if (!rows.length){ list.textContent = "Пока никто не спускался"; return; }
+  list.textContent = "";
+  rows.forEach(function(row, index){
+    const line = document.createElement("div");
+    line.className = "tprow" + (row.id === data.me ? " mine" : "");
+    const place = document.createElement("i");
+    place.textContent = String(index + 1);
+    const name = document.createElement("b");
+    name.textContent = (row.id === data.me ? "ТЫ · " : "") + row.name;
+    const stat = document.createElement("span");
+    stat.textContent = "ур." + row.level + " · " + row.kills + " убийств · " +
+      (row.armor ? "броня " + row.armor : "без брони");
+    line.appendChild(place);
+    line.appendChild(name);
+    line.appendChild(stat);
+    list.appendChild(line);
+  });
+}
+document.getElementById("tpclose").onclick = function(){
+  document.getElementById("top").classList.remove("on");
+};
+
+/* ---------- броня за Юги ---------- */
+let HERO_ARMOR = null;
+
+async function heroArmor(){
+  if (!TG_INIT){ toast("Броня: открой через бота"); return; }
+  if (!HERO_ARMOR){ toast("Броня уже максимальная"); return; }
+  await heroSave(true);
+  const data = await coopApi("/api/dungeon/armor", {});
+  if (!data || !data.ok){
+    toast((data && data.error) || "Не вышло купить броню");
+    return;
+  }
+  heroApply(data.hero, false);
+  sync();
+  toast("Броня " + (P.armor || 0) + " · урон босса −" +
+        Math.round((data.hero.armor_discount || 0) * 100) + "%");
+}
+
+/* ---------- хитбоксы домов ---------- */
+function solidRects(){
+  const rects = [];
+  const here = zoneIndex(P.y);
+  for (let z = Math.max(0, here - 1); z <= Math.min(ZONES.length - 1, here + 1); z++){
+    const base = (ZONES.length - 1 - z) * ZONE_H;
+    VILLAGE.forEach(function(v){
+      if (v.kind !== "cottage") return;
+      const vx = (z % 2) ? (WORLD.w - v.x) : v.x;
+      // непроходимая часть — нижняя половина избы
+      rects.push({
+        x1: vx - v.w / 2 + 12,
+        x2: vx + v.w / 2 - 12,
+        y1: base + v.y - v.h * 0.45,
+        y2: base + v.y - 6
+      });
+    });
+  }
+  return rects;
+}
+function blockedAt(x, y){
+  const rects = solidRects();
+  for (let i = 0; i < rects.length; i++){
+    const r = rects[i];
+    if (x > r.x1 && x < r.x2 && y > r.y1 && y < r.y2) return true;
+  }
+  return false;
+}
+
 /* ---------- чат подземелья ---------- */
 // Общий чат на всех, кто в подземелье: тот же сокет, отдельный тип кадра.
 const CHAT = {open: false, log: []};
@@ -7031,6 +7189,8 @@ function heroApply(hero, heal){
   const weapon = hero.weapon ? weaponById(hero.weapon) : null;
   if (weapon) P.weapon = weapon;
   HERO_OFFER = hero.upgrade || null;
+  HERO_ARMOR = hero.armor_offer || null;
+  P.armor = hero.armor | 0;
   P.max = 120 + (level - 1) * 8;        // ровно как даёт повышение уровня
   if (heal !== false) P.hp = P.max;
 }
@@ -7587,13 +7747,19 @@ function loop(now){
   const len = Math.hypot(vx, vy);
   if (len > 1){ vx /= len; vy /= len; }
   const speed = 210;
-  P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
-  P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
+  const nextX = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
+  const nextY = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
+  // Дома не пропускают: если стоим в стене (застряли), даём выйти.
+  const stuck = blockedAt(P.x, P.y);
+  if (stuck || !blockedAt(nextX, P.y)) P.x = nextX;
+  if (stuck || !blockedAt(P.x, nextY)) P.y = nextY;
   P.dashCd = Math.max(0, P.dashCd - dt);
   if (P.dashT > 0){
     P.dashT -= dt;
-    P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + (P.dashVX || 0) * dt));
-    P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + (P.dashVY || 0) * dt));
+    const dashX = Math.max(30, Math.min(WORLD.w - 30, P.x + (P.dashVX || 0) * dt));
+    const dashY = Math.max(30, Math.min(WORLD.h - 30, P.y + (P.dashVY || 0) * dt));
+    if (!blockedAt(dashX, P.y)) P.x = dashX;
+    if (!blockedAt(P.x, dashY)) P.y = dashY;
   }
   P.moving = len > 0.05;
   if (P.moving){
@@ -7962,6 +8128,8 @@ const wUpg = document.getElementById("wupg");
 if (wUpg) wUpg.onclick = () => heroUpgrade();
 const wChat = document.getElementById("wchat");
 if (wChat) wChat.onclick = () => chatOpen();
+const wArmor = document.getElementById("warmor");
+if (wArmor) wArmor.onclick = () => heroArmor();
 const bagClose = document.getElementById("bagclose");
 if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
 document.getElementById("startbtn").onclick = () => {
@@ -8008,7 +8176,7 @@ document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
   if (t === "clicker"){ toast("Вернуться в кликер — в большой версии"); return; }
   if (t === "quests"){ toast("Задания — заглушка прототипа"); return; }
-  if (t === "board"){ toast("Лидерборд — заглушка"); return; }
+  if (t === "board"){ openTop(); return; }
   if (t === "settings"){ openGfx(); return; }
 });
 function sync(){ document.getElementById("coins").textContent = P.coins;
@@ -8023,6 +8191,12 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
     if (e4) e4.textContent = P.weapon.range;
     const e5 = document.getElementById("wspd");
     if (e5) e5.textContent = P.weapon.spd || 1;
+  }
+  const armorBtn = document.getElementById("warmor");
+  if (armorBtn){
+    armorBtn.textContent = HERO_ARMOR
+      ? ("БРОНЯ · " + HERO_ARMOR.price + " ЮГОВ · −" + Math.round((HERO_ARMOR.discount || 0) * 100) + "%")
+      : ("БРОНЯ " + (P.armor || 0) + " · МАКС");
   }
   const up = document.getElementById("wupg");
   if (up){
@@ -8277,6 +8451,39 @@ async def api_dungeon_upgrade(request: Request) -> JSONResponse:
     body = await _json_body(request)
     try:
         hero = await repo.upgrade(int(user["id"]), body.get("weapon"))
+    except DungeonError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "hero": hero})
+
+
+@router.get("/api/dungeon/top")
+async def api_dungeon_top(request: Request) -> JSONResponse:
+    """Таблица лидеров подземелья: уровень, убийства, монеты."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Лидеры ещё не включены"}, status_code=400)
+    players = await repo.top(10)
+    return JSONResponse({"ok": True, "players": players, "me": int(user["id"])})
+
+
+@router.post("/api/dungeon/armor")
+async def api_dungeon_armor(request: Request) -> JSONResponse:
+    """Броня за Юги кликера: снимает урон босса."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Броня ещё не включена"}, status_code=400)
+    try:
+        hero = await repo.buy_armor(int(user["id"]))
     except DungeonError as error:
         return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "hero": hero})

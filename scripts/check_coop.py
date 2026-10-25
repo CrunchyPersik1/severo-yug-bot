@@ -106,6 +106,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from app.config import settings
     from app.db import Database
+    from app import dungeon as dungeon_rules
     from app import dungeon_hero as hero_rules
     from app.dungeon_hero import DungeonHeroRepo
     from app.dungeon_hub import DungeonHub
@@ -282,6 +283,14 @@ async def main(argv: list[str] | None = None) -> int:
         await call("POST", "/api/dungeon/boss/leave", second, {})
 
         # Победа: добиваем босса и проверяем награду
+        async with db._p().acquire() as con:
+            yugi_before = float(
+                await con.fetchval(
+                    "select coalesce(balance, 0) from yugi where user_id = $1::bigint",
+                    TEST_USERS[0],
+                )
+                or 0
+            )
         kill_room = await repo.join(TEST_USERS[0], 3, datetime.now(timezone.utc))
         await start_room(db, kill_room["id"])
         await call("GET", "/api/dungeon/boss/state", first)
@@ -294,6 +303,18 @@ async def main(argv: list[str] | None = None) -> int:
         check("босс добит", (last or {}).get("status"), "dead")
         check("награда за победу", ((last or {}).get("reward") or {}).get("coins"), 264)
         check("убийство зачтено", ((last or {}).get("reward") or {}).get("kills"), 1)
+        check("награда в Югах",
+              ((last or {}).get("reward") or {}).get("yugi"), dungeon_rules.boss_yugi(3))
+        async with db._p().acquire() as con:
+            yugi_after = float(
+                await con.fetchval(
+                    "select coalesce(balance, 0) from yugi where user_id = $1::bigint",
+                    TEST_USERS[0],
+                )
+                or 0
+            )
+        check("Юги зачислены в кликер", yugi_after - yugi_before,
+              float(dungeon_rules.boss_yugi(3)))
         await call("POST", "/api/dungeon/boss/leave", first, {})
 
         # Живая карта: каждый видит другого с его координатами и анимацией.
@@ -419,6 +440,47 @@ async def main(argv: list[str] | None = None) -> int:
         status, maxed = await call("POST", "/api/dungeon/upgrade", first,
                                    {"weapon": "bow_9_0"})
         check("улучшение: максимум отказ", status, 400)
+
+        # Броня за Юги и таблица лидеров
+        await call("POST", "/api/dungeon/hero", first, {
+            "level": 5, "coins": 0, "weapon": "bow_3_1", "bag": ["bow_3_1"]})
+        async with db._p().acquire() as con:
+            await con.execute(
+                "insert into yugi (user_id, balance, total) values ($1::bigint, 5000, 5000) "
+                "on conflict (user_id) do update set balance = 5000",
+                TEST_USERS[0],
+            )
+        status, armor1 = await call("POST", "/api/dungeon/armor", first, {})
+        hero1 = armor1.get("hero") or {}
+        check("броня: куплена", hero1.get("armor"), 1)
+        check("броня: скидка урона", hero1.get("armor_discount"), 0.04)
+        async with db._p().acquire() as con:
+            yugi_left = float(
+                await con.fetchval(
+                    "select balance from yugi where user_id = $1::bigint",
+                    TEST_USERS[0],
+                )
+                or 0
+            )
+        check("броня: Юги списаны", yugi_left, 4500.0)
+        check("броня: следующая ступень дороже",
+              (hero1.get("armor_offer") or {}).get("price"),
+              dungeon_rules.armor_price(1, 0))
+        async with db._p().acquire() as con:
+            await con.execute(
+                "update yugi set balance = 0 where user_id = $1::bigint", TEST_USERS[0]
+            )
+        status, armor_broke = await call("POST", "/api/dungeon/armor", first, {})
+        check("броня: без Югов отказ", status, 400)
+
+        status, top = await call("GET", "/api/dungeon/top", first)
+        top_rows = top.get("players") or []
+        check("лидеры: список не пустой", len(top_rows) >= 1, True)
+        check("лидеры: я в таблице",
+              any(row["id"] == TEST_USERS[0] for row in top_rows), True)
+        check("лидеры: поля на месте",
+              sorted(top_rows[0].keys()) if top_rows else [],
+              ["armor", "coins", "id", "kills", "level", "name"])
 
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:

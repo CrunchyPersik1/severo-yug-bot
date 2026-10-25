@@ -257,6 +257,8 @@ class DungeonBossRepo:
                     dealt,
                     now,
                 )
+                if hp <= 0:
+                    await self._reward_yugi(con, boss["id"], boss["zone"])
                 boss = await self._reload(con, boss["id"])
                 payload = await self._payload(con, boss, user_id, now)
                 payload["hit"] = dealt
@@ -413,8 +415,9 @@ class DungeonBossRepo:
             return boss
 
         players = await con.fetch(
-            "select * from dungeon_boss_players where boss_id = $1::bigint "
-            "order by slot",
+            "select p.*, coalesce(h.armor, 0) as armor from dungeon_boss_players p "
+            "left join dungeon_hero h on h.user_id = p.user_id "
+            "where p.boss_id = $1::bigint order by p.slot",
             int(boss_id),
         )
 
@@ -469,7 +472,11 @@ class DungeonBossRepo:
                 ticks = dungeon.ticks_since(last, now, dungeon.BOSS_HIT_EVERY)
                 if ticks <= 0:
                     continue
-                hp = max(0, int(player["hp"]) - damage * ticks)
+                hurt = damage * ticks
+                armor = int(player["armor"]) if "armor" in player else 0
+                if armor:
+                    hurt = max(1, int(round(hurt * (1 - dungeon.armor_discount(armor)))))
+                hp = max(0, int(player["hp"]) - hurt)
                 await con.execute(
                     """
                     update dungeon_boss_players
@@ -554,3 +561,27 @@ class DungeonBossRepo:
             "cooldown": cooldown,
             "reward": reward,
         }
+
+    async def _reward_yugi(
+        self, con: asyncpg.Connection, boss_id: int, zone: int
+    ) -> None:
+        """Победа над боссом капает Юги в кликер — общая экономика."""
+        amount = dungeon.boss_yugi(zone)
+        rows = await con.fetch(
+            "select user_id from dungeon_boss_players "
+            "where boss_id = $1::bigint and left_at is null",
+            int(boss_id),
+        )
+        for row in rows:
+            await con.execute(
+                """
+                insert into yugi (user_id, balance, total)
+                values ($1::bigint, $2::numeric, $2::numeric)
+                on conflict (user_id) do update
+                   set balance = yugi.balance + $2::numeric,
+                       total = yugi.total + $2::numeric,
+                       updated_at = now()
+                """,
+                int(row["user_id"]),
+                amount,
+            )

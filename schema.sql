@@ -747,3 +747,5 @@ create table if not exists quest_claim (
     claimed_at timestamptz not null default now(),
     primary key (user_id, quest_key)
 );
+
+alter table dungeon_hero add column if not exists armor integer not null default 0;

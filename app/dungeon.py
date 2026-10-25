@@ -87,6 +87,54 @@ def boss_damage(zone: int) -> int:
     return int(round(5 + clamp_zone(zone) * 3))
 
 
+# Броня за Юги (валюта кликера). Цена базовая x 1.5^перерождения,
+# снимает 4% урона босса за уровень.
+ARMOR_BASE = 500
+ARMOR_MAX = 10
+ARMOR_STEP = 0.04
+RESET_MULT = 1.5
+
+
+def _clamp_int(value: object, low: int, high: int) -> int:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return low
+    return max(low, min(high, number))
+
+
+def armor_discount(armor: object) -> float:
+    """Доля, на которую броня срезает урон босса (0..0.4)."""
+    return round(_clamp_int(armor, 0, ARMOR_MAX) * ARMOR_STEP, 4)
+
+
+def armor_price(armor: object, resets: object = 0) -> int | None:
+    """Сколько Югов стоит следующая броня. None — уже максимум."""
+    level = _clamp_int(armor, 0, ARMOR_MAX)
+    if level >= ARMOR_MAX:
+        return None
+    return int(round(ARMOR_BASE * (level + 1) * (RESET_MULT ** _clamp_int(resets, 0, 50))))
+
+
+def armor_offer(armor: object, resets: object = 0) -> dict | None:
+    price = armor_price(armor, resets)
+    if price is None:
+        return None
+    level = _clamp_int(armor, 0, ARMOR_MAX)
+    return {
+        "price": price,
+        "level": level,
+        "next": level + 1,
+        "discount": armor_discount(level),
+        "next_discount": armor_discount(level + 1),
+    }
+
+
+def boss_yugi(zone: int) -> int:
+    """Сколько Югов падает за босса: связка кликера и подземелья."""
+    return max(5, int(round(BOSS_COINS * zone_factor(zone) / 12)))
+
+
 def boss_reward(zone: int, players: int = 1) -> dict:
     """Награда за победу: монеты и зачёт убийства.
 
@@ -94,7 +142,7 @@ def boss_reward(zone: int, players: int = 1) -> dict:
     сервера — чтобы за двоих платили честно и одинаково.
     """
     coins = int(round(BOSS_COINS * zone_factor(zone) * (COOP_COIN_BONUS if players > 1 else 1.0)))
-    return {"coins": max(1, coins), "kills": 1}
+    return {"coins": max(1, coins), "kills": 1, "yugi": boss_yugi(zone)}
 
 
 def ticks_since(last: datetime | None, now: datetime, every: float = BOSS_HIT_EVERY) -> int:
