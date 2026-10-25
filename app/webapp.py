@@ -5081,6 +5081,17 @@ body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
 .burst{position:fixed;pointer-events:none;z-index:54;font-size:20px;
   animation:burst .7s ease-out forwards}
 @keyframes burst{to{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0}}
+.treewrap{overflow:auto;max-height:74vh;border-top:1px solid #5a3a1e;
+  background:#241408;border-radius:0 0 10px 10px}
+.treewrap svg{display:block}
+.node{cursor:pointer}
+.node circle{transition:stroke .15s,fill .15s}
+.node text.lbl{font-size:10px;fill:#ffd98a;font-weight:800;
+  font-family:ui-monospace,monospace}
+.node.on circle{fill:#8a5a28;stroke:#ffd98a}
+.node.can circle{fill:#4a2e1c;stroke:#8bd65a}
+.node.lock circle{fill:#2a1a0e;stroke:#5a3a1e}
+.node.lock{opacity:.55}
 .tabs{display:flex;gap:4px;padding:6px}
 .tabs button{flex:1;border:2px solid #6b4a22;background:#4a2e1c;border-radius:8px;
   padding:8px 0;font-size:16px;font-family:inherit;cursor:pointer}
@@ -5184,6 +5195,55 @@ const TREE = [];
   });
 })();
 function treeHas(id){ return S.tree.indexOf(id) >= 0; }
+function treeSVG(){
+  var groups = {}, order = [];
+  TREE.forEach(function(t){
+    if (t.grp === "Общее") return;
+    if (!groups[t.grp]){ groups[t.grp] = []; order.push(t.grp); }
+    groups[t.grp].push(t);
+  });
+  var pos = {}, lines = "", nodes = "";
+  order.forEach(function(g, gi){
+    var col = gi % 4, block = Math.floor(gi / 4);
+    var bx = col * 330 + 110, by = block * 620 + 70;
+    groups[g].forEach(function(t, li){
+      var x = bx, y = by + li * 90;
+      pos[t.id] = {x: x, y: y};
+      if (li > 0){
+        var pv = pos[groups[g][li - 1].id];
+        lines += '<line x1="' + pv.x + '" y1="' + (pv.y + 27) + '" x2="' + x +
+          '" y2="' + (y - 27) + '" stroke="#6b4a22" stroke-width="2" stroke-dasharray="5 4"/>';
+      }
+    });
+  });
+  var globals = TREE.filter(function(t){ return t.grp === "Общее"; });
+  var gy0 = Math.ceil(order.length / 4) * 620 + 30;
+  globals.forEach(function(t, i){
+    var x = (i % 5) * 300 + 110, y = gy0 + Math.floor(i / 5) * 120;
+    pos[t.id] = {x: x, y: y};
+    if (i % 5 > 0){
+      var pv = pos[globals[i - 1].id];
+      lines += '<line x1="' + (pv.x + 27) + '" y1="' + pv.y + '" x2="' + (x - 27) +
+        '" y2="' + y + '" stroke="#6b4a22" stroke-width="2" stroke-dasharray="5 4"/>';
+    }
+  });
+  TREE.forEach(function(t){
+    var pp = pos[t.id];
+    if (!pp) return;
+    var on = treeHas(t.id), can = S.chips >= t.cost;
+    var cls = on ? "on" : (can ? "can" : "lock");
+    nodes += '<g class="node ' + cls + '" data-tree="' + t.id + '" transform="translate(' +
+      pp.x + ',' + pp.y + ')">' +
+      '<circle r="28" stroke-width="3"/>' +
+      '<text y="7" text-anchor="middle" font-size="20">' + t.e + '</text>' +
+      (t.pct ? '<text class="lbl" y="48" text-anchor="middle">+' + t.pct + '%</text>' : '') +
+      '<text class="lbl" y="' + (t.pct ? 62 : 48) + '" text-anchor="middle">' +
+      (on ? "✓" : t.cost) + '</text></g>';
+  });
+  var W = 4 * 330 + 140, H = gy0 + Math.ceil(globals.length / 5) * 120 + 70;
+  return '<div class="treewrap"><svg width="' + W + '" height="' + H + '">' +
+    lines + nodes + '</svg></div>';
+}
 function treeBoost(bid){
   var pcts = [10, 25, 50, 100, 200, 500], m = 1;
   for (var i = 0; i < pcts.length; i++){
@@ -5437,21 +5497,7 @@ function lists(){
         '<div class="ct">' + own(b.id) + '</div></div>';
     }).join("");
   } else if (S.tab === "u"){
-    var groups = {};
-    TREE.forEach(function(t){ (groups[t.grp] = groups[t.grp] || []).push(t); });
-    box.innerHTML = Object.keys(groups).map(function(g){
-      return '<div style="padding:7px 9px 3px;font-size:10px;letter-spacing:1px;' +
-        'text-transform:uppercase;color:#c9a878;font-weight:800">' + g + '</div>' +
-        groups[g].map(function(t){
-          var on = treeHas(t.id), can = S.chips >= t.cost;
-          return '<div class="item' + (on ? " up" : (can ? "" : " off")) +
-            '" data-tree="' + t.id + '"><div class="ic">' + t.e + '</div>' +
-            '<div class="tx"><div class="nm">' + t.n +
-            (t.pct ? ' <span style="color:#8bd65a">+' + t.pct + '%</span>' : '') +
-            '</div><div class="pr">' + (on ? "куплено" : t.cost + " 💠") + '</div></div>' +
-            (on ? '<div class="ct">✓</div>' : '') + '</div>';
-        }).join("");
-    }).join("");
+    box.innerHTML = treeSVG();
   } else {
     box.innerHTML = '<div style="padding:10px;display:flex;flex-wrap:wrap;gap:5px">' +
       ACH.map(function(a){
