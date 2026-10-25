@@ -5039,84 +5039,100 @@ PROTO_PAGE = r"""<!doctype html>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:#0f1117;color:#e8ebf2;min-height:100vh;padding-bottom:30px}
-.wrap{max-width:520px;margin:0 auto;padding:14px}
-.hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
-  background:#171a23;border:1px solid #252a38;border-radius:14px;padding:12px 14px}
-.hdr .big{font-size:26px;font-weight:900;line-height:1.1;
-  font-family:'JetBrains Mono',ui-monospace,monospace}
-.hdr .lbl{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#8b93a7;font-weight:800}
-.hdr .r{text-align:right}
-.tap{margin:14px 0;width:100%;border:0;border-radius:18px;padding:34px 16px;
-  font-size:22px;font-weight:900;color:#1a1205;
-  background:radial-gradient(circle at 30% 20%,#f6c94a,#b45309);
-  box-shadow:0 10px 30px rgba(246,201,74,.25);font-family:inherit}
-.tap:active{transform:scale(.985)}
-.tap small{display:block;font-size:12px;font-weight:700;opacity:.7;margin-top:4px}
-.row{display:flex;justify-content:space-between;align-items:center;gap:10px;
-  background:#171a23;border:1px solid #252a38;border-radius:12px;
-  padding:11px 13px;margin-bottom:7px}
-.row.off{opacity:.45}
-.row .i{font-size:22px;width:30px;text-align:center}
-.row .m{flex:1;min-width:0}
-.row .n{font-size:13.5px;font-weight:800}
-.row .d{font-size:11px;color:#8b93a7;margin-top:2px;
-  font-family:'JetBrains Mono',ui-monospace,monospace}
-.row button{border:0;border-radius:10px;padding:10px 13px;font-size:12.5px;
-  font-weight:800;background:#26a69a;color:#06110f;font-family:inherit}
-.row button:disabled{background:#2a2e3a;color:#5b6474}
-.sec{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;
-  color:#8b93a7;font-weight:800;margin:16px 0 8px}
-.buffs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.buff{font-size:11px;font-weight:800;border-radius:99px;padding:5px 11px;
-  background:#26233a;color:#f6c94a;border:1px solid #4a3a12}
-.ach{display:flex;flex-wrap:wrap;gap:6px}
-.ach span{font-size:10.5px;padding:5px 9px;border-radius:9px;background:#171a23;
-  border:1px solid #252a38;color:#5b6474}
-.ach span.on{border-color:#26a69a;color:#26a69a}
-.ctl{display:flex;gap:8px;margin-top:14px}
-.ctl button{flex:1;border:1px solid #252a38;background:#171a23;color:#8b93a7;
-  border-radius:11px;padding:12px;font-size:12px;font-weight:800;font-family:inherit}
-#gold{position:fixed;font-size:40px;cursor:pointer;z-index:50;display:none;
-  filter:drop-shadow(0 0 14px rgba(246,201,74,.9));
+body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:#3b2417;color:#f3e6c8;min-height:100vh;padding-bottom:20px}
+.wrap{max-width:760px;margin:0 auto;padding:10px}
+.panel{background:linear-gradient(#4a2e1c,#3a2314);border:3px solid #7a5330;
+  border-radius:12px;box-shadow:inset 0 1px 0 rgba(255,220,150,.15)}
+/* ---------- левая колонка ---------- */
+.left{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px}
+.count{font-size:22px;font-weight:900;color:#ffd98a;text-shadow:0 2px 0 #2a170c}
+.count small{display:block;font-size:12px;color:#c9a878;font-weight:700}
+.cookie{width:190px;height:190px;border-radius:50%;border:0;cursor:pointer;
+  background:radial-gradient(circle at 35% 30%,#e8b96a,#a9691f 65%,#6b3d0d);
+  box-shadow:0 0 0 8px #d8c39a,0 0 0 12px #6b4a22,0 14px 30px rgba(0,0,0,.55);
+  font-size:74px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:transform .06s;position:relative}
+.cookie:active{transform:scale(.955)}
+.cps{font-size:13px;color:#e7c98d;font-weight:800;
+  font-family:ui-monospace,monospace}
+.buffs{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;min-height:20px}
+.buff{font-size:10.5px;font-weight:800;border-radius:99px;padding:4px 10px;
+  background:#6b3d0d;color:#ffd98a;border:1px solid #b98a3d}
+/* ---------- центр: улицы ---------- */
+.street{margin:6px 0;padding:6px 8px;border-radius:10px;border:2px solid #6b4a22;
+  background:linear-gradient(#5c3a20,#43280f);position:relative;overflow:hidden}
+.street .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;
+  color:#c9a878;font-weight:800;margin-bottom:3px}
+.street .row2{display:flex;flex-wrap:wrap;gap:1px;font-size:22px;line-height:1;
+  max-height:52px;overflow:hidden}
+.street .num{position:absolute;right:9px;top:7px;font-size:13px;font-weight:900;
+  color:#ffd98a;font-family:ui-monospace,monospace;
+  text-shadow:0 1px 3px #000}
+/* ---------- магазин ---------- */
+.shop{position:sticky;top:10px}
+.tabs{display:flex;gap:4px;padding:6px}
+.tabs button{flex:1;border:2px solid #6b4a22;background:#4a2e1c;border-radius:8px;
+  padding:8px 0;font-size:16px;cursor:pointer;font-family:inherit}
+.tabs button.on{background:#8a5a28;border-color:#d8b45a}
+.item{display:flex;align-items:center;gap:8px;padding:8px 9px;
+  border-top:1px solid #5a3a1e;cursor:pointer;user-select:none}
+.item:active{background:#5c3a20}
+.item.off{opacity:.42}
+.item .ic{font-size:20px;width:26px;text-align:center}
+.item .tx{flex:1;min-width:0}
+.item .nm{font-size:12.5px;font-weight:800;color:#ffe9b8;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.item .pr{font-size:11px;color:#c9a878;font-family:ui-monospace,monospace}
+.item .ct{font-size:15px;font-weight:900;color:#8bd65a;
+  font-family:ui-monospace,monospace}
+.item.up .nm{color:#9fd6ff}
+.item.up .pr{color:#7fa8c9}
+.ctl{display:flex;gap:6px;padding:8px}
+.ctl button{flex:1;border:2px solid #6b4a22;background:#4a2e1c;color:#c9a878;
+  border-radius:8px;padding:10px;font-size:11.5px;font-weight:800;font-family:inherit}
+#gold{position:fixed;font-size:44px;cursor:pointer;z-index:50;display:none;
+  filter:drop-shadow(0 0 16px rgba(255,215,100,.95));
   animation:pulse 1s ease-in-out infinite}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
-#toast{position:fixed;left:14px;right:14px;bottom:16px;background:#232838;color:#fff;
-  border-radius:12px;padding:13px 15px;font-size:13px;transform:translateY(220%);
-  transition:.25s;z-index:60}
+@keyframes pulse{0%,100%{transform:scale(1) rotate(-8deg)}50%{transform:scale(1.18) rotate(8deg)}}
+#toast{position:fixed;left:12px;right:12px;bottom:14px;background:#6b3d0d;color:#ffe9b8;
+  border:2px solid #b98a3d;border-radius:10px;padding:12px 14px;font-size:13px;
+  font-weight:700;transform:translateY(240%);transition:.25s;z-index:60}
 #toast.on{transform:translateY(0)}
+@media(min-width:640px){
+  .wrap{display:grid;grid-template-columns:230px 1fr 210px;gap:10px;align-items:start}
+  .left{grid-column:1}
+  .center{grid-column:2}
+  .shop{grid-column:3}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="hdr">
-    <div><div class="lbl">Юги</div><div class="big" id="bal">0</div></div>
-    <div class="r"><div class="lbl">В секунду</div><div class="big" id="cps">0</div></div>
+  <div class="left panel">
+    <div class="count"><span id="bal">0</span> югов<small id="cpsl">в секунду: 0</small></div>
+    <button class="cookie" id="tap">🍪</button>
+    <div class="cps" id="tapv">+1 за клик</div>
+    <div class="buffs" id="buffs"></div>
+    <div class="cps" id="chipline" style="font-size:11px;color:#c9a878">фишек: 0</div>
   </div>
-  <div class="hdr" style="margin-top:8px">
-    <div><div class="lbl">За клик</div><div class="big" id="tapv">1</div></div>
-    <div class="r"><div class="lbl">Фишки</div><div class="big" id="chips">0</div></div>
+
+  <div class="center" id="streets"></div>
+
+  <div class="shop panel">
+    <div class="tabs" id="tabs">
+      <button data-tab="b" class="on">🏠</button>
+      <button data-tab="u">⬆️</button>
+      <button data-tab="a">🏆</button>
+    </div>
+    <div id="shop"></div>
+    <div class="ctl">
+      <button id="ascend">Вознестись</button>
+      <button id="reset">Сброс</button>
+    </div>
+    <div style="padding:0 9px 9px;font-size:10px;color:#a98a5f;text-align:center"
+      id="ascinfo"></div>
   </div>
-
-  <button class="tap" id="tap">ТАПАТЬ<small id="taphint">+1 за клик</small></button>
-  <div class="buffs" id="buffs"></div>
-
-  <div class="sec">Здания</div>
-  <div id="buildings"></div>
-
-  <div class="sec">Апгрейды</div>
-  <div id="upgrades"></div>
-
-  <div class="sec">Достижения</div>
-  <div class="ach" id="ach"></div>
-
-  <div class="ctl">
-    <button id="ascend">Вознестись</button>
-    <button id="reset">Сбросить всё</button>
-  </div>
-  <div class="d" id="ascinfo" style="font-size:11px;color:#8b93a7;margin-top:8px;
-    text-align:center;font-family:'JetBrains Mono',monospace"></div>
 </div>
 <div id="gold">🍪</div>
 <div id="toast"></div>
@@ -5124,7 +5140,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 const BUILDINGS = [
   {id:"cur", n:"Курсор", e:"👆", base:15, cps:0.1},
   {id:"yuga", n:"Юга-мастер", e:"🧑", base:100, cps:0.7},
-  {id:"farm", n:"Ферма Югов", e:"🌱", base:1100, cps:4},
+  {id:"farm", n:"Ферма", e:"🌱", base:1100, cps:4},
   {id:"mine", n:"Шахта", e:"⛏", base:12000, cps:22},
   {id:"factory", n:"Фабрика", e:"🏭", base:130000, cps:120},
   {id:"bank", n:"Банк", e:"🏦", base:1400000, cps:650},
@@ -5135,25 +5151,24 @@ const UPGRADES = [
   {id:"tap2", n:"Крепкая рука", d:"+1 к клику", cost:100, check:()=>S.clicks>=10},
   {id:"tap5", n:"Двойной тап", d:"×2 к клику", cost:2000, check:()=>S.clicks>=100},
   {id:"cur2", n:"Курсоры ×2", d:"курсоры вдвое", cost:500, check:()=>own("cur")>=5},
-  {id:"yuga2", n:"Юга ×2", d:"юга-мастера вдвое", cost:5000, check:()=>own("yuga")>=5},
+  {id:"yuga2", n:"Юга ×2", d:"юга вдвое", cost:5000, check:()=>own("yuga")>=5},
   {id:"farm2", n:"Фермы ×2", d:"фермы вдвое", cost:25000, check:()=>own("farm")>=5},
-  {id:"all5", n:"Общий рост +5%", d:"+5% ко всему", cost:100000, check:()=>S.total>=50000},
+  {id:"all5", n:"Общий рост", d:"+5% ко всему", cost:100000, check:()=>S.total>=50000},
 ];
 const ACH = [
   {id:"c1", n:"10 кликов", check:()=>S.clicks>=10},
   {id:"c2", n:"100 кликов", check:()=>S.clicks>=100},
   {id:"c3", n:"1000 кликов", check:()=>S.clicks>=1000},
-  {id:"b1", n:"Первое здание", check:()=>Object.values(S.b).some(v=>v>0)},
+  {id:"b1", n:"первое здание", check:()=>Object.values(S.b).some(v=>v>0)},
   {id:"b2", n:"10 зданий", check:()=>Object.values(S.b).reduce((a,b)=>a+b,0)>=10},
   {id:"b3", n:"50 зданий", check:()=>Object.values(S.b).reduce((a,b)=>a+b,0)>=50},
-  {id:"g1", n:"Поймал печеньку", check:()=>S.golden>=1},
+  {id:"g1", n:"печенька", check:()=>S.golden>=1},
   {id:"g2", n:"5 печенек", check:()=>S.golden>=5},
-  {id:"p1", n:"Первое вознесение", check:()=>S.resets>=1},
+  {id:"p1", n:"вознесение", check:()=>S.resets>=1},
 ];
-const KEY = "yugi_proto_v1";
-let S = {bal:0, total:0, clicks:0, golden:0, chips:0, resets:0, b:{}, u:[], ach:[]};
-let buffs = [];   // {kind, until}
-let saved = 0;
+const KEY = "yugi_proto_v2";
+let S = {bal:0, total:0, clicks:0, golden:0, chips:0, resets:0, b:{}, u:[], tab:"b"};
+let buffs = [];
 
 function own(id){ return S.b[id] || 0; }
 function has(id){ return S.u.indexOf(id) >= 0; }
@@ -5179,8 +5194,8 @@ function cps(){
   return v;
 }
 function cost(b, count){
-  let c = 0, base = b.base, o = own(b.id);
-  for (let i = 0; i < count; i++) c += Math.ceil(base * Math.pow(1.15, o + i));
+  let c = 0, o = own(b.id);
+  for (let i = 0; i < count; i++) c += Math.ceil(b.base * Math.pow(1.15, o + i));
   return c;
 }
 function fmt(n){
@@ -5191,38 +5206,34 @@ function fmt(n){
   if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
   return String(n);
 }
-function buffActive(kind){ return buffs.some(b => b.kind === kind && b.until > Date.now()); }
-function addBuff(kind, ms){ buffs.push({kind, until: Date.now() + ms}); }
+function buffActive(k){ return buffs.some(b => b.kind === k && b.until > Date.now()); }
+function addBuff(k, ms){ buffs.push({kind:k, until: Date.now() + ms}); }
 function toast(t){
   const el = document.getElementById("toast");
   el.textContent = t; el.className = "on";
   clearTimeout(el._t); el._t = setTimeout(()=>el.className = "", 2600);
 }
 function click(){
-  const gain = tapPower();
-  S.bal += gain; S.total += gain; S.clicks += 1;
+  const g = tapPower();
+  S.bal += g; S.total += g; S.clicks += 1;
   paint();
 }
-function buy(id, count){
+function buy(id){ buyN(id, 1); }
+function buyN(id, count){
   const b = BUILDINGS.find(x => x.id === id);
   const c = cost(b, count);
   if (S.bal < c) return;
-  S.bal -= c;
-  S.b[id] = own(id) + count;
-  paint();
+  S.bal -= c; S.b[id] = own(id) + count; paint();
 }
-function buyUpgrade(id){
+function buyUp(id){
   const u = UPGRADES.find(x => x.id === id);
-  if (!u || S.bal < u.cost || has(id)) return;
-  S.bal -= u.cost;
-  S.u.push(id);
-  paint();
+  if (!u || has(id) || S.bal < u.cost) return;
+  S.bal -= u.cost; S.u.push(id); paint();
 }
 function ascend(){
   const gain = Math.floor(Math.cbrt(S.total / 1e6));
-  if (gain < 1){ toast("Нужно больше: до первой фишки ~1e6 югов"); return; }
-  S.chips += gain;
-  S.resets += 1;
+  if (gain < 1){ toast("Нужно ~1e6 югов за всё время для первой фишки"); return; }
+  S.chips += gain; S.resets += 1;
   S.bal = 0; S.total = 0; S.b = {}; S.u = []; S.clicks = 0;
   buffs = [];
   toast("Вознесение! +" + gain + " фишек");
@@ -5230,92 +5241,103 @@ function ascend(){
 }
 function resetAll(){
   localStorage.removeItem(KEY);
-  S = {bal:0, total:0, clicks:0, golden:0, chips:0, resets:0, b:{}, u:[], ach:[]};
-  buffs = [];
-  paint();
-  toast("Всё сброшено");
+  S = {bal:0,total:0,clicks:0,golden:0,chips:0,resets:0,b:{},u:[],tab:"b"};
+  buffs = []; paint(); toast("Сброшено");
 }
 function spawnGolden(){
   const g = document.getElementById("gold");
-  g.style.left = (10 + Math.random() * 70) + "vw";
-  g.style.top = (20 + Math.random() * 55) + "vh";
+  g.style.left = (12 + Math.random() * 65) + "vw";
+  g.style.top = (18 + Math.random() * 55) + "vh";
   g.style.display = "block";
-  setTimeout(() => { g.style.display = "none"; }, 13000);
+  setTimeout(()=>{ g.style.display = "none"; }, 13000);
 }
 function catchGolden(){
-  const g = document.getElementById("gold");
-  g.style.display = "none";
+  document.getElementById("gold").style.display = "none";
   S.golden += 1;
-  const roll = Math.random();
-  if (roll < 0.45){ addBuff("frenzy", 77000); toast("🍪 FRENZY! ×7 к производству на 77 сек"); }
-  else if (roll < 0.75){ addBuff("click", 13000); toast("🍪 CLICK FRENZY! ×777 к клику на 13 сек"); }
-  else { const bonus = Math.max(50, cps() * 900); S.bal += bonus; S.total += bonus; toast("🍪 LUCKY! +" + fmt(bonus)); }
+  const r = Math.random();
+  if (r < .45){ addBuff("frenzy", 77000); toast("🍪 FRENZY ×7 на 77 сек"); }
+  else if (r < .75){ addBuff("click", 13000); toast("⚡ CLICK FRENZY ×777 на 13 сек"); }
+  else { const b = Math.max(50, cps() * 900); S.bal += b; S.total += b; toast("🍪 LUCKY +" + fmt(b)); }
   paint();
+}
+function streets(){
+  const owned = BUILDINGS.filter(b => own(b.id) > 0);
+  if (!owned.length){
+    return '<div class="panel" style="padding:26px;text-align:center;color:#a98a5f;font-size:13px">' +
+      'Купи первое здание справа — здесь появится улица</div>';
+  }
+  return owned.map(b => {
+    const n = Math.min(own(b.id), 14);
+    return '<div class="street"><div class="lbl">' + b.n + '</div>' +
+      '<div class="num">×' + own(b.id) + '</div>' +
+      '<div class="row2">' + b.e.repeat(n) + '</div></div>';
+  }).join("");
+}
+function shopBuildings(){
+  return BUILDINGS.map(b => {
+    const c1 = cost(b, 1);
+    const can = S.bal >= c1;
+    return '<div class="item' + (can ? "" : " off") + '" data-buy="' + b.id + '">' +
+      '<div class="ic">' + b.e + '</div>' +
+      '<div class="tx"><div class="nm">' + b.n + '</div>' +
+      '<div class="pr">' + fmt(c1) + '</div></div>' +
+      '<div class="ct">' + own(b.id) + '</div></div>';
+  }).join("");
+}
+function shopUps(){
+  const list = UPGRADES.filter(u => u.check() && !has(u.id));
+  if (!list.length) return '<div style="padding:16px;font-size:12px;color:#a98a5f;text-align:center">Пока нечего улучшать</div>';
+  return list.map(u =>
+    '<div class="item up' + (S.bal >= u.cost ? "" : " off") + '" data-up="' + u.id + '">' +
+    '<div class="ic">⬆️</div><div class="tx"><div class="nm">' + u.n + '</div>' +
+    '<div class="pr">' + fmt(u.cost) + ' · ' + u.d + '</div></div></div>').join("");
+}
+function shopAch(){
+  return '<div style="padding:10px;display:flex;flex-wrap:wrap;gap:5px">' +
+    ACH.map(a => '<span style="font-size:10px;padding:4px 8px;border-radius:7px;' +
+      'border:1px solid ' + (a.check() ? "#8bd65a" : "#5a3a1e") + ';color:' +
+      (a.check() ? "#8bd65a" : "#7a5a38") + '">' + a.n + '</span>').join("") + '</div>';
 }
 function paint(){
   document.getElementById("bal").textContent = fmt(S.bal);
-  document.getElementById("cps").textContent = fmt(cps());
-  document.getElementById("tapv").textContent = fmt(tapPower());
-  document.getElementById("chips").textContent = S.chips;
-  document.getElementById("taphint").textContent = "+" + fmt(tapPower()) + " за клик";
+  document.getElementById("cpsl").textContent = "в секунду: " + fmt(cps());
+  document.getElementById("tapv").textContent = "+" + fmt(tapPower()) + " за клик";
+  document.getElementById("chipline").textContent = "фишек: " + S.chips;
+  document.getElementById("streets").innerHTML = streets();
 
-  document.getElementById("buildings").innerHTML = BUILDINGS.map(b => {
-    const c1 = cost(b, 1), c10 = cost(b, 10);
-    const can1 = S.bal >= c1;
-    return '<div class="row' + (can1 ? "" : " off") + '">' +
-      '<div class="i">' + b.e + '</div>' +
-      '<div class="m"><div class="n">' + b.n + ' <span style="color:#26a69a">×' + own(b.id) + '</span></div>' +
-      '<div class="d">+' + b.cps + '/сек · ' + fmt(c1) + '</div></div>' +
-      '<button data-buy="' + b.id + '"' + (can1 ? "" : " disabled") + '>' + fmt(c1) + '</button>' +
-      '<button data-buy10="' + b.id + '"' + (S.bal >= c10 ? "" : " disabled") + '>×10</button>' +
-      '</div>';
-  }).join("");
-  document.querySelectorAll("[data-buy]").forEach(el => el.onclick = () => buy(el.dataset.buy, 1));
-  document.querySelectorAll("[data-buy10]").forEach(el => el.onclick = () => buy(el.dataset.buy10, 10));
+  const box = document.getElementById("shop");
+  box.innerHTML = S.tab === "b" ? shopBuildings() : S.tab === "u" ? shopUps() : shopAch();
+  document.querySelectorAll("[data-buy]").forEach(el => el.onclick = () => buy(el.dataset.buy));
+  document.querySelectorAll("[data-up]").forEach(el => el.onclick = () => buyUp(el.dataset.up));
 
-  const ups = UPGRADES.filter(u => u.check() && !has(u.id));
-  document.getElementById("upgrades").innerHTML = ups.length
-    ? ups.map(u => '<div class="row' + (S.bal >= u.cost ? "" : " off") + '">' +
-        '<div class="i">⬆️</div><div class="m"><div class="n">' + u.n + '</div>' +
-        '<div class="d">' + u.d + '</div></div>' +
-        '<button data-up="' + u.id + '"' + (S.bal >= u.cost ? "" : " disabled") + '>' + fmt(u.cost) + '</button></div>').join("")
-    : '<div style="font-size:12px;color:#8b93a7;padding:6px 2px">Пока нечего улучшать — играй дальше</div>';
-  document.querySelectorAll("[data-up]").forEach(el => el.onclick = () => buyUpgrade(el.dataset.up));
-
-  document.getElementById("ach").innerHTML = ACH.map(a =>
-    '<span class="' + (a.check() ? "on" : "") + '">' + a.n + '</span>').join("");
+  document.querySelectorAll("#tabs [data-tab]").forEach(b => b.onclick = () => {
+    S.tab = b.dataset.tab;
+    document.querySelectorAll("#tabs [data-tab]").forEach(x => x.className = x === b ? "on" : "");
+    paint();
+  });
 
   const bl = buffs.filter(b => b.until > Date.now());
   document.getElementById("buffs").innerHTML = bl.map(b =>
-    '<div class="buff">' + (b.kind === "frenzy" ? "🔥 ×7 производство" : "⚡ ×777 клик") +
-    ' · ' + Math.ceil((b.until - Date.now()) / 1000) + 'с</div>').join("");
+    '<div class="buff">' + (b.kind === "frenzy" ? "🔥 ×7" : "⚡ ×777") +
+    " " + Math.ceil((b.until - Date.now()) / 1000) + 'с</div>').join("");
 
-  const next = Math.floor(Math.cbrt(S.total / 1e6));
   document.getElementById("ascinfo").textContent =
-    "Вознесение даст +" + Math.max(0, next) + " фишек (сейчас " + S.chips + ", всего сбросов " + S.resets + ")";
+    "вознесение: +" + Math.max(0, Math.floor(Math.cbrt(S.total / 1e6))) +
+    " фишек · сбросов " + S.resets;
 }
 document.getElementById("tap").onclick = click;
 document.getElementById("ascend").onclick = ascend;
 document.getElementById("reset").onclick = resetAll;
 document.getElementById("gold").onclick = catchGolden;
-
-try {
-  const raw = localStorage.getItem(KEY);
-  if (raw) S = Object.assign(S, JSON.parse(raw));
-} catch(e) {}
-
-setInterval(() => {
-  const gain = cps() / 10;
-  S.bal += gain; S.total += gain;
+try { const raw = localStorage.getItem(KEY); if (raw) S = Object.assign(S, JSON.parse(raw)); } catch(e){}
+setInterval(()=>{
+  const g = cps() / 10;
+  S.bal += g; S.total += g;
   buffs = buffs.filter(b => b.until > Date.now());
   paint();
 }, 100);
-setInterval(() => {
-  if (Math.random() < 0.5) spawnGolden();
-}, 45000);
-setInterval(() => {
-  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {}
-}, 4000);
+setInterval(()=>{ if (Math.random() < .5) spawnGolden(); }, 45000);
+setInterval(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }, 4000);
 paint();
 </script>
 </body>
