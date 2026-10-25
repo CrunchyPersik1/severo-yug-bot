@@ -870,8 +870,6 @@ align-items:center;padding:10px 14px">
 <b style="font-size:14px">БИРЖА</b>
 <a href="/hub" style="color:#8b93a7;text-decoration:none;
 font-size:12px;font-weight:800">← ХАБ</a></header>
-  <div class="sp"></div>
-</div>
 
 <div class="hero">
   <div class="nm" id="nm">…</div>
@@ -5803,6 +5801,20 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
+#fx{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;
+  display:block;opacity:0;transition:opacity .35s;background:transparent}
+body.fxon #fx{opacity:1}
+#gfx{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+  background:#07060aee;padding:18px}
+#gfx.on{display:flex}
+#gfx .card{width:100%;max-width:340px;border:3px solid #6b4a22;border-radius:12px;
+  background:linear-gradient(#241708,#120b06);padding:14px;box-shadow:0 0 0 3px #120c06}
+#gfx h3{margin:0 0 10px;font-size:10px;color:#ffd98a;letter-spacing:1px}
+#gfx button{display:block;width:100%;margin:6px 0;padding:10px;border-radius:8px;
+  border:2px solid #6b4a22;background:#2a1c10;color:#ffe9b8;font-family:inherit;
+  font-size:9px;text-align:left;line-height:1.5}
+#gfx button.on{border-color:#c9a227;background:#3a2a12;color:#fff}
+#gfx .fps{margin-top:8px;font-size:7px;color:#8a7a5a;line-height:1.6}
 /* перебиваем общий стиль темы: он тянет тост на всю ширину */
 body #toast{position:fixed!important;left:50%!important;right:auto!important;
   width:auto!important;max-width:76vw;bottom:304px;
@@ -5815,6 +5827,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </head>
 <body>
 <canvas id="cv"></canvas>
+<canvas id="fx"></canvas>
 
 <div class="top">
   <div class="grp">
@@ -5906,8 +5919,487 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </div>
 
 <div id="toast"></div>
+<div id="gfx"></div>
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+/* ---------- FX: шейдерная постобработка, bloom, частицы ---------- */
+const FXCV = document.getElementById("fx");
+const FX = (function(){
+  const SPR = {}, ps = [], ds = [];
+  let ambientT = 0, hurtCd = 0, swing = null, fpsAcc = 0, fpsN = 0, lastAuto = 0;
+
+  function hx(col, a){
+    if (!col || col.charAt(0) !== "#" || col.length < 7) return col;
+    const n = parseInt(col.slice(1, 7), 16);
+    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+  }
+  // спрайт свечения: белый центр, мягкий спад в цвете
+  function sprite(col){
+    if (SPR[col]) return SPR[col];
+    const s = document.createElement("canvas");
+    s.width = 64; s.height = 64;
+    const c = s.getContext("2d");
+    const g = c.createRadialGradient(32, 32, 0, 32, 32, 33);
+    g.addColorStop(0, "rgba(255,255,255,0.92)");
+    g.addColorStop(0.22, hx(col, 0.92));
+    g.addColorStop(0.58, hx(col, 0.22));
+    g.addColorStop(1, hx(col, 0));
+    c.fillStyle = g;
+    c.fillRect(0, 0, 64, 64);
+    SPR[col] = s;
+    return s;
+  }
+  function emit(x, y, o){
+    if (ps.length > 420) ps.shift();
+    const life = o.life || 0.5;
+    ps.push({x: x, y: y, vx: o.vx || 0, vy: o.vy || 0,
+      life: life, max: life, size: o.size || 10, col: o.col || "#ffd98a",
+      grav: o.grav || 0, drag: (o.drag == null ? 2.2 : o.drag)});
+  }
+  function burst(x, y, n, col, spd, size){
+    for (let i = 0; i < n; i++){
+      const a = Math.random() * 6.2832, sp = spd * (0.3 + Math.random());
+      emit(x, y, {vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.75 - spd * 0.12,
+        life: 0.28 + Math.random() * 0.45, size: (size || 12) * (0.5 + Math.random()),
+        col: col, drag: 3.4});
+    }
+  }
+  function dust(x, y, n){
+    for (let i = 0; i < n; i++){
+      if (ds.length > 90) ds.shift();
+      const life = 0.3 + Math.random() * 0.35;
+      ds.push({x: x + (Math.random() - 0.5) * 12, y: y + Math.random() * 4,
+        vx: (Math.random() - 0.5) * 26, vy: -6 - Math.random() * 14,
+        life: life, max: life, size: 2 + Math.random() * 3});
+    }
+  }
+  function glowAt(x, y, size, col, alpha){
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = (alpha == null ? 0.85 : alpha);
+    ctx.drawImage(sprite(col), x - size / 2, y - size / 2, size, size);
+    ctx.restore();
+  }
+
+  function step(dt){
+    if (hurtCd > 0) hurtCd -= dt;
+    if (swing){ swing.t -= dt; if (swing.t <= 0) swing = null; }
+    for (let i = ps.length - 1; i >= 0; i--){
+      const p = ps[i];
+      p.life -= dt;
+      if (p.life <= 0){ ps.splice(i, 1); continue; }
+      p.vy += p.grav * dt;
+      const d = Math.max(0, 1 - p.drag * dt);
+      p.vx *= d; p.vy *= d;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    for (let i = ds.length - 1; i >= 0; i--){
+      const p = ds[i];
+      p.life -= dt;
+      if (p.life <= 0){ ds.splice(i, 1); continue; }
+      p.vy += 24 * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    if (api.flash > 0) api.flash = Math.max(0, api.flash - dt * 2.6);
+    if (api.shakeT > 0){
+      api.shakeT -= dt;
+      const k = Math.max(0, api.shakeT / Math.max(0.001, api.shakeLen));
+      api.shakeX = (Math.random() * 2 - 1) * api.shakeA * k;
+      api.shakeY = (Math.random() * 2 - 1) * api.shakeA * k;
+    } else if (api.shakeX || api.shakeY){ api.shakeX = 0; api.shakeY = 0; }
+  }
+
+  function draw(){
+    if (swing){
+      const k = Math.max(0, swing.t / 0.18);
+      const col = swing.kind === "bow" ? "#8bd65a" : swing.kind === "staff" ? "#8fd8ff" : "#ffd98a";
+      ctx.save();
+      ctx.translate(P.x, P.y - 8);
+      ctx.rotate(swing.a || 0);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = k * 0.95;
+      ctx.lineWidth = 3 + 9 * k;
+      ctx.beginPath(); ctx.arc(0, 0, 40, -0.85, 0.85); ctx.stroke();
+      ctx.globalAlpha = k * 0.4;
+      ctx.lineWidth = 16 * k;
+      ctx.beginPath(); ctx.arc(0, 0, 33, -0.7, 0.7); ctx.stroke();
+      ctx.restore();
+    }
+    if (ds.length){
+      ctx.save();
+      for (let i = 0; i < ds.length; i++){
+        const p = ds[i], k = Math.max(0, p.life / p.max);
+        ctx.fillStyle = "rgba(128,112,80," + (0.32 * k) + ")";
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
+      ctx.restore();
+    }
+    if (ps.length){
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < ps.length; i++){
+        const p = ps[i], k = Math.max(0, p.life / p.max);
+        ctx.globalAlpha = Math.min(1, 0.14 + k * 1.2);
+        const s = p.size * (0.5 + k * 0.9) * 2;
+        ctx.drawImage(sprite(p.col), p.x - s / 2, p.y - s / 2, s, s);
+      }
+      ctx.restore();
+    }
+  }
+
+  function ambient(dt, cx, cy, vw, vh){
+    ambientT -= dt;
+    if (ambientT > 0) return;
+    ambientT = 0.055;
+    const z = ZONES[zoneIndex(P.y)];
+    emit(cx + Math.random() * vw, cy + Math.random() * vh,
+      {vx: (Math.random() - 0.5) * 14, vy: -10 - Math.random() * 26,
+       life: 1.6 + Math.random() * 2.4, size: 2 + Math.random() * 6,
+       col: z.a, drag: 0.15});
+  }
+
+  function shake(a){
+    api.shakeA = Math.max(api.shakeA * 0.6, a);
+    api.shakeT = api.shakeLen = 0.22;
+  }
+  function hurt(){
+    if (hurtCd > 0) return;
+    hurtCd = 0.32;
+    api.flash = Math.min(0.55, api.flash + 0.4);
+    shake(5);
+    burst(P.x, P.y - 10, 6, "#ff3b52", 120, 10);
+  }
+
+  /* ---------- WebGL ---------- */
+  let gl = null;
+  try {
+    gl = FXCV.getContext("webgl", {alpha: false, antialias: false, depth: false,
+      stencil: false, premultipliedAlpha: false, powerPreference: "high-performance"});
+  } catch (e){ gl = null; }
+
+  let level = 2;
+  try {
+    const v = localStorage.getItem("dungeon_fx");
+    if (v !== null) level = Math.max(0, Math.min(2, parseInt(v, 10) || 0));
+  } catch (e){}
+  if (!gl) level = 0;
+
+  const VS = `
+attribute vec2 a_pos;
+varying vec2 v_uv;
+void main(){
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
+  const FS_BRIGHT = `
+precision mediump float;
+varying vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_texel;
+uniform float u_thr;
+void main(){
+  vec3 c = texture2D(u_tex, v_uv).rgb * 0.4;
+  c += texture2D(u_tex, v_uv + vec2(u_texel.x, 0.0)).rgb * 0.15;
+  c += texture2D(u_tex, v_uv - vec2(u_texel.x, 0.0)).rgb * 0.15;
+  c += texture2D(u_tex, v_uv + vec2(0.0, u_texel.y)).rgb * 0.15;
+  c += texture2D(u_tex, v_uv - vec2(0.0, u_texel.y)).rgb * 0.15;
+  float l = max(c.r, max(c.g, c.b));
+  float k = max(l - u_thr, 0.0) / max(l, 0.001);
+  k = k * k;
+  gl_FragColor = vec4(c * k * 2.3, 1.0);
+}
+`;
+
+  const FS_BLUR = `
+precision mediump float;
+varying vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_dir;
+void main(){
+  vec3 s = texture2D(u_tex, v_uv).rgb * 0.227027;
+  s += texture2D(u_tex, v_uv + u_dir * 1.3846).rgb * 0.3162162;
+  s += texture2D(u_tex, v_uv - u_dir * 1.3846).rgb * 0.3162162;
+  s += texture2D(u_tex, v_uv + u_dir * 3.2308).rgb * 0.0702703;
+  s += texture2D(u_tex, v_uv - u_dir * 3.2308).rgb * 0.0702703;
+  gl_FragColor = vec4(s, 1.0);
+}
+`;
+
+  const FS_COPY = `
+precision mediump float;
+varying vec2 v_uv;
+uniform sampler2D u_tex;
+void main(){
+  gl_FragColor = vec4(texture2D(u_tex, v_uv).rgb, 1.0);
+}
+`;
+
+  const FS_FINAL = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 v_uv;
+uniform sampler2D u_scene, u_b0, u_b1, u_b2;
+uniform float u_time, u_flash, u_hp, u_grain, u_aberr;
+uniform vec3 u_w;
+uniform vec2 u_res;
+void main(){
+  vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
+  vec2 d = uv - 0.5;
+  float r2 = dot(d, d);
+  float ab = u_aberr * (0.0012 + r2 * 0.0085);
+  vec3 col;
+  col.r = texture2D(u_scene, uv + d * ab).r;
+  col.g = texture2D(u_scene, uv).g;
+  col.b = texture2D(u_scene, uv - d * ab).b;
+
+  vec3 bl = texture2D(u_b0, uv).rgb * u_w.x + texture2D(u_b1, uv).rgb * u_w.y + texture2D(u_b2, uv).rgb * u_w.z;
+  col += bl * 1.25;
+
+  float l = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(l), col, 1.12);
+  col = clamp((col - 0.42) * 1.16 + 0.42, 0.0, 1.0);
+
+  col += vec3(0.012, 0.004, 0.026) * (1.0 - l);
+  col *= vec3(1.04, 1.0, 1.02);
+
+  float vig = 1.0 - smoothstep(0.26, 1.02, length(d) * 1.18);
+  col *= mix(0.34, 1.0, vig);
+
+  col = mix(col, col * vec3(1.6, 0.55, 0.55), u_flash);
+
+  float danger = clamp(0.45 - u_hp, 0.0, 1.0) * 2.0;
+  col = mix(col, vec3(0.55, 0.04, 0.06), danger * (1.0 - vig) * 0.55);
+
+  float n = fract(sin(dot(uv * u_res + vec2(u_time * 37.0, u_time * 21.0), vec2(12.9898, 78.233))) * 43758.5453);
+  col += (n - 0.5) * u_grain;
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+  let W = 0, H = 0, sceneTex = null, sceneW = 0, sceneH = 0, quad = null, PR = {}, LV = [];
+
+  function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      throw new Error("shader: " + gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(fs){
+    const p = gl.createProgram();
+    const vs = compile(gl.VERTEX_SHADER, VS);
+    const f = compile(gl.FRAGMENT_SHADER, fs);
+    gl.attachShader(p, vs);
+    gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+      throw new Error("link: " + gl.getProgramInfoLog(p));
+    return {p: p, a: gl.getAttribLocation(p, "a_pos"), u: {}};
+  }
+  function U(pr, name){
+    if (!(name in pr.u)) pr.u[name] = gl.getUniformLocation(pr.p, name);
+    return pr.u[name];
+  }
+  function makeTex(w, h){
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  function makeFBO(tex){
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return f;
+  }
+  function allocLevels(w, h){
+    for (let i = 0; i < LV.length; i++){
+      gl.deleteTexture(LV[i].tex); gl.deleteTexture(LV[i].tex2);
+      gl.deleteFramebuffer(LV[i].fbo); gl.deleteFramebuffer(LV[i].fbo2);
+    }
+    LV = [];
+    for (let i = 0; i < 3; i++){
+      const s = 1 << (i + 1);
+      const lw = Math.max(4, Math.floor(w / s)), lh = Math.max(4, Math.floor(h / s));
+      const a = makeTex(lw, lh), b = makeTex(lw, lh);
+      LV.push({w: lw, h: lh, tex: a, fbo: makeFBO(a), tex2: b, fbo2: makeFBO(b)});
+    }
+  }
+  function initGL(w, h){
+    FXCV.width = w; FXCV.height = h;
+    PR.bright = program(FS_BRIGHT);
+    PR.blur = program(FS_BLUR);
+    PR.copy = program(FS_COPY);
+    PR.final = program(FS_FINAL);
+    quad = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    sceneTex = makeTex(w, h);
+    sceneW = w; sceneH = h;
+    allocLevels(w, h);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  function pass(pr, target, fn){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+    gl.viewport(0, 0, target ? target.w : W, target ? target.h : H);
+    gl.useProgram(pr.p);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.enableVertexAttribArray(pr.a);
+    gl.vertexAttribPointer(pr.a, 2, gl.FLOAT, false, 0, 0);
+    fn(pr);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  function unit(pr, name, tex, slot){
+    gl.activeTexture(gl.TEXTURE0 + slot);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(U(pr, name), slot);
+  }
+  function hpK(){
+    const r = (P && P.max) ? (P.hp / P.max) : 1;
+    return Math.max(0, Math.min(1, r));
+  }
+
+  function post(){
+    if (!gl || level <= 0) return false;
+    const w = cv.width, h = cv.height;
+    if (!w || !h) return false;
+    try {
+      if (w !== W || h !== H){ W = w; H = h; initGL(w, h); }
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.disable(gl.BLEND);
+      gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+      if (sceneW !== w || sceneH !== h){
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+        sceneW = w; sceneH = h;
+      } else {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+      }
+      pass(PR.bright, LV[0], function(pr){
+        unit(pr, "u_tex", sceneTex, 0);
+        gl.uniform2f(U(pr, "u_texel"), 1 / w, 1 / h);
+        gl.uniform1f(U(pr, "u_thr"), level > 1 ? 0.56 : 0.68);
+      });
+      const n = level > 1 ? 3 : 2;
+      for (let i = 0; i < n; i++){
+        const lv = LV[i];
+        if (i > 0){
+          pass(PR.copy, lv, function(pr){ unit(pr, "u_tex", LV[i - 1].tex, 0); });
+        }
+        pass(PR.blur, {w: lv.w, h: lv.h, fbo: lv.fbo2}, function(pr){
+          unit(pr, "u_tex", lv.tex, 0);
+          gl.uniform2f(U(pr, "u_dir"), 1.4 / lv.w, 0);
+        });
+        pass(PR.blur, lv, function(pr){
+          unit(pr, "u_tex", lv.tex2, 0);
+          gl.uniform2f(U(pr, "u_dir"), 0, 1.4 / lv.h);
+        });
+      }
+      pass(PR.final, null, function(pr){
+        unit(pr, "u_scene", sceneTex, 0);
+        unit(pr, "u_b0", LV[0].tex, 1);
+        unit(pr, "u_b1", LV[1].tex, 2);
+        unit(pr, "u_b2", LV[2].tex, 3);
+        gl.uniform1f(U(pr, "u_time"), (performance.now() / 1000) % 12);
+        gl.uniform1f(U(pr, "u_flash"), api.flash);
+        gl.uniform1f(U(pr, "u_hp"), hpK());
+        gl.uniform1f(U(pr, "u_grain"), api.noise);
+        gl.uniform1f(U(pr, "u_aberr"), api.aberr);
+        gl.uniform3f(U(pr, "u_w"), 0.55, n > 2 ? 0.8 : 1.0, n > 2 ? 1.1 : 0.0);
+        gl.uniform2f(U(pr, "u_res"), W, H);
+      });
+      if (!api.live){ api.live = true; document.body.classList.add("fxon"); }
+      return true;
+    } catch (e){
+      gl = null;
+      level = 0;
+      api.level = 0;
+      api.live = false;
+      document.body.classList.remove("fxon");
+      toast("Видео не тянет шейдеры — включил 2D-режим");
+      return false;
+    }
+  }
+
+  /* ---------- запасной bloom на Canvas2D ---------- */
+  const fbA = document.createElement("canvas"), fbB = document.createElement("canvas");
+  function bloom2d(){
+    const w = cv.width, h = cv.height;
+    if (!w || !h) return false;
+    const aw = Math.max(4, w >> 2), ah = Math.max(4, h >> 2);
+    const bw = Math.max(4, w >> 3), bh = Math.max(4, h >> 3);
+    if (fbA.width !== aw || fbA.height !== ah){ fbA.width = aw; fbA.height = ah; }
+    if (fbB.width !== bw || fbB.height !== bh){ fbB.width = bw; fbB.height = bh; }
+    const ac = fbA.getContext("2d");
+    ac.clearRect(0, 0, aw, ah);
+    ac.drawImage(cv, 0, 0, aw, ah);
+    const bc = fbB.getContext("2d");
+    bc.clearRect(0, 0, bw, bh);
+    bc.drawImage(fbA, 0, 0, bw, bh);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.42;
+    ctx.drawImage(fbA, 0, 0, w, h);
+    ctx.globalAlpha = 0.34;
+    ctx.drawImage(fbB, 0, 0, w, h);
+    ctx.restore();
+    return true;
+  }
+
+  const api = {
+    level: level, live: false, hasGL: !!gl, flash: 0, noise: 0.045, aberr: 1.0,
+    shakeT: 0, shakeA: 0, shakeLen: 0.22, shakeX: 0, shakeY: 0, fps: 60,
+    emit: emit, burst: burst, dust: dust, glowAt: glowAt, hurt: hurt, shake: shake,
+    step: step, draw: draw, ambient: ambient, post: post, bloom2d: bloom2d,
+    sprite: sprite,
+    swingAt: function(a, kind){ swing = {t: 0.18, a: a || 0, kind: kind}; },
+    isGL: function(){ return !!gl && level > 0; },
+    setLevel: function(n){
+      n = Math.max(0, Math.min(2, n | 0));
+      if (!gl) n = 0;
+      level = n;
+      api.level = n;
+      try { localStorage.setItem("dungeon_fx", String(n)); } catch (e){}
+      if (n === 0){
+        document.body.classList.remove("fxon");
+        api.live = false;
+      } else {
+        W = 0; H = 0;
+      }
+      return n;
+    },
+    tick: function(dt){
+      fpsAcc += dt; fpsN++;
+      if (fpsN < 60) return;
+      const avg = fpsAcc / fpsN * 1000;
+      api.fps = Math.round(1000 / Math.max(1, avg));
+      fpsAcc = 0; fpsN = 0;
+      const now = performance.now();
+      if (avg > 32 && api.level > 0 && now - lastAuto > 4000){
+        lastAuto = now;
+        const before = api.level;
+        api.setLevel(before - 1);
+        toast("Медленно (" + Math.round(avg) + " мс) — качество графики снижено");
+      }
+    }
+  };
+  return api;
+})();
 const ZONE_H = 1100;
 const ZONES = [
   {n: "Опушка",         g: "#2a3d18", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
@@ -6118,12 +6610,15 @@ function attack(){
   const range = Number(w.range) || 80;
   const dmg = Number(w.dmg) || 12;
   P.atkCd = w.kind === "bow" ? 0.7 * w.spd : 0.45 * w.spd;
+  FX.swingAt(P.dir, w.kind);
+  const fxCol = w.kind === "bow" ? "#8bd65a" : w.kind === "staff" ? "#8fd8ff" : "#ffd98a";
   let hitAny = false;
   mobs.forEach(m => {
     const d = Math.hypot(m.x - P.x, m.y - P.y);
     if (d < range){
       m.hp -= dmg; m.hit = 0.25; hitAny = true;
       hits.push({x: m.x, y: m.y - 26, t: 0.9, v: Math.round(dmg), c: "#ffd98a"});
+      FX.burst(m.x, m.y - 14, 7, fxCol, 170, 13);
       if (m.hp <= 0) killMob(m);
     }
   });
@@ -6132,6 +6627,8 @@ function attack(){
 function killMob(m){
   const i = mobs.indexOf(m);
   if (i >= 0) mobs.splice(i, 1);
+  FX.burst(m.x, m.y - 10, 16, m.c || "#ffd98a", 210, 18);
+  FX.glowAt(m.x, m.y - 10, 120, "#ffd98a", 0.6);
   const zr = zoneReq(m.y);
   const tooStrong = stats.lvl < zr;
   const power = Math.max(1, Math.round(m.max / 30));
@@ -6188,6 +6685,10 @@ function ability(){
         if (m.hp <= 0) killMob(m); }
     });
   }
+  const abCol = kind === "staff" ? "#8fd8ff" : kind === "bow" ? "#8bd65a" : "#ff5a5a";
+  FX.glowAt(P.x, P.y - 8, 360, abCol, 0.85);
+  FX.burst(P.x, P.y - 8, 24, abCol, 280, 16);
+  FX.shake(4);
   toast("Способность!");
 }
 document.getElementById("attack").onclick = attack;
@@ -6212,12 +6713,15 @@ function endBattle(win){
   document.getElementById("battle").classList.remove("on");
   if (win){
     P.coins += 120;
+    FX.burst(boss.x, boss.y, 40, "#ffd98a", 320, 22);
+    FX.shake(9);
     toast("Босс повержен! +120 монет и оружие");
   } else {
     toast("Ты проиграл. Возвращайся сильнее");
     P.hp = P.max;
   }
   boss.t = 0;
+  P.bossCd = 6;
   sync();
 }
 function syncBattle(){
@@ -6362,6 +6866,8 @@ function loop(now){
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
   loop.last = now;
+  FX.tick(dt);
+  FX.step(dt);
   if (!P.weapon || inBattle){ render(dt); return; }
 
   let vx = joyV.x, vy = joyV.y;
@@ -6381,6 +6887,10 @@ function loop(now){
     P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + (P.dashVY || 0) * dt));
   }
   P.moving = len > 0.05;
+  if (P.moving){
+    P.dustT = (P.dustT || 0) - dt;
+    if (P.dustT <= 0){ P.dustT = 0.07; FX.dust(P.x + rnd(-4, 4), P.y + 10, 1); }
+  }
   if (len > 0.05){
     P.dir = Math.atan2(vy, vx);
     P.facing = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : (vy < 0 ? 3 : 0);
@@ -6401,6 +6911,8 @@ function loop(now){
       m.y += (P.y - m.y) / dm * m.sp * dt;
       if (dm < 34 && P.shield <= 0){
         P.hp -= (m.dmg || 6) * dt * 1.6 * (stats.lvl < zoneReq(m.y) ? 2.5 : 1);
+        FX.hurt();
+        FX.burst(m.x, m.y - 12, 4, "#ff3b52", 90, 9);
         if (P.hp <= 0){ P.hp = P.max; P.x = WORLD.w / 2; P.y = WORLD.h / 2; toast("Тебя оттащило на базу"); }
       }
     } else {
@@ -6428,19 +6940,35 @@ function loop(now){
     return d.t > 0;
   });
 
-  // зоны боссов
-  bosses.forEach(function(bs){
-    if (Math.abs(bs.y - P.y) > 900) return;
-    ctx.beginPath(); ctx.arc(bs.x, bs.y, bs.r, 0, 7);
-    ctx.fillStyle = bs.t > 0 ? "rgba(226,70,70,.22)" : "rgba(226,70,70,.10)"; ctx.fill();
-    ctx.strokeStyle = "#e24646"; ctx.lineWidth = 3; ctx.stroke();
-    ctx.fillStyle = "#ffb4b4"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("БОСС " + (bs.idx + 1) + " · " + ZONES[bs.zone].n, bs.x, bs.y - 8);
-    if (bs.t > 0){
-      ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
-      ctx.fillText(Math.ceil(5 - bs.t), bs.x, bs.y + 30);
-    }
-  });
+  // ожидание босса: 5 секунд в круге — и бой
+  P.bossCd = Math.max(0, (P.bossCd || 0) - dt);
+  if (!inBattle && P.bossCd <= 0){
+    bosses.forEach(function(bs){
+      const inside = Math.hypot(bs.x - P.x, bs.y - P.y) < bs.r;
+      if (!inside){
+        bs.t = Math.max(0, bs.t - dt * 2);
+        return;
+      }
+      const req = zoneReq(bs.y);
+      if (stats.lvl < req){
+        bs.t = 0;
+        if (!bs.warned){ bs.warned = true; toast("Босс: нужен ур. " + req); }
+        return;
+      }
+      bs.warned = false;
+      bs.t += dt;
+      if (bs.t >= 5){
+        bs.t = 0;
+        boss = bs;
+        FX.burst(bs.x, bs.y, 26, "#ff7a3c", 220, 20);
+        FX.shake(7);
+        startBattle();
+        return;
+      }
+      if (Math.random() < dt * 8) FX.emit(bs.x + rnd(-bs.r, bs.r), bs.y + rnd(-bs.r, bs.r) * 0.4,
+        {vx: 0, vy: -26, life: 0.7, size: 8, col: "#ff7a3c", drag: 1});
+    });
+  }
 
   render(dt);
   document.getElementById("hpfill").style.width = Math.max(0, P.hp / P.max * 100) + "%";
@@ -6470,7 +6998,8 @@ function loop(now){
     if (s) s.textContent = cd > 0.05 ? Math.ceil(cd) : "";
   });
 }
-function render(){
+function render(dt){
+  dt = dt || 0.016;
   const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
   cam.x += ((P.x - w / 2) - cam.x) * 0.12;
   cam.y += ((P.y - h / 2) - cam.y) * 0.12;
@@ -6482,12 +7011,13 @@ function render(){
   cam.x = Math.max(0, Math.min(maxX, cam.x));
   cam.y = Math.max(0, Math.min(maxY, cam.y));
   ctx.fillStyle = "#1a2018"; ctx.fillRect(0, 0, w, h);
-  ctx.save(); ctx.translate(-cam.x, -cam.y);
+  ctx.save();
+  ctx.translate(-cam.x + (FX.shakeX || 0), -cam.y + (FX.shakeY || 0));
 
-  // земля: тёмная лесная подстилка
-  ctx.fillStyle = "#16210f"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
-  for (let y = 0; y < WORLD.h; y += 64){
-    for (let x = 0; x < WORLD.w; x += 64){
+  // земля: тёмная лесная подстилка (с запасом под тряску камеры)
+  ctx.fillStyle = "#16210f"; ctx.fillRect(-64, -64, WORLD.w + 128, WORLD.h + 128);
+  for (let y = -64; y < WORLD.h + 64; y += 64){
+    for (let x = -64; x < WORLD.w + 64; x += 64){
       ctx.fillStyle = zoneAt(y).g; ctx.fillRect(x, y, 64, 64);
 
     }
@@ -6538,7 +7068,10 @@ function render(){
       const vy = base + v.y;
       const vx = (zi % 2) ? (WORLD.w - v.x) : v.x;
       if (v.kind === "cottage") drawFarm("cottage-blue", vx, vy, v.w, v.h);
-      else if (v.kind === "lamp") drawFarm("lamppost", vx, vy, v.w, v.h);
+      else if (v.kind === "lamp"){
+        drawFarm("lamppost", vx, vy, v.w, v.h);
+        FX.glowAt(vx, vy - v.h * 0.8, 160, "#ffcf7a", 0.5);
+      }
       else if (v.kind === "bench") drawFarm("bench", vx, vy, v.w, v.h);
       else if (v.kind === "bed") drawFarm("flower-bed", vx, vy, v.w, v.h);
     });
@@ -6566,6 +7099,36 @@ function render(){
   });
 
 
+  // арены боссов: пульсирующее кольцо, руны, прогресс ожидания
+  bosses.forEach(function(bs){
+    if (Math.abs(bs.y - P.y) > 1000) return;
+    const pulse = 0.92 + Math.sin(animT * 2.4 + bs.idx * 1.7) * 0.08;
+    FX.glowAt(bs.x, bs.y, bs.r * 2.8 * pulse, bs.t > 0 ? "#ff7a3c" : "#ff3b52", bs.t > 0 ? 0.5 : 0.36);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "rgba(255,90,90,.5)"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bs.x, bs.y, bs.r * pulse, 0, 7); ctx.stroke();
+    ctx.strokeStyle = bs.t > 0 ? "rgba(255,214,120,.95)" : "rgba(255,154,60,.7)";
+    ctx.lineWidth = 5;
+    for (let s = 0; s < 2; s++){
+      const a0 = animT * 1.9 + bs.idx + s * 3.14;
+      ctx.beginPath(); ctx.arc(bs.x, bs.y, bs.r * 0.74, a0, a0 + 1.5); ctx.stroke();
+    }
+    if (bs.t > 0.01){
+      ctx.strokeStyle = "#ffd98a"; ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(bs.x, bs.y, bs.r + 9, -1.5708, -1.5708 + 6.2832 * Math.min(1, bs.t / 5));
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#ffb4b4"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("БОСС " + (bs.idx + 1) + " · " + ZONES[bs.zone].n, bs.x, bs.y - 8);
+    if (bs.t > 0.01){
+      ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
+      ctx.fillText(Math.ceil(5 - bs.t), bs.x, bs.y + 30);
+    }
+  });
+
   npcs.forEach(n => {
     ctx.save();
     ctx.globalAlpha = 0.55;
@@ -6575,6 +7138,7 @@ function render(){
     ctx.textAlign = "center"; ctx.fillText(n.name, n.x, n.y + 44);
   });
   drop.forEach(d => {
+    FX.glowAt(d.x, d.y - 4, 60 + Math.sin(animT * 5) * 10, "#f6c94a", 0.8);
     ctx.fillStyle = "#f6c94a"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("🗡", d.x, d.y);
     if (d.name){
@@ -6590,29 +7154,40 @@ function render(){
       person(0, 0, m.hit > 0 ? "#ff8a8a" : (m.c || "#8a5a6a"));
     }
     ctx.restore();
+    FX.glowAt(m.x, m.y - 8 * (m.sz || 1), 78 * (m.sz || 1),
+              m.hit > 0 ? "#ff6a6a" : (m.c || "#8a5a6a"), m.hit > 0 ? 0.55 : 0.24);
     const bw = 36 * (m.sz || 1);
     ctx.fillStyle = "#000a"; ctx.fillRect(m.x - bw / 2, m.y - 40 * (m.sz || 1), bw, 5);
     ctx.fillStyle = "#e24646";
     ctx.fillRect(m.x - bw / 2, m.y - 40 * (m.sz || 1),
                  bw * Math.max(0, m.hp / m.max), 5);
   });
+  FX.glowAt(P.x, P.y - 10, 140,
+            P.weapon && P.weapon.kind === "staff" ? "#8fd8ff" :
+            P.weapon && P.weapon.kind === "bow" ? "#8bd65a" : "#ffd98a", 0.3);
   drawHero(P.x, P.y, P.atkCd > 0.25);
   hits.forEach(h => {
     ctx.fillStyle = h.c; ctx.font = "bold 15px ui-monospace,monospace"; ctx.textAlign = "center";
     ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
   });
+  FX.draw();
+  FX.ambient(dt, cam.x, cam.y, w, h);
   ctx.restore();
-  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.18,
-                                      w / 2, h / 2, Math.max(w, h) * 0.72);
-  vg.addColorStop(0, "rgba(0,0,0,0)");
-  vg.addColorStop(0.45, "rgba(6,3,2,0.35)");
-  vg.addColorStop(0.75, "rgba(6,3,2,0.70)");
-  vg.addColorStop(1, "rgba(4,2,1,0.95)");
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, w, h);
-  // общий тёмный тон
-  ctx.fillStyle = "rgba(10,6,14,0.18)";
-  ctx.fillRect(0, 0, w, h);
+  if (!FX.isGL()){
+    const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.18,
+                                        w / 2, h / 2, Math.max(w, h) * 0.72);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(0.45, "rgba(6,3,2,0.35)");
+    vg.addColorStop(0.75, "rgba(6,3,2,0.70)");
+    vg.addColorStop(1, "rgba(4,2,1,0.95)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+    // общий тёмный тон
+    ctx.fillStyle = "rgba(10,6,14,0.18)";
+    ctx.fillRect(0, 0, w, h);
+    FX.bloom2d();
+  }
+  FX.post();
   void h; void dtFix;
 }
 let dtFix = 0;
@@ -6664,13 +7239,41 @@ document.getElementById("startbtn").onclick = () => {
 };
 const startLbl = document.getElementById("startbtn");
 if (startLbl) startLbl.innerHTML = "<b>В бой</b>";
+function openGfx(){
+  const box = document.getElementById("gfx");
+  if (!box) return;
+  const names = [
+    "БЫСТРОЕ · bloom на Canvas2D",
+    "СРЕДНЕЕ · bloom 2 уровня, без зерна",
+    "ВЫСОКОЕ · шейдеры + bloom 3 уровня"
+  ];
+  let html = '<div class="card"><h3>ГРАФИКА</h3>';
+  [2, 1, 0].forEach(function(n){
+    const on = FX.level === n;
+    html += '<button data-fx="' + n + '" class="' + (on ? "on" : "") + '">' +
+            (on ? "● " : "○ ") + names[n] + "</button>";
+  });
+  html += '<div class="fps">' + (FX.hasGL ? "WebGL работает" : "WebGL недоступен — только 2D") +
+          "<br>FPS " + FX.fps + " · режим " + FX.level + "</div>";
+  html += '<button data-fx="x" style="text-align:center;margin-top:10px">ЗАКРЫТЬ</button></div>';
+  box.innerHTML = html;
+  box.classList.add("on");
+  box.querySelectorAll("[data-fx]").forEach(function(b){
+    b.onclick = function(){
+      const v = b.dataset.fx;
+      if (v === "x"){ box.classList.remove("on"); return; }
+      FX.setLevel(parseInt(v, 10));
+      openGfx();
+    };
+  });
+}
 document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   const t = b.dataset.tab;
   if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
   if (t === "clicker"){ toast("Вернуться в кликер — в большой версии"); return; }
   if (t === "quests"){ toast("Задания — заглушка прототипа"); return; }
   if (t === "board"){ toast("Лидерборд — заглушка"); return; }
-  if (t === "settings"){ toast("Настройки — заглушка"); return; }
+  if (t === "settings"){ openGfx(); return; }
 });
 function sync(){ document.getElementById("coins").textContent = P.coins;
   if (P.weapon){
