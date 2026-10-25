@@ -6461,16 +6461,6 @@ function render(){
     }
   });
 
-  // зона босса
-  ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.r, 0, 7);
-  ctx.fillStyle = boss.t > 0 ? "rgba(226,70,70,.22)" : "rgba(226,70,70,.10)"; ctx.fill();
-  ctx.strokeStyle = "#e24646"; ctx.lineWidth = 3; ctx.stroke();
-  ctx.fillStyle = "#ffb4b4"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
-  ctx.fillText("БОСС", boss.x, boss.y - 10);
-  if (boss.t > 0){
-    ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
-    ctx.fillText(Math.ceil(5 - boss.t), boss.x, boss.y + 34);
-  }
 
   npcs.forEach(n => {
     ctx.save();
