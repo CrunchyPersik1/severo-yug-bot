@@ -5928,6 +5928,7 @@ function zoneIndex(y){
   return Math.max(0, Math.min(ZONES.length - 1, ZONES.length - 1 - raw));
 }
 function zoneAt(y){ return ZONES[zoneIndex(y)]; }
+function zoneReq(y){ return 1 + zoneIndex(y) * 25; }   // 1, 26, 51, 76, ...
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -6065,7 +6066,7 @@ function reset(){
   P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
-  spawnMobs(9); spawnNpcs(6);
+  spawnMobs(18); spawnNpcs(6);
 }
 /* ---------- ввод ---------- */
 const keys = {};
@@ -6118,8 +6119,17 @@ function attack(){
 function killMob(m){
   const i = mobs.indexOf(m);
   if (i >= 0) mobs.splice(i, 1);
-  P.coins += 3 + Math.floor(Math.random() * 5);
-  stats.kills += 1; stats.exp += 12;
+  const zr = zoneReq(m.y);
+  const tooStrong = stats.lvl < zr;
+  const power = Math.max(1, Math.round(m.max / 30));
+  if (tooStrong){
+    P.coins += 1;
+    toast("Слабо для этой локации: нужен ур. " + zr + " — опыта нет");
+  } else {
+    P.coins += 3 + Math.floor(Math.random() * 5);
+    stats.exp += 12 + power * 4;
+  }
+  stats.kills += 1;
   if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.max += 8; P.hp = P.max;
     toast("Уровень " + stats.lvl + "! HP вырос"); }
   if (Math.random() < 0.22){
@@ -6131,7 +6141,7 @@ function killMob(m){
           " · " + loot.cls + " · урон " + loot.dmg + " · дальн. " + loot.range +
           (isNew ? " — загляни в сумку" : ""));
   }
-  if (mobs.length < 4) spawnMobs(2);
+  if (mobs.length < 10) spawnMobs(4);
   sync();
 }
 function shieldUp(){
@@ -6369,11 +6379,12 @@ function loop(now){
     m.t -= dt;
     if (m.t <= 0){ m.t = rnd(1.5, 4); m.vx = rnd(-1, 1); m.vy = rnd(-1, 1); }
     const dm = Math.hypot(P.x - m.x, P.y - m.y);
+    const strong = stats.lvl < zoneReq(m.y) ? 2.5 : 1;
     if (dm < 260){
       m.x += (P.x - m.x) / dm * m.sp * dt;
       m.y += (P.y - m.y) / dm * m.sp * dt;
       if (dm < 34 && P.shield <= 0){
-        P.hp -= (m.dmg || 6) * dt * 1.6;
+        P.hp -= (m.dmg || 6) * dt * 1.6 * (stats.lvl < zoneReq(m.y) ? 2.5 : 1);
         if (P.hp <= 0){ P.hp = P.max; P.x = WORLD.w / 2; P.y = WORLD.h / 2; toast("Тебя оттащило на базу"); }
       }
     } else {
@@ -6385,7 +6396,7 @@ function loop(now){
   });
   animT += dt;
   spawnTimer -= dt;
-  if (spawnTimer <= 0){ spawnTimer = 2.5; if (mobs.length < 9) spawnOne(); }
+  if (spawnTimer <= 0){ spawnTimer = 1.2; if (mobs.length < 26) spawnOne(); }
   hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
   drop = drop.filter(d => {
     d.t -= dt;
@@ -6434,7 +6445,7 @@ function loop(now){
   }
   const zi = zoneIndex(P.y);
   const zel = document.getElementById("zone");
-  if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n;
+  if (zel) zel.textContent = "ЛОК. " + (zi + 1) + "/10 · " + ZONES[zi].n + " · ур." + (1 + zi * 25);
   ["attack", "shield", "ability"].forEach(k => {
     const el = document.getElementById(k);
     const cd = k === "attack" ? P.atkCd : k === "shield" ? P.dashCd : P.abCd;
@@ -6647,7 +6658,7 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
   }
   const zi = zoneIndex(P.y);
   const zel = document.getElementById("zone");
-  if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n; }
+  if (zel) zel.textContent = "ЛОК. " + (zi + 1) + "/10 · " + ZONES[zi].n + " · ур." + (1 + zi * 25); }
 requestAnimationFrame(loop);
 </script>
 </body>
