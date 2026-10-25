@@ -5151,6 +5151,60 @@ const BUILDINGS = [
   {id:"engine", n:"Фрактал", e:"🧩", base:2.1e15, cps:6e9},
   {id:"idle", n:"Идлверс", e:"🌌", base:2.6e16, cps:4.5e10},
 ];
+const TREE = [];
+(function(){
+  var pcts = [10, 25, 50, 100, 200, 500];
+  var price = [1, 2, 4, 8, 16, 32];
+  BUILDINGS.forEach(function(b){
+    pcts.forEach(function(p, i){
+      TREE.push({
+        id: "t_" + b.id + "_" + i,
+        n: b.n,
+        e: b.e,
+        pct: p,
+        bid: b.id,
+        cost: price[i],
+        grp: b.n
+      });
+    });
+  });
+  var glob = [
+    ["Клик +50%", "👆", 2], ["Клик +100%", "👆", 5], ["Клик ×2", "👆", 14],
+    ["Золотые чаще", "🍪", 3], ["Золотые чаще II", "🍪", 9],
+    ["Старт: 10 курсоров", "🎁", 6], ["Старт: 25 курсоров", "🎁", 20],
+    ["+10% ко всему", "🌟", 4], ["+25% ко всему", "🌟", 12],
+    ["+50% ко всему", "🌟", 30], ["+100% ко всему", "🌟", 70],
+    ["Фишек +10%", "💠", 15], ["Фишек +25%", "💠", 45],
+    ["Производство ×1.5", "⚡", 25], ["Производство ×2", "⚡", 90],
+    ["Достижения +x2", "🏆", 18], ["Вознесение дешевле", "🌀", 22],
+    ["Молоко +50%", "🥛", 8], ["Улицы ярче", "✨", 1], ["Частицы гуще", "✨", 1]
+  ];
+  glob.forEach(function(g, i){
+    TREE.push({ id: "g_" + i, n: g[0], e: g[1], cost: g[2], pct: 0, grp: "Общее" });
+  });
+})();
+function treeHas(id){ return S.tree.indexOf(id) >= 0; }
+function treeBoost(bid){
+  var pcts = [10, 25, 50, 100, 200, 500], m = 1;
+  for (var i = 0; i < pcts.length; i++){
+    if (treeHas("t_" + bid + "_" + i)) m *= (1 + pcts[i] / 100);
+  }
+  return m;
+}
+function treeGlobal(){
+  var m = 1, i;
+  for (i = 0; i < TREE.length; i++){
+    var t = TREE[i];
+    if (!treeHas(t.id) || t.bid) continue;
+    if (t.n.indexOf("+10% ко всему") === 0) m *= 1.10;
+    else if (t.n.indexOf("+25% ко всему") === 0) m *= 1.25;
+    else if (t.n.indexOf("+50% ко всему") === 0) m *= 1.50;
+    else if (t.n.indexOf("+100% ко всему") === 0) m *= 2.0;
+    else if (t.n.indexOf("Производство ×1.5") === 0) m *= 1.5;
+    else if (t.n.indexOf("Производство ×2") === 0) m *= 2.0;
+  }
+  return m;
+}
 const UPGRADES = [];
 (function(){
   // 6 уровней на каждое из 15 зданий = 90
@@ -5195,7 +5249,7 @@ const ACH = [
   {id:"p2", n:"5 вознесений", check:()=>S.resets>=5},
 ];
 const KEY = "yugi_proto_v3";
-let S = {bal:0,total:0,clicks:0,golden:0,chips:0,resets:0,b:{},u:[],tab:"b"};
+let S = {bal:0,total:0,clicks:0,golden:0,chips:0,resets:0,b:{},u:[],tree:[],tab:"b"};
 let buffs = [];
 let dirty = true;   // нужно перерисовать списки
 
@@ -5203,10 +5257,13 @@ function own(id){ return S.b[id] || 0; }
 function has(id){ return S.u.indexOf(id) >= 0; }
 function achCount(){ return ACH.filter(a=>a.check()).length; }
 function tapPower(){
-  let v = 1;
+  var v = 1;
   if (has("tap2")) v += 1;
   if (has("tap5")) v *= 2;
   if (has("tap10")) v *= 3;
+  if (treeHas("g_0")) v *= 1.5;
+  if (treeHas("g_1")) v *= 2.0;
+  if (treeHas("g_2")) v *= 2.0;
   v *= (1 + S.chips * 0.01);
   if (buffActive("click")) v *= 777;
   return v;
@@ -5214,11 +5271,12 @@ function tapPower(){
 function cps(){
   var v = 0;
   BUILDINGS.forEach(function(b){
-    var m = 1;
+    var m = treeBoost(b.id);
     for (var i = 0; i < 6; i++){ if (has(b.id + "_" + i)) m *= 2; }
     v += own(b.id) * b.cps * m;
   });
   for (var p = 5; p <= 50; p += 5){ if (has("g" + p)) v *= (1 + p / 100); }
+  v *= treeGlobal();
   v *= (1 + S.chips * 0.01);
   v *= (1 + achCount() * 0.01);
   if (buffActive("frenzy")) v *= 7;
@@ -5294,6 +5352,12 @@ function buyN(id, count){
   var row = document.querySelector('[data-buy="' + id + '"]');
   if (row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
 }
+function buyTree(id){
+  var t = TREE.find(function(x){ return x.id === id; });
+  if (!t || treeHas(id) || S.chips < t.cost) return;
+  S.chips -= t.cost; S.tree.push(id);
+  dirty = true; numbers(); lists();
+}
 function buyUp(id){
   var u = UPGRADES.find(function(x){ return x.id === id; });
   if (!u || has(id) || S.bal < u.cost) return;
@@ -5311,7 +5375,7 @@ function ascend(){
 }
 function resetAll(){
   localStorage.removeItem(KEY);
-  S = {bal:0,total:0,clicks:0,golden:0,chips:0,resets:0,b:{},u:[],tab:"b"};
+  S = {bal:0,total:0,clicks:0,golden:0,chips:0,resets:0,b:{},u:[],tree:[],tab:"b"};
   buffs = []; dirty = true;
   numbers(); lists(); toast("Сброшено");
 }
@@ -5373,15 +5437,21 @@ function lists(){
         '<div class="ct">' + own(b.id) + '</div></div>';
     }).join("");
   } else if (S.tab === "u"){
-    var ups = UPGRADES.filter(function(u){ return u.check() && !has(u.id); });
-    box.innerHTML = ups.length
-      ? ups.map(function(u){
-          return '<div class="item up' + (S.bal >= u.cost ? "" : " off") +
-            '" data-up="' + u.id + '"><div class="ic">⬆️</div><div class="tx">' +
-            '<div class="nm">' + u.n + '</div><div class="pr">' + fmt(u.cost) +
-            ' · ' + u.d + '</div></div></div>';
-        }).join("")
-      : '<div style="padding:16px;font-size:12px;color:#a98a5f;text-align:center">Пока нечего улучшать</div>';
+    var groups = {};
+    TREE.forEach(function(t){ (groups[t.grp] = groups[t.grp] || []).push(t); });
+    box.innerHTML = Object.keys(groups).map(function(g){
+      return '<div style="padding:7px 9px 3px;font-size:10px;letter-spacing:1px;' +
+        'text-transform:uppercase;color:#c9a878;font-weight:800">' + g + '</div>' +
+        groups[g].map(function(t){
+          var on = treeHas(t.id), can = S.chips >= t.cost;
+          return '<div class="item' + (on ? " up" : (can ? "" : " off")) +
+            '" data-tree="' + t.id + '"><div class="ic">' + t.e + '</div>' +
+            '<div class="tx"><div class="nm">' + t.n +
+            (t.pct ? ' <span style="color:#8bd65a">+' + t.pct + '%</span>' : '') +
+            '</div><div class="pr">' + (on ? "куплено" : t.cost + " 💠") + '</div></div>' +
+            (on ? '<div class="ct">✓</div>' : '') + '</div>';
+        }).join("");
+    }).join("");
   } else {
     box.innerHTML = '<div style="padding:10px;display:flex;flex-wrap:wrap;gap:5px">' +
       ACH.map(function(a){
@@ -5393,9 +5463,10 @@ function lists(){
 }
 /* делегирование: обработчики не теряются при перестройке */
 document.getElementById("shop").addEventListener("click", function(e){
-  var t = e.target.closest("[data-buy],[data-up]");
+  var t = e.target.closest("[data-buy],[data-up],[data-tree]");
   if (!t) return;
   if (t.dataset.buy) buyN(t.dataset.buy, 1);
+  else if (t.dataset.tree) buyTree(t.dataset.tree);
   else buyUp(t.dataset.up);
 });
 document.getElementById("tabs").addEventListener("click", function(e){
