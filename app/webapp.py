@@ -5822,6 +5822,9 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 <div class="hptxt" id="hptxt">HP 120 / 120</div>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
+<div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:150px">
+  <button class="ab" id="bag2" style="width:52px;height:52px;font-size:18px">🎒</button>
+</div>
 <div class="btns">
   <button class="ab" id="shield">💨<span class="cd" id="cdShield"></span></button>
   <button class="ab" id="ability">✋<span class="cd" id="cdAbility"></span></button>
@@ -6339,6 +6342,10 @@ function render(){
   const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
   cam.x += ((P.x - w / 2) - cam.x) * 0.12;
   cam.y += ((P.y - h / 2) - cam.y) * 0.12;
+  // границы карты не показываем: камера упирается в края мира
+  const maxX = Math.max(0, WORLD.w - w), maxY = Math.max(0, WORLD.h - h);
+  cam.x = Math.max(0, Math.min(maxX, cam.x));
+  cam.y = Math.max(0, Math.min(maxY, cam.y));
   ctx.fillStyle = "#1a2018"; ctx.fillRect(0, 0, w, h);
   ctx.save(); ctx.translate(-cam.x, -cam.y);
 
@@ -6346,14 +6353,18 @@ function render(){
   ctx.fillStyle = "#16210f"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
   for (let y = 0; y < WORLD.h; y += 64){
     for (let x = 0; x < WORLD.w; x += 64){
-      ctx.fillStyle = "#2f4a1e"; ctx.fillRect(x, y, 64, 64);
-      if (TOWN.complete && TOWN.naturalWidth){
-        ctx.save(); ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(TOWN, 0, 0, 16, 16, x, y, 64, 64);
-        ctx.restore();
-      }
+      ctx.fillStyle = "#3a5a24"; ctx.fillRect(x, y, 64, 64);
 
     }
+  }
+  if (TOWN.complete && TOWN.naturalWidth){
+    ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.5;
+    for (let gy = 0; gy < WORLD.h; gy += 32){
+      for (let gx = 0; gx < WORLD.w; gx += 32){
+        ctx.drawImage(TOWN, 0, 0, 16, 16, gx, gy, 32, 32);
+      }
+    }
+    ctx.restore();
   }
   // тропа: пунктир из точек
   PATH.forEach(function(pt){
@@ -6478,6 +6489,11 @@ paintInv();
 const bagBtn = document.getElementById("bagbtn");
 if (bagBtn) bagBtn.onclick = (e) => {
   e.preventDefault();
+  document.getElementById("bag").classList.add("on");
+  paintInv();
+};
+const bag2 = document.getElementById("bag2");
+if (bag2) bag2.onclick = () => {
   document.getElementById("bag").classList.add("on");
   paintInv();
 };
