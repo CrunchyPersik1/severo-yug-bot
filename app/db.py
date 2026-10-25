@@ -451,6 +451,47 @@ class Database:
     # Кликер: здания
     # ------------------------------------------------------------------ #
 
+    async def yugi_buy_upgrade(self, user_id: int, upgrade_id: str) -> int | None:
+        """Покупка апгрейда за Юги. None — нет денег, уже куплен или не дорос."""
+        import json
+
+        from . import yugi as ymod
+
+        spec = ymod.UPGRADES_BY_ID.get(upgrade_id)
+        if spec is None:
+            return None
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select balance, buildings, upgrades from yugi "
+                    "where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return None
+                raw_up = row["upgrades"]
+                ups = json.loads(raw_up) if isinstance(raw_up, str) else list(raw_up or [])
+                if upgrade_id in [str(x) for x in ups]:
+                    return None
+                raw_b = row["buildings"]
+                owned = json.loads(raw_b) if isinstance(raw_b, str) else dict(raw_b or {})
+                need = int(spec.get("need") or 0)
+                target = spec.get("building")
+                if need and target and int(owned.get(target, 0) or 0) < need:
+                    return None
+                cost = int(spec["cost"])
+                if float(row["balance"]) < float(cost):
+                    return None
+                ups.append(upgrade_id)
+                await con.execute(
+                    "update yugi set balance = balance - $2, upgrades = $3::jsonb "
+                    "where user_id = $1",
+                    user_id,
+                    float(cost),
+                    json.dumps(ups),
+                )
+        return cost
+
     async def yugi_buildings(self, user_id: int) -> dict[str, int]:
         async with self._p().acquire() as con:
             rows = await con.fetch(

@@ -58,8 +58,8 @@ BUILDINGS: tuple[dict[str, Any], ...] = (
      "grow": 1.15, "note": "целая вселенная Югов"},
 )
 
-# Улучшения: покупаются один раз, множат тап и доход.
-UPGRADES: tuple[dict[str, Any], ...] = (
+# Улучшения: старые четыре + древо по зданиям + общие.
+_OLD_UPGRADES: tuple[dict[str, Any], ...] = (
     {"id": "ruka", "name": "Вторая рука", "emoji": "✋", "cost": 5_000,
      "tap_mult": 2.0, "prod_mult": 1.0, "note": "тап ×2"},
     {"id": "tetrad", "name": "Тетрадь в клетку", "emoji": "📓", "cost": 40_000,
@@ -68,6 +68,37 @@ UPGRADES: tuple[dict[str, Any], ...] = (
      "tap_mult": 1.0, "prod_mult": 1.5, "note": "доход ×1.5"},
     {"id": "chetvert", "name": "Пятая четверть", "emoji": "🔥", "cost": 1_500_000,
      "tap_mult": 3.0, "prod_mult": 2.0, "note": "тап ×3, доход ×2"},
+)
+
+# 6 уровней на каждое здание (нужно владеть N штуками) + 10 общих = 100
+_NEED = (5, 10, 25, 50, 100, 150)
+_PRICE = (20, 200, 2_000, 20_000, 200_000, 2_000_000)
+
+UPGRADES: tuple[dict[str, Any], ...] = _OLD_UPGRADES + tuple(
+    {
+        "id": b["id"] + "_lvl" + str(i),
+        "name": b["name"] + " ×2",
+        "emoji": b["emoji"],
+        "cost": int(float(b["cost"]) * _PRICE[i]),
+        "tap_mult": 1.0,
+        "prod_mult": 2.0,
+        "building": b["id"],
+        "need": _NEED[i],
+        "note": "нужно " + str(_NEED[i]) + " шт, доход вдвое",
+    }
+    for b in BUILDINGS
+    for i in range(6)
+) + tuple(
+    {
+        "id": "g" + str(i),
+        "name": "Общий рост +" + str(5 * (i + 1)) + "%",
+        "emoji": "🌟",
+        "cost": int(50_000 * (30 ** i)),
+        "tap_mult": 1.0,
+        "prod_mult": 1.0 + 0.05 * (i + 1),
+        "note": "весь доход +" + str(5 * (i + 1)) + "%",
+    }
+    for i in range(10)
 )
 
 BUILDINGS_BY_ID: dict[str, dict[str, Any]] = {b["id"]: b for b in BUILDINGS}
@@ -109,17 +140,31 @@ def tap_power(upgrades: list[str]) -> float:
 
 
 def per_second(buildings: dict[str, Any], upgrades: list[str]) -> float:
+    """Доход в секунду: производство зданий × их апгрейды × общие."""
+    per_building: dict[str, float] = {}
+    common = 1.0
+    for upgrade_id in upgrades:
+        spec = UPGRADES_BY_ID.get(str(upgrade_id))
+        if spec is None:
+            continue
+        target = spec.get("building")
+        if target:
+            per_building[target] = per_building.get(target, 1.0) * float(
+                spec.get("prod_mult", 1.0)
+            )
+        else:
+            common *= float(spec.get("prod_mult", 1.0))
     total = 0.0
     for building_id, count in buildings.items():
-        spec = BUILDINGS_BY_ID.get(building_id)
-        if spec is not None:
-            total += float(spec["prod"]) * int(count or 0)
-    mult = 1.0
-    for upgrade_id in upgrades:
-        spec = UPGRADES_BY_ID.get(upgrade_id)
-        if spec is not None:
-            mult *= float(spec["prod_mult"])
-    return total * mult
+        spec = BUILDINGS_BY_ID.get(str(building_id))
+        if spec is None:
+            continue
+        total += (
+            float(spec["prod"])
+            * int(count or 0)
+            * per_building.get(str(building_id), 1.0)
+        )
+    return total * common
 
 
 def left_to_earn(total: float) -> float:
