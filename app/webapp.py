@@ -5739,7 +5739,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   color:#d8b45a;border-radius:10px;width:44px;height:44px;font-size:17px;
   font-family:inherit;box-shadow:0 0 0 2px #120c06,inset 0 0 10px #00000099}
 .top button:active{transform:translateY(2px)}
-#wpanel{position:fixed;left:10px;right:10px;bottom:196px;display:flex;gap:8px;
+#wpanel{position:fixed;left:8px;right:8px;bottom:8px;display:flex;gap:8px;
   z-index:10}
 .wcol{flex:1;min-width:0;background:linear-gradient(#2a1c10ee,#140d06ee);border:3px solid #6b4a22;
   border-radius:10px;padding:8px 10px;box-shadow:0 0 0 2px #120c06}
@@ -5749,14 +5749,14 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .wstat{display:flex;justify-content:space-between;font-size:7px;color:#b8a888;
   padding:2px 0}
 .wstat b{color:#8bd65a}
-.hpbar{position:fixed;left:14px;right:14px;bottom:152px;height:16px;z-index:12;
+.hpbar{position:fixed;left:14px;right:14px;bottom:196px;height:15px;z-index:12;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
   transition:width .2s;width:100%}
-.hptxt{position:fixed;left:0;right:0;bottom:170px;text-align:center;font-size:11px;
+.hptxt{position:fixed;left:0;right:0;bottom:214px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
-.joy{position:fixed;left:14px;bottom:14px;width:126px;height:126px;border-radius:50%;
+.joy{position:fixed;left:14px;bottom:112px;width:118px;height:118px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
   border:3px solid #6b4a22;z-index:11;touch-action:none;
   box-shadow:0 0 0 3px #120c06,inset 0 0 22px #000000cc,0 0 18px #00000088}
@@ -5765,7 +5765,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .joy i{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;
   border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a4020,#241608);
   border:3px solid #c9a227;box-shadow:0 0 12px #000000aa,inset 0 0 8px #00000088}
-.btns{position:fixed;right:14px;bottom:14px;display:flex;align-items:flex-end;gap:10px;z-index:11}
+.btns{position:fixed;right:14px;bottom:112px;display:flex;align-items:flex-end;gap:10px;z-index:11}
 .ab{width:58px;height:58px;border-radius:50%;border:3px solid #6b4a22;
   background:radial-gradient(circle at 32% 26%,#3a2a18,#140d06);
   color:#d8b45a;font-size:22px;font-family:inherit;position:relative;
@@ -5803,7 +5803,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
-#toast{position:fixed;left:14px;right:14px;bottom:290px;background:#1f2a3fee;color:#fff;
+#toast{position:fixed;left:14px;right:14px;bottom:300px;background:#1f2a3fee;color:#fff;
   border-radius:11px;padding:12px 15px;font-size:13px;font-weight:700;text-align:center;
   transform:translateY(240%);transition:.25s;z-index:60}
 #toast.on{transform:translateY(0)}
@@ -5841,6 +5841,12 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
     <div class="wstat"><span>Урон</span><b id="wdmg">0</b></div>
     <div class="wstat"><span>Дальность</span><b id="wrange">0</b></div>
     <div class="wstat"><span>Скорость</span><b id="wspd">0</b></div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button id="wupg" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
+        color:#c9a227;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px">УЛУЧШИТЬ</button>
+      <button id="wchat" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
+        color:#c9a227;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px">ЧАТ</button>
+    </div>
   </div>
 </div>
 <div class="hpbar"><i id="hpfill"></i></div>
@@ -5912,8 +5918,12 @@ const ZONES = [
   {n: "Бездна",         g: "#1a0f14", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
 ];
 const WORLD = {w: 900, h: ZONE_H * ZONES.length};
-function zoneAt(y){ return ZONES[Math.max(0, Math.min(ZONES.length - 1, Math.floor(y / ZONE_H)))]; }
-function zoneIndex(y){ return Math.max(0, Math.min(ZONES.length - 1, Math.floor(y / ZONE_H))); }
+function zoneIndex(y){
+  // низ карты = локация 1, верх = последняя
+  const raw = Math.floor(y / ZONE_H);
+  return Math.max(0, Math.min(ZONES.length - 1, ZONES.length - 1 - raw));
+}
+function zoneAt(y){ return ZONES[zoneIndex(y)]; }
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -5995,8 +6005,9 @@ let cam = {x: 0, y: 0};
 let mobs = [], hits = [], drop = [];
 let bosses = [];
 for (let i = 0; i < ZONES.length; i++){
-  bosses.push({x: WORLD.w / 2 - 180, y: i * ZONE_H + 420, r: 60, t: 0, zone: i, idx: 0});
-  bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 1050, r: 60, t: 0, zone: i, idx: 1});
+  const zid = ZONES.length - 1 - i;
+  bosses.push({x: WORLD.w / 2 - 180, y: i * ZONE_H + 420, r: 60, t: 0, zone: zid, idx: 0});
+  bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 1050, r: 60, t: 0, zone: zid, idx: 1});
 }
 let boss = bosses[0];
 let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
@@ -6596,6 +6607,10 @@ if (bag2) bag2.onclick = () => {
   document.getElementById("bag").classList.add("on");
   paintInv();
 };
+const wUpg = document.getElementById("wupg");
+if (wUpg) wUpg.onclick = () => toast("Улучшение оружия — за монеты, в большой версии");
+const wChat = document.getElementById("wchat");
+if (wChat) wChat.onclick = () => toast("Чат — в большой версии");
 const bagClose = document.getElementById("bagclose");
 if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
 document.getElementById("startbtn").onclick = () => {
