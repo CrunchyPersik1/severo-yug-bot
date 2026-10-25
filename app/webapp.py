@@ -5715,3 +5715,456 @@ numbers(); lists(); makeParticles();
 async def proto_yugi() -> HTMLResponse:
     """Прототип кликера: чистая симуляция в браузере, база не затрагивается."""
     return HTMLResponse(PROTO_PAGE)
+DUNGEON_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Прототип · Подземелье Тимура</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;
+  font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:#e8ebf2}
+#cv{display:block;width:100%;height:100%;touch-action:none;background:#1a2018}
+.top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
+  background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
+.top button{flex:1;border:1px solid #2a3346;background:#151a25cc;color:#8b93a7;
+  border-radius:9px;padding:9px 4px;font-size:10.5px;font-weight:800;font-family:inherit}
+.top button.on{background:#1f4fd8;border-color:#3b6fff;color:#fff}
+.hpbar{position:fixed;left:14px;right:14px;bottom:104px;height:16px;
+  background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
+.hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
+  transition:width .2s;width:100%}
+.hptxt{position:fixed;left:0;right:0;bottom:122px;text-align:center;font-size:11px;
+  font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
+  font-family:ui-monospace,monospace}
+.joy{position:fixed;left:18px;bottom:18px;width:118px;height:118px;border-radius:50%;
+  background:#ffffff12;border:2px solid #ffffff22;z-index:11;touch-action:none}
+.joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
+  border-radius:50%;background:#ffffff2e;border:2px solid #ffffff44}
+.btns{position:fixed;right:16px;bottom:14px;display:flex;align-items:flex-end;gap:10px;z-index:11}
+.ab{width:64px;height:64px;border-radius:50%;border:3px solid #ffffff33;
+  background:#ffffff18;color:#fff;font-size:20px;font-family:inherit;position:relative;
+  display:flex;align-items:center;justify-content:center}
+.ab.atk{width:82px;height:82px;background:#e2464633;border-color:#e24646aa}
+.ab .cd{position:absolute;inset:-3px;border-radius:50%;background:#000a;display:none;
+  align-items:center;justify-content:center;font-size:13px;font-weight:900}
+.ab.cool .cd{display:flex}
+.coins{position:fixed;top:52px;right:12px;background:#151a25dd;border:1px solid #2a3346;
+  border-radius:9px;padding:6px 11px;font-size:12px;font-weight:900;color:#f6c94a;z-index:10;
+  font-family:ui-monospace,monospace}
+.cls{position:fixed;inset:0;background:#0b0e14f2;z-index:30;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px}
+.cls h1{margin:0 0 6px;font-size:20px}
+.cls .c{width:100%;max-width:360px;border:2px solid #2a3346;background:#151a25;
+  border-radius:14px;padding:14px;text-align:left;color:#e8ebf2;font-family:inherit}
+.cls .c b{font-size:15px}
+.cls .c span{display:block;font-size:11.5px;color:#8b93a7;margin-top:3px}
+#battle{position:fixed;inset:0;background:#0b0e14f6;z-index:40;display:none;
+  flex-direction:column;padding:14px}
+#battle.on{display:flex}
+.arena{flex:1;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.fighter{width:44%;text-align:center}
+.fighter canvas{width:100%;height:190px}
+.fname{font-size:12px;font-weight:900;margin-top:6px}
+.fhp{height:14px;background:#000a;border:2px solid #2a3346;border-radius:99px;
+  overflow:hidden;margin-top:5px}
+.fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
+  transition:width .15s}
+.acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
+#toast{position:fixed;left:14px;right:14px;bottom:180px;background:#1f2a3fee;color:#fff;
+  border-radius:11px;padding:12px 15px;font-size:13px;font-weight:700;text-align:center;
+  transform:translateY(240%);transition:.25s;z-index:60}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div class="top">
+  <button data-tab="clicker">КЛИКЕР</button>
+  <button data-tab="dungeon" class="on">ПОДЗЕМЕЛЬЕ</button>
+  <button data-tab="profile">ПРОФИЛЬ</button>
+  <button data-tab="settings">НАСТРОЙКИ</button>
+</div>
+<div class="coins">🪙 <span id="coins">0</span></div>
+
+<div class="hpbar"><i id="hpfill"></i></div>
+<div class="hptxt" id="hptxt">HP 120 / 120</div>
+
+<div class="joy" id="joy"><i id="knob"></i></div>
+<div class="btns">
+  <button class="ab" id="shield">🛡<span class="cd" id="cdShield"></span></button>
+  <button class="ab" id="ability">✋<span class="cd" id="cdAbility"></span></button>
+  <button class="ab atk" id="attack">⚔<span class="cd" id="cdAttack"></span></button>
+</div>
+
+<div class="cls" id="cls">
+  <h1>Выбери класс</h1>
+  <button class="c" data-cls="sword"><b>⚔ Мечник</b>
+    <span>Много HP, бьёт вблизи. Способность: рывок с уроном.</span></button>
+  <button class="c" data-cls="bow"><b>🏹 Лучник</b>
+    <span>Дальний бой, слабее в ближнем. Способность: залп.</span></button>
+  <button class="c" data-cls="mage"><b>✨ Маг</b>
+    <span>Мало HP, сильная способность бьёт по площади.</span></button>
+</div>
+
+<div id="battle">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:13px;font-weight:900" id="bname">БОСС</div>
+    <button id="bflee" style="border:1px solid #2a3346;background:#151a25;color:#8b93a7;
+      border-radius:9px;padding:8px 14px;font-family:inherit;font-size:12px">Сдаться</button>
+  </div>
+  <div class="arena">
+    <div class="fighter">
+      <canvas id="pcv" width="200" height="220"></canvas>
+      <div class="fname">ИГРОК</div>
+      <div class="fhp"><i id="php"></i></div>
+    </div>
+    <div class="fighter">
+      <canvas id="ecv" width="200" height="220"></canvas>
+      <div class="fname" id="ename">БОСС</div>
+      <div class="fhp"><i id="ehp"></i></div>
+    </div>
+  </div>
+  <div class="acts">
+    <button class="ab" id="bshield">🛡</button>
+    <button class="ab" id="bability">✋</button>
+    <button class="ab atk" id="battack">⚔</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script>
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const WORLD = {w: 1800, h: 1400};
+let P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, dmg: 14, coins: 0,
+         cls: "sword", atkCd: 0, shCd: 0, abCd: 0, shield: 0, dir: 0};
+let cam = {x: 0, y: 0};
+let mobs = [], hits = [], drop = [];
+let boss = {x: WORLD.w * 0.78, y: WORLD.h * 0.26, r: 70, t: 0, active: false};
+let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
+let inBattle = false;
+
+function rnd(a, b){ return a + Math.random() * (b - a); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2500);
+}
+/* ---------- мир ---------- */
+function spawnMobs(n){
+  mobs = [];
+  for (let i = 0; i < n; i++){
+    mobs.push({x: rnd(100, WORLD.w - 100), y: rnd(100, WORLD.h - 100),
+               hp: 30, max: 30, sp: rnd(18, 34), t: rnd(0, 6), hit: 0});
+  }
+}
+function spawnNpcs(n){
+  npcs = [];
+  for (let i = 0; i < n; i++){
+    npcs.push({x: 120 + i * 46, y: 120, name: "OFFLINE"});
+  }
+}
+function reset(cls){
+  P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, dmg: 14, coins: P.coins,
+       cls: cls, atkCd: 0, shCd: 0, abCd: 0, shield: 0, dir: 0};
+  if (cls === "bow"){ P.max = 95; P.hp = 95; P.dmg = 11; }
+  if (cls === "mage"){ P.max = 80; P.hp = 80; P.dmg = 13; }
+  spawnMobs(9); spawnNpcs(6);
+}
+/* ---------- ввод ---------- */
+const keys = {};
+addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+let joyV = {x: 0, y: 0}, joyId = null;
+const joyEl = document.getElementById("joy"), knob = document.getElementById("knob");
+function joyStart(e){
+  joyId = e.pointerId; joyMove(e);
+}
+function joyMove(e){
+  if (e.pointerId !== joyId) return;
+  const r = joyEl.getBoundingClientRect();
+  let dx = e.clientX - (r.left + r.width / 2);
+  let dy = e.clientY - (r.top + r.height / 2);
+  const len = Math.hypot(dx, dy) || 1, max = r.width / 2 - 12;
+  const k = Math.min(1, max / len);
+  dx *= k; dy *= k;
+  knob.style.transform = "translate(" + dx + "px," + dy + "px)";
+  joyV = {x: dx / max, y: dy / max};
+}
+function joyEnd(e){
+  if (e.pointerId !== joyId) return;
+  joyId = null; joyV = {x: 0, y: 0}; knob.style.transform = "";
+}
+joyEl.addEventListener("pointerdown", joyStart);
+addEventListener("pointermove", joyMove);
+addEventListener("pointerup", joyEnd);
+addEventListener("pointercancel", joyEnd);
+
+/* ---------- бой на карте ---------- */
+function attack(){
+  if (P.atkCd > 0 || inBattle) return;
+  const range = P.cls === "bow" ? 150 : P.cls === "mage" ? 120 : 78;
+  const dmg = P.cls === "mage" ? P.dmg * 1.15 : P.dmg;
+  P.atkCd = P.cls === "bow" ? 0.7 : 0.45;
+  let hitAny = false;
+  mobs.forEach(m => {
+    const d = Math.hypot(m.x - P.x, m.y - P.y);
+    if (d < range){
+      m.hp -= dmg; m.hit = 0.25; hitAny = true;
+      hits.push({x: m.x, y: m.y - 26, t: 0.9, v: Math.round(dmg), c: "#ffd98a"});
+      if (m.hp <= 0) killMob(m);
+    }
+  });
+  if (!hitAny) hits.push({x: P.x, y: P.y - 34, t: 0.5, v: "", c: "#8b93a7"});
+}
+function killMob(m){
+  const i = mobs.indexOf(m);
+  if (i >= 0) mobs.splice(i, 1);
+  P.coins += 3 + Math.floor(Math.random() * 5);
+  stats.kills += 1; stats.exp += 12;
+  if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.dmg += 2; P.max += 8; P.hp = P.max;
+    toast("Уровень " + stats.lvl + "! Урон и HP выросли"); }
+  if (Math.random() < 0.22){
+    drop.push({x: m.x, y: m.y, kind: "weapon", t: 6});
+    toast("Выпало оружие!");
+  }
+  if (mobs.length < 4) spawnMobs(2);
+  sync();
+}
+function shieldUp(){
+  if (P.shCd > 0) return;
+  P.shCd = 7; P.shield = 2.5;
+  toast("Щит на 2.5 сек");
+}
+function ability(){
+  if (P.abCd > 0) return;
+  P.abCd = 8;
+  if (P.cls === "mage"){
+    mobs.slice().forEach(m => {
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 210){ m.hp -= P.dmg * 1.6; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 1.6), c: "#9fd6ff"});
+        if (m.hp <= 0) killMob(m); }
+    });
+  } else if (P.cls === "bow"){
+    mobs.slice().forEach(m => {
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 260){ m.hp -= P.dmg * 0.8; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 0.8), c: "#8bd65a"});
+        if (m.hp <= 0) killMob(m); }
+    });
+  } else {
+    mobs.slice().forEach(m => {
+      if (Math.hypot(m.x - P.x, m.y - P.y) < 110){ m.hp -= P.dmg * 2.2; m.hit = .3;
+        hits.push({x: m.x, y: m.y - 26, t: .9, v: Math.round(P.dmg * 2.2), c: "#e24646"});
+        if (m.hp <= 0) killMob(m); }
+    });
+  }
+  toast("Способность!");
+}
+document.getElementById("attack").onclick = attack;
+document.getElementById("shield").onclick = shieldUp;
+document.getElementById("ability").onclick = ability;
+
+/* ---------- босс ---------- */
+let B = null;
+function startBattle(){
+  inBattle = true;
+  B = {hp: 600, max: 600, name: "Тимур, страж подземелья", atk: 16,
+       cd: 0, pcd: 0};
+  document.getElementById("battle").classList.add("on");
+  document.getElementById("ename").textContent = B.name;
+  drawFighters();
+  syncBattle();
+}
+function endBattle(win){
+  inBattle = false; B = null;
+  document.getElementById("battle").classList.remove("on");
+  if (win){
+    P.coins += 120;
+    toast("Босс повержен! +120 монет и оружие");
+    P.dmg += 3;
+  } else {
+    toast("Ты проиграл. Возвращайся сильнее");
+    P.hp = P.max;
+  }
+  boss.t = 0;
+  sync();
+}
+function syncBattle(){
+  if (!B) return;
+  document.getElementById("php").style.width = Math.max(0, P.hp / P.max * 100) + "%";
+  document.getElementById("ehp").style.width = Math.max(0, B.hp / B.max * 100) + "%";
+}
+document.getElementById("battack").onclick = () => {
+  if (!B || B.pcd > 0) return;
+  B.hp -= P.dmg * 1.4; B.pcd = 0.55;
+  syncBattle();
+  if (B.hp <= 0) endBattle(true);
+};
+document.getElementById("bshield").onclick = () => { if (B) P.shield = 1.6; };
+document.getElementById("bability").onclick = () => {
+  if (!B || P.abCd > 0) return;
+  P.abCd = 7; B.hp -= P.dmg * 2.6; syncBattle();
+  if (B.hp <= 0) endBattle(true);
+};
+document.getElementById("bflee").onclick = () => endBattle(false);
+
+/* ---------- отрисовка ---------- */
+function drawFighters(){
+  [["pcv", "#4a9eff"], ["ecv", "#e24646"]].forEach(([id, color]) => {
+    const c = document.getElementById(id).getContext("2d");
+    c.clearRect(0, 0, 200, 220);
+    c.fillStyle = color;
+    c.beginPath(); c.arc(100, 70, 34, 0, 7); c.fill();
+    c.fillStyle = "#0b0e14";
+    c.fillRect(60, 108, 80, 90);
+    c.fillStyle = color;
+    c.fillRect(66, 112, 68, 82);
+  });
+}
+function person(x, y, color, label, alpha){
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.fillStyle = "#0006";
+  ctx.beginPath(); ctx.ellipse(x, y + 16, 13, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y - 12, 10, 0, 7); ctx.fill();
+  ctx.fillRect(x - 9, y - 2, 18, 22);
+  if (label){
+    ctx.fillStyle = "#8b93a7"; ctx.font = "9px ui-monospace,monospace";
+    ctx.textAlign = "center"; ctx.fillText(label, x, y + 34);
+  }
+  ctx.globalAlpha = 1;
+}
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
+  loop.last = now;
+  if (!P.cls || inBattle){ render(dt); return; }
+
+  let vx = joyV.x, vy = joyV.y;
+  if (keys["w"] || keys["ц"] || keys["arrowup"]) vy = -1;
+  if (keys["s"] || keys["ы"] || keys["arrowdown"]) vy = 1;
+  if (keys["a"] || keys["ф"] || keys["arrowleft"]) vx = -1;
+  if (keys["d"] || keys["в"] || keys["arrowright"]) vx = 1;
+  const len = Math.hypot(vx, vy);
+  if (len > 1){ vx /= len; vy /= len; }
+  const speed = 210;
+  P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
+  P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
+  if (len > 0.05) P.dir = Math.atan2(vy, vx);
+
+  P.atkCd = Math.max(0, P.atkCd - dt);
+  P.shCd = Math.max(0, P.shCd - dt);
+  P.abCd = Math.max(0, P.abCd - dt);
+  P.shield = Math.max(0, P.shield - dt);
+
+  mobs.forEach(m => {
+    m.t -= dt;
+    if (m.t <= 0){ m.t = rnd(1.5, 4); m.vx = rnd(-1, 1); m.vy = rnd(-1, 1); }
+    const dm = Math.hypot(P.x - m.x, P.y - m.y);
+    if (dm < 260){
+      m.x += (P.x - m.x) / dm * m.sp * dt;
+      m.y += (P.y - m.y) / dm * m.sp * dt;
+      if (dm < 34 && P.shield <= 0){
+        P.hp -= 6 * dt * 6;
+        if (P.hp <= 0){ P.hp = P.max; P.x = WORLD.w / 2; P.y = WORLD.h / 2; toast("Тебя оттащило на базу"); }
+      }
+    } else {
+      m.x += (m.vx || 0) * m.sp * dt; m.y += (m.vy || 0) * m.sp * dt;
+      m.x = Math.max(60, Math.min(WORLD.w - 60, m.x));
+      m.y = Math.max(60, Math.min(WORLD.h - 60, m.y));
+    }
+    m.hit = Math.max(0, m.hit - dt);
+  });
+  hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
+  drop = drop.filter(d => { d.t -= dt; return d.t > 0; });
+
+  // зона босса
+  const db = Math.hypot(P.x - boss.x, P.y - boss.y);
+  if (db < boss.r && len < 0.08){
+    boss.t += dt;
+    if (boss.t >= 5 && !inBattle){ startBattle(); }
+  } else if (db > boss.r + 20) boss.t = 0;
+
+  render(dt);
+  document.getElementById("hpfill").style.width = Math.max(0, P.hp / P.max * 100) + "%";
+  document.getElementById("hptxt").textContent =
+    "HP " + Math.round(P.hp) + " / " + P.max + "  ·  ур. " + stats.lvl;
+  document.getElementById("coins").textContent = P.coins;
+  ["attack", "shield", "ability"].forEach(k => {
+    const el = document.getElementById(k);
+    const cd = k === "attack" ? P.atkCd : k === "shield" ? P.shCd : P.abCd;
+    el.classList.toggle("cool", cd > 0.05);
+    const s = document.getElementById("cd" + k[0].toUpperCase() + k.slice(1));
+    if (s) s.textContent = cd > 0.05 ? Math.ceil(cd) : "";
+  });
+}
+function render(){
+  const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+  cam.x += ((P.x - w / 2) - cam.x) * 0.12;
+  cam.y += ((P.y - h / 2) - cam.y) * 0.12;
+  ctx.fillStyle = "#1a2018"; ctx.fillRect(0, 0, w, h);
+  ctx.save(); ctx.translate(-cam.x, -cam.y);
+
+  // земля
+  ctx.fillStyle = "#243024"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+  ctx.strokeStyle = "#2c3a2c"; ctx.lineWidth = 1;
+  for (let x = 0; x < WORLD.w; x += 80){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.h); ctx.stroke(); }
+  for (let y = 0; y < WORLD.h; y += 80){ ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.w, y); ctx.stroke(); }
+
+  // тропа к боссу
+  ctx.strokeStyle = "#3d3222"; ctx.lineWidth = 46; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(WORLD.w / 2, WORLD.h / 2); ctx.lineTo(boss.x, boss.y); ctx.stroke();
+
+  // зона босса
+  ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.r, 0, 7);
+  ctx.fillStyle = boss.t > 0 ? "rgba(226,70,70,.22)" : "rgba(226,70,70,.10)"; ctx.fill();
+  ctx.strokeStyle = "#e24646"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = "#ffb4b4"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("БОСС", boss.x, boss.y - 10);
+  if (boss.t > 0){
+    ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
+    ctx.fillText(Math.ceil(5 - boss.t), boss.x, boss.y + 34);
+  }
+
+  npcs.forEach(n => person(n.x, n.y, "#3a4152", n.name, 0.55));
+  drop.forEach(d => {
+    ctx.fillStyle = "#f6c94a"; ctx.font = "18px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("🗡", d.x, d.y);
+  });
+  mobs.forEach(m => {
+    person(m.x, m.y, m.hit > 0 ? "#ff8a8a" : "#8a5a6a");
+    ctx.fillStyle = "#000a"; ctx.fillRect(m.x - 18, m.y - 40, 36, 5);
+    ctx.fillStyle = "#e24646"; ctx.fillRect(m.x - 18, m.y - 40, 36 * Math.max(0, m.hp / m.max), 5);
+  });
+  person(P.x, P.y, P.shield > 0 ? "#9fd6ff" : (P.cls === "bow" ? "#8bd65a" : P.cls === "mage" ? "#b98aff" : "#4a9eff"), null);
+  hits.forEach(h => {
+    ctx.fillStyle = h.c; ctx.font = "bold 15px ui-monospace,monospace"; ctx.textAlign = "center";
+    ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
+  });
+  ctx.restore();
+  void h; void dtFix;
+}
+let dtFix = 0;
+document.querySelectorAll("#cls [data-cls]").forEach(b => b.onclick = () => {
+  reset(b.dataset.cls);
+  document.getElementById("cls").style.display = "none";
+  toast("Класс выбран. Ищи работу — мобы сами не убьются");
+});
+document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".top [data-tab]").forEach(x => x.className = x === b ? "on" : "");
+  if (b.dataset.tab !== "dungeon") toast("Этот раздел — заглушка прототипа");
+});
+function sync(){ document.getElementById("coins").textContent = P.coins; }
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
+"""
+
+
+@router.get("/proto_dungeon", response_class=HTMLResponse)
+async def proto_dungeon() -> HTMLResponse:
+    """Прототип «Подземелья Тимура»: карта, мобы, босс. База не затрагивается."""
+    return HTMLResponse(DUNGEON_PAGE)
