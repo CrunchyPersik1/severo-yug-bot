@@ -866,8 +866,16 @@ header{background:#131722!important;border-bottom:1px solid #1e222d!important}
 </head>
 <body>
 <div class="top">
-  <button class="back" onclick="location.href='/hub'">‹ Назад</button>
-  <div class="ttl">Биржа</div>
+  <div class="grp">
+    <button data-tab="clicker" title="В кликер">◀</button>
+    <button data-tab="bag" title="Сумка">🎒</button>
+    <button data-tab="quests" title="Задания">📜</button>
+  </div>
+  <div class="grp">
+    <button data-tab="board" title="Лидерборд">👤</button>
+    <button data-tab="settings" title="Настройки">⚙</button>
+  </div>
+</div>
   <div class="sp"></div>
 </div>
 
@@ -5731,11 +5739,12 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   image-rendering:pixelated}
 .top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
   background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
-.top button{flex:1;border:2px solid #3a2a4a;background:#120e18ee;color:#8a7a9a;
-  border-radius:0;padding:11px 3px;font-size:7.5px;font-family:inherit;
-  box-shadow:inset 0 -3px 0 #00000080}
-.top button.on{background:#5c1020;border-color:#c8402e;color:#ffd9a0;
-  box-shadow:inset 0 -3px 0 #00000080,0 0 14px #c8402e55}
+.top{justify-content:space-between;background:none}
+.top .grp{display:flex;gap:7px}
+.top button{border:3px solid #6b4a22;background:radial-gradient(circle at 30% 25%,#3a2a1a,#1a1008);
+  color:#d8b45a;border-radius:10px;width:44px;height:44px;font-size:17px;
+  font-family:inherit;box-shadow:0 0 0 2px #120c06,inset 0 0 10px #00000099}
+.top button:active{transform:translateY(2px)}
 .hpbar{position:fixed;left:14px;right:14px;bottom:104px;height:16px;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
@@ -5743,17 +5752,25 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .hptxt{position:fixed;left:0;right:0;bottom:122px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
-.joy{position:fixed;left:18px;bottom:18px;width:118px;height:118px;border-radius:50%;
-  background:#ffffff12;border:2px solid #ffffff22;z-index:11;touch-action:none}
-.joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
-  border-radius:50%;background:#ffffff2e;border:2px solid #ffffff44}
+.joy{position:fixed;left:16px;bottom:16px;width:146px;height:146px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
+  border:3px solid #6b4a22;z-index:11;touch-action:none;
+  box-shadow:0 0 0 3px #120c06,inset 0 0 22px #000000cc,0 0 18px #00000088}
+.joy::after{content:"";position:absolute;inset:14px;border-radius:50%;
+  border:2px dashed #6b4a2255}
+.joy i{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;
+  border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a4020,#241608);
+  border:3px solid #c9a227;box-shadow:0 0 12px #000000aa,inset 0 0 8px #00000088}
 .btns{position:fixed;right:16px;bottom:14px;display:flex;align-items:flex-end;gap:10px;z-index:11}
-.ab{width:62px;height:62px;border-radius:6px;border:3px solid #3a2a4a;
-  background:#161020ee;color:#cbb9d6;font-size:19px;font-family:inherit;position:relative;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 4px 0 #000a}
-.ab:active{transform:translateY(2px);box-shadow:0 2px 0 #000a}
-.ab.atk{width:78px;height:78px;background:#3a0f14ee;border-color:#c8402e;color:#ffd9a0;
-  box-shadow:0 4px 0 #000a,0 0 16px #c8402e44}
+.ab{width:66px;height:66px;border-radius:50%;border:3px solid #6b4a22;
+  background:radial-gradient(circle at 32% 26%,#3a2a18,#140d06);
+  color:#d8b45a;font-size:22px;font-family:inherit;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 3px #120c06,inset 0 0 12px #000000aa}
+.ab:active{transform:translateY(2px)}
+.ab.atk{width:88px;height:88px;border-color:#c9a227;color:#ffe9a0;
+  background:radial-gradient(circle at 32% 26%,#5a1a18,#24080a);
+  box-shadow:0 0 0 3px #120c06,inset 0 0 14px #000000aa,0 0 22px #c9a22744}
 .ab .cd{position:absolute;inset:-3px;border-radius:50%;background:#000a;display:none;
   align-items:center;justify-content:center;font-size:13px;font-weight:900}
 .ab.cool .cd{display:flex}
@@ -6432,8 +6449,12 @@ document.getElementById("startbtn").onclick = () => {
 const startLbl = document.getElementById("startbtn");
 if (startLbl) startLbl.innerHTML = "<b>В бой</b>";
 document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
-  document.querySelectorAll(".top [data-tab]").forEach(x => x.className = x === b ? "on" : "");
-  if (b.dataset.tab !== "dungeon") toast("Этот раздел — заглушка прототипа");
+  const t = b.dataset.tab;
+  if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
+  if (t === "clicker"){ toast("Вернуться в кликер — в большой версии"); return; }
+  if (t === "quests"){ toast("Задания — заглушка прототипа"); return; }
+  if (t === "board"){ toast("Лидерборд — заглушка"); return; }
+  if (t === "settings"){ toast("Настройки — заглушка"); return; }
 });
 function sync(){ document.getElementById("coins").textContent = P.coins; }
 requestAnimationFrame(loop);
