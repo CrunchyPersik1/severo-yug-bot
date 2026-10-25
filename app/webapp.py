@@ -6466,10 +6466,22 @@ void main(){
 })();
 
 /* ---------- кооп-босс: один босс на двоих ---------- */
-const TG_INIT = (function(){
-  try { return (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) || ""; }
-  catch (e){ return ""; }
-})();
+// Telegram Desktop иногда отдаёт пустой initData, хотя данные лежат в адресе
+// строкой tgWebAppData=... Достаём оттуда — иначе кооп молча не работает.
+function readInitData(){
+  try {
+    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData){
+      return Telegram.WebApp.initData;
+    }
+  } catch (e){}
+  try {
+    const raw = String(location.hash || "") + "&" + String(location.search || "");
+    const found = raw.match(/tgWebAppData=([^&]+)/);
+    if (found) return decodeURIComponent(found[1]);
+  } catch (e){}
+  return "";
+}
+const TG_INIT = readInitData();
 // Без этого Telegram не раскрывает мини-апп на весь экран.
 (function(){
   try {
@@ -6479,12 +6491,16 @@ const TG_INIT = (function(){
     }
   } catch (e){}
 })();
-// Открыли ссылкой в браузере — кооп не заработает, честно предупреждаем.
+// Открыли ссылкой в браузере — кооп не заработает, честно предупреждаем
+// и показываем, что именно не пришло: по этой строке сразу видно причину.
 (function(){
   if (TG_INIT || !document.body || !document.body.appendChild) return;
+  const hasTg = !!window.Telegram;
+  const platform = (hasTg && Telegram.WebApp && Telegram.WebApp.platform) || "нет";
   const hint = document.createElement("div");
   hint.id = "tghint";
-  hint.textContent = "КООП НЕДОСТУПЕН · открой через /dungeon в боте";
+  hint.textContent = "КООП НЕДОСТУПЕН · открой через /dungeon в боте" +
+    " · TG:" + (hasTg ? "есть" : "нет") + " · initData:пусто · платформа:" + platform;
   document.body.appendChild(hint);
 })();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
@@ -6684,6 +6700,106 @@ function bossEngage(bs){
 document.getElementById("chit").onclick = coopHit;
 document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
+/* ---------- живые игроки на карте ---------- */
+// Своего WebSocket нет: раз в 0.6 секунды отправляем свою позицию и
+// получаем чужие. Так видно, как другие ходят и дерутся.
+const REMOTE = {};
+const PRESENCE_MS = 600;
+let presenceBusy = false, presenceTimer = 0;
+const FACE_ANGLE = [Math.PI / 2, Math.PI, 0, -Math.PI / 2];   // вниз, влево, вправо, вверх
+
+function presencePayload(){
+  return {
+    x: Math.round(P.x), y: Math.round(P.y), zone: zoneIndex(P.y),
+    facing: P.facing == null ? 0 : P.facing,
+    anim: P.moving ? "run" : (P.atkCd > 0.25 ? "attack" : "idle"),
+    hp: Math.round(P.hp), max_hp: Math.round(P.max),
+    weapon: P.weapon ? P.weapon.kind : "sword"
+  };
+}
+
+async function presenceTick(){
+  if (!TG_INIT || presenceBusy || COOP.open || inBattle) return;
+  if (document.hidden) return;
+  presenceBusy = true;
+  try {
+    const data = await coopApi("/api/dungeon/presence", presencePayload());
+    if (!data || !data.ok || !data.players) return;
+    const now = performance.now();
+    const alive = {};
+    data.players.forEach(function(p){
+      const key = String(p.id);
+      alive[key] = 1;
+      let r = REMOTE[key];
+      if (!r) r = REMOTE[key] = {x: p.x, y: p.y, tx: p.x, ty: p.y, seen: now};
+      r.tx = p.x; r.ty = p.y;
+      r.name = p.name; r.facing = p.facing; r.anim = p.anim;
+      r.hp = p.hp; r.max_hp = p.max_hp; r.weapon = p.weapon; r.zone = p.zone;
+      r.seen = now;
+    });
+    Object.keys(REMOTE).forEach(function(key){
+      if (!alive[key] && now - (REMOTE[key].seen || 0) > 3000) delete REMOTE[key];
+    });
+  } catch (e){
+  } finally {
+    presenceBusy = false;
+  }
+}
+
+function remoteTick(dt){
+  const k = Math.min(1, dt * 9);
+  Object.keys(REMOTE).forEach(function(key){
+    const r = REMOTE[key];
+    r.x += (r.tx - r.x) * k;
+    r.y += (r.ty - r.y) * k;
+  });
+}
+
+function drawRemote(r, t){
+  const x = Math.max(24, Math.min(WORLD.w - 24, r.x));
+  const y = Math.max(24, Math.min(WORLD.h - 24, r.y));
+  const im = HEROES[r.weapon === "bow" ? "elf_m" : "knight_m"];
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(x - 13, y + 6, 26, 6);
+  ctx.globalAlpha = 1;
+  if (im && im.complete && im.naturalWidth){
+    const moving = r.anim === "run" || r.anim === "attack";
+    const frame = moving ? 4 + (Math.floor(t * 9 + x * 0.02) % 4) : Math.floor(t * 4) % 4;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, frame * 16, 0, 16, 16, x - 26, y - 34, 52, 52);
+  } else {
+    person(x, y, "#c9a227");
+  }
+  ctx.restore();
+  if (r.anim === "attack"){
+    ctx.save();
+    ctx.translate(x, y - 8);
+    ctx.rotate(FACE_ANGLE[r.facing] || 0);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = "#ffd98a";
+    ctx.lineWidth = 4;
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath();
+    ctx.arc(0, 0, 36, -0.7, 0.7);
+    ctx.stroke();
+    ctx.restore();
+  }
+  const bw = 46;
+  ctx.fillStyle = "#000a";
+  ctx.fillRect(x - bw / 2, y - 52, bw, 5);
+  ctx.fillStyle = "#4ade80";
+  ctx.fillRect(x - bw / 2, y - 52,
+               bw * Math.max(0, Math.min(1, (r.hp || 0) / Math.max(1, r.max_hp || 1))), 5);
+  ctx.fillStyle = "#ffe9b8";
+  ctx.font = "7px 'Press Start 2P',monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(String(r.name || "Игрок").slice(0, 12), x, y - 58);
+}
+
+if (TG_INIT) presenceTimer = setInterval(presenceTick, PRESENCE_MS);
+
 const ZONE_H = 1100;
 const ZONES = [
   {n: "Опушка",         g: "#2a3d18", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
@@ -6792,7 +6908,7 @@ for (let i = 0; i < ZONES.length; i++){
   bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 780, r: 60, t: 0, zone: zid, idx: 1});
 }
 let boss = bosses[0];
-let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
+let stats = {kills: 0, lvl: 1, exp: 0};
 let inBattle = false;
 
 function rnd(a, b){ return a + Math.random() * (b - a); }
@@ -6868,18 +6984,12 @@ function spawnOne(zi){
              sp: type.sp, dmg: type.dmg * (1 + zi * 0.9), c: type.c, sz: type.sz, nm: type.n,
              tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
 }
-function spawnNpcs(n){
-  npcs = [];
-  for (let i = 0; i < n; i++){
-    npcs.push({x: 110 + i * 70, y: 130, name: "OFFLINE"});
-  }
-}
 function reset(){
   P.x = WORLD.w / 2; P.y = WORLD.h - 260;
   P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
-  spawnMobs(18); spawnNpcs(6);
+  spawnMobs(18);
 }
 /* ---------- ввод ---------- */
 const keys = {};
@@ -7177,6 +7287,7 @@ function loop(now){
   FX.tick(dt);
   FX.step(dt);
   coopUiTick(dt);
+  remoteTick(dt);
   if (!P.weapon || inBattle || COOP.open){ render(dt); return; }
 
   let vx = joyV.x, vy = joyV.y;
@@ -7465,13 +7576,9 @@ function render(dt){
     }
   });
 
-  npcs.forEach(n => {
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    drawTile([1, 8], n.x, n.y, 34, 0);
-    ctx.restore();
-    ctx.fillStyle = "#6a6a7a"; ctx.font = "7px 'Press Start 2P',monospace";
-    ctx.textAlign = "center"; ctx.fillText(n.name, n.x, n.y + 44);
+  // живые игроки: сглаженные позиции, анимация бега и удара
+  Object.keys(REMOTE).forEach(function(key){
+    drawRemote(REMOTE[key], animT);
   });
   drop.forEach(d => {
     FX.glowAt(d.x, d.y - 4, 60 + Math.sin(animT * 5) * 10, "#f6c94a", 0.8);
@@ -7735,3 +7842,22 @@ async def api_dungeon_boss_start(request: Request) -> JSONResponse:
     except DungeonError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "boss": room})
+
+@router.post("/api/dungeon/presence")
+async def api_dungeon_presence(request: Request) -> JSONResponse:
+    """Своя позиция на карте плюс чужие — так игроки видят друг друга."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    repo = getattr(state, "presence", None)
+    if repo is None:
+        return JSONResponse({"error": "Карта ещё не включена"}, status_code=400)
+    body = await _json_body(request)
+    try:
+        players = await repo.touch(int(user["id"]), body, datetime.now(timezone.utc))
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "players": players})

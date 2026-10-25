@@ -720,3 +720,22 @@ create table if not exists dungeon_boss_players (
 );
 create index if not exists dungeon_boss_players_user_idx
     on dungeon_boss_players (user_id, boss_id);
+
+-- ===================================================================== --
+-- Присутствие в подземелье: кто где стоит (живой мир без WebSocket)
+-- ===================================================================== --
+
+create table if not exists dungeon_presence (
+    user_id bigint primary key,
+    zone    integer not null default 0,
+    x       real    not null default 0,
+    y       real    not null default 0,
+    facing  integer not null default 0,
+    anim    text    not null default 'idle',
+    hp      integer not null default 0,
+    max_hp  integer not null default 0,
+    weapon  text,
+    seen_at timestamptz not null default now()
+);
+create index if not exists dungeon_presence_zone_idx
+    on dungeon_presence (zone, seen_at desc);

@@ -86,6 +86,16 @@ def test_hint_when_opened_outside_bot():
     assert "#tghint" in DUNGEON_PAGE
 
 
+def test_live_players_on_map():
+    """Другие игроки видны в реальном времени, заглушек OFFLINE больше нет."""
+    assert "/api/dungeon/presence" in DUNGEON_PAGE
+    assert "function drawRemote(" in DUNGEON_PAGE
+    assert "const REMOTE = {}" in DUNGEON_PAGE
+    assert "remoteTick(dt)" in DUNGEON_PAGE
+    assert "OFFLINE" not in DUNGEON_PAGE
+    assert "npcs" not in DUNGEON_PAGE
+
+
 def test_mobs_live_in_neighbour_zones():
     # раньше мобы спавнились только в зоне игрока, соседние локации пустовали
     assert "function spawnOne(zi)" in DUNGEON_PAGE

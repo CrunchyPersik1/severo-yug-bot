@@ -219,6 +219,17 @@ async function coopScenario(){
   check("кооп: закрыли оверлей", run1("COOP.open"), false);
   check("кооп: ручки дёргались", seen.length >= 4, true);
   console.log("  запросы: " + seen.map(function(s){ return s.replace(/^http:\/\/x/, ""); }).join(" | "));
+
+  // живая карта: чужой герой рисуется и подтягивается к новой позиции
+  if (has("drawRemote")){
+    run1("REMOTE['1'] = {x: 100, y: 100, tx: 140, ty: 100, hp: 40, max_hp: 120, " +
+         "anim: 'attack', facing: 2, name: 'Саня', weapon: 'bow', seen: performance.now()};");
+    frames(3, 9000);
+    check("карта: чужой игрок нарисован", run1("Object.keys(REMOTE).length"), 1);
+    check("карта: позиция подтянулась", run1("REMOTE['1'].x > 100"), true);
+    check("карта: анимация удара", run1("presencePayload().anim"), "idle");
+    run1("delete REMOTE['1']");
+  }
 }
 
 function mobScenario(){

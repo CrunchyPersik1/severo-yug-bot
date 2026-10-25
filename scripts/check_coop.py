@@ -106,6 +106,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from app.config import settings
     from app.db import Database
+    from app.dungeon_presence import DungeonPresenceRepo
     from app.dungeon_repo import DungeonBossRepo
     from app.webapp import router as webapp_router
 
@@ -114,11 +115,13 @@ async def main(argv: list[str] | None = None) -> int:
     await db.init_schema()
 
     repo = DungeonBossRepo(db)
+    presence = DungeonPresenceRepo(db)
     api = FastAPI()
     api.include_router(webapp_router)
     api.state.settings = settings
     api.state.db = db
     api.state.dungeon = repo
+    api.state.presence = presence
 
     config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
     server = uvicorn.Server(config)
@@ -148,6 +151,10 @@ async def main(argv: list[str] | None = None) -> int:
             await con.execute(
                 "delete from dungeon_boss where id not in "
                 "(select boss_id from dungeon_boss_players)"
+            )
+            await con.execute(
+                "delete from dungeon_presence where user_id = any($1::bigint[])",
+                list(TEST_USERS),
             )
             await con.execute(
                 "delete from players where user_id = any($1::bigint[])", list(TEST_USERS)
@@ -256,6 +263,31 @@ async def main(argv: list[str] | None = None) -> int:
         check("в комнате двое", len(late_room.get("players") or []), 2)
         await call("POST", "/api/dungeon/boss/leave", first, {})
         await call("POST", "/api/dungeon/boss/leave", second, {})
+
+        # Живая карта: каждый видит другого с его координатами и анимацией.
+        status, mine = await call("POST", "/api/dungeon/presence", first, {
+            "x": 100, "y": 9000, "zone": 0, "facing": 2, "anim": "run",
+            "hp": 120, "max_hp": 120, "weapon": "bow"})
+        check("presence принят", status, 200)
+        check("себя в списке нет", len(mine.get("players") or []), 0)
+        await call("POST", "/api/dungeon/presence", second, {
+            "x": 300, "y": 9100, "zone": 0, "facing": 0, "anim": "attack",
+            "hp": 90, "max_hp": 120, "weapon": "sword"})
+        status, seen = await call("POST", "/api/dungeon/presence", first, {
+            "x": 100, "y": 9000, "zone": 0, "facing": 2, "anim": "idle",
+            "hp": 120, "max_hp": 120, "weapon": "bow"})
+        others = seen.get("players") or []
+        check("видно второго игрока", len(others), 1)
+        check("его координаты",
+              (others[0]["x"], others[0]["y"]) if others else None, (300.0, 9100.0))
+        check("его анимация", others[0]["anim"] if others else None, "attack")
+        check("его имя", (others[0]["name"] if others else ""), "Саня")
+        await call("POST", "/api/dungeon/presence", second, {
+            "x": 300, "y": 100, "zone": 9, "facing": 0, "anim": "idle",
+            "hp": 90, "max_hp": 120, "weapon": "sword"})
+        status, far = await call("POST", "/api/dungeon/presence", first, {
+            "x": 100, "y": 9000, "zone": 0})
+        check("через полкарты не видно", len(far.get("players") or []), 0)
     finally:
         if not args.keep_rows:
             await wipe()

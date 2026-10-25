@@ -24,6 +24,7 @@ from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
 from app import event
 from app.db import Database
+from app.dungeon_presence import DungeonPresenceRepo
 from app.dungeon_repo import DungeonBossRepo
 from app.handlers import router
 from app.market_repo import MarketRepo
@@ -153,6 +154,7 @@ async def lifespan(app: FastAPI):
     await stocks.seed()
     boss_repo = BossRepo(db)
     dungeon_boss = DungeonBossRepo(db)
+    presence = DungeonPresenceRepo(db)
 
     # мини-аппка магазина читает это из app.state
     app.state.settings = settings
@@ -162,6 +164,7 @@ async def lifespan(app: FastAPI):
     app.state.stocks = stocks
     app.state.boss = boss_repo
     app.state.dungeon = dungeon_boss
+    app.state.presence = presence
     runtime.update(
         db=db,
         bot=bot,
