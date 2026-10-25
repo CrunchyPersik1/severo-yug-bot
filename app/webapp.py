@@ -5767,6 +5767,9 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   border-radius:14px;padding:14px;text-align:left;color:#e8ebf2;font-family:inherit}
 .cls .c b{font-size:15px}
 .cls .c span{display:block;font-size:11.5px;color:#8b93a7;margin-top:3px}
+#bag{position:fixed;inset:0;background:#0b0e14f8;z-index:80;display:none;
+  flex-direction:column}
+#bag.on{display:flex}
 #battle{position:fixed;inset:0;background:#0b0e14f6;z-index:40;display:none;
   flex-direction:column;padding:14px}
 #battle.on{display:flex}
@@ -5795,7 +5798,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   <button data-tab="settings">НАСТРОЙКИ</button>
 </div>
 <div class="coins">🪙 <span id="coins">0</span></div>
-<button id="bagbtn" style="position:fixed;top:52px;left:12px;z-index:10;
+<button id="bagbtn" style="position:fixed;top:92px;left:12px;z-index:25;
   background:#161020dd;border:2px solid #3a2a4a;color:#cbb9d6;border-radius:8px;
   padding:8px 12px;font-family:inherit;font-size:10px">🎒 СУМКА</button>
 
@@ -5818,6 +5821,10 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   <button class="c" id="startbtn" style="text-align:center;border-color:#3b6fff">
     <b>Войти в подземелье</b></button>
 </div>
+
+<div id="bag"><div class="tmhead"><span>🎒 Сумка</span>
+<button id="bagclose">Закрыть</button></div>
+<div id="inv2" style="padding:12px;overflow:auto;flex:1"></div></div>
 
 <div id="battle">
   <div style="display:flex;justify-content:space-between;align-items:center">
@@ -6389,8 +6396,7 @@ function refreshInv(){
   if (document.getElementById("cls").style.display !== "none") paintInv();
 }
 function paintInv(){
-  const box = document.getElementById("inv");
-  box.innerHTML = P.bag.map(id => {
+  const html = P.bag.map(id => {
     const w = weaponById(id);
     const on = P.weapon && P.weapon.id === id;
     return '<div class="c" data-eq="' + id + '" style="margin-bottom:8px;' +
@@ -6398,16 +6404,26 @@ function paintInv(){
       '<b>' + w.name + '</b><span>' + w.cls + ' · урон ' + w.dmg +
       ' · дальность ' + w.range + (on ? ' · В РУКАХ' : '') + '</span></div>';
   }).join("");
-  box.querySelectorAll("[data-eq]").forEach(el => el.onclick = () => {
-    P.weapon = weaponById(el.dataset.eq);
-    paintInv(); toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
+  ["inv", "inv2"].forEach(function(idd){
+    const box = document.getElementById(idd);
+    if (!box) return;
+    box.innerHTML = html || '<div style="color:#8a7a9a;font-size:11px;padding:10px">' +
+      'Пусто. Бей мобов — с них падает оружие.</div>';
+    box.querySelectorAll("[data-eq]").forEach(el => el.onclick = () => {
+      P.weapon = weaponById(el.dataset.eq);
+      paintInv(); toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
+    });
   });
 }
 paintInv();
 const bagBtn = document.getElementById("bagbtn");
-if (bagBtn) bagBtn.onclick = () => {
-  document.getElementById("cls").style.display = "flex";
+if (bagBtn) bagBtn.onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("bag").classList.add("on");
+  paintInv();
 };
+const bagClose = document.getElementById("bagclose");
+if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
 document.getElementById("startbtn").onclick = () => {
   if (!P.started){ reset(); P.started = true; }
   document.getElementById("cls").style.display = "none";
