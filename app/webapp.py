@@ -5844,7 +5844,38 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 <div id="toast"></div>
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-const WORLD = {w: 1800, h: 1400};
+const WORLD = {w: 900, h: 1600};          // портрет 9:16
+const DECOR = (function(){
+  const list = [];
+  // лес по краям
+  for (let i = 0; i < 90; i++){
+    const side = Math.random() < 0.5;
+    const x = side ? 20 + Math.random() * 120 : WORLD.w - 20 - Math.random() * 120;
+    list.push({k: "tree", x: x, y: 40 + Math.random() * (WORLD.h - 80),
+               s: 0.8 + Math.random() * 0.6});
+  }
+  // кусты и камни внутри
+  for (let i = 0; i < 46; i++){
+    const t = Math.random();
+    list.push({k: t < 0.55 ? "bush" : t < 0.85 ? "rock" : "grass",
+               x: 180 + Math.random() * (WORLD.w - 360),
+               y: 60 + Math.random() * (WORLD.h - 120),
+               s: 0.7 + Math.random() * 0.7});
+  }
+  list.sort(function(a, b){ return a.y - b.y; });
+  return list;
+})();
+const PATH = (function(){
+  const pts = [];
+  for (let i = 0; i <= 40; i++){
+    const t = i / 40;
+    pts.push({
+      x: WORLD.w / 2 + Math.sin(t * 5) * 90,
+      y: WORLD.h - 60 - t * (WORLD.h - 220)
+    });
+  }
+  return pts;
+})();
 let P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, coins: 0,
          weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0, dashCd: 0, dashT: 0,
          shield: 0, dir: 0};
@@ -5879,7 +5910,7 @@ const WEAPONS = (function(){
 function weaponById(id){ return WEAPONS.filter(function(w){ return w.id === id; })[0]; }
 let cam = {x: 0, y: 0};
 let mobs = [], hits = [], drop = [];
-let boss = {x: WORLD.w * 0.78, y: WORLD.h * 0.26, r: 70, t: 0, active: false};
+let boss = {x: WORLD.w / 2 + Math.sin(5) * 90, y: 160, r: 66, t: 0, active: false};
 let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
 let inBattle = false;
 
@@ -6229,15 +6260,42 @@ function render(){
   ctx.fillStyle = "#1a2018"; ctx.fillRect(0, 0, w, h);
   ctx.save(); ctx.translate(-cam.x, -cam.y);
 
-  // земля
-  ctx.fillStyle = "#243024"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
-  ctx.strokeStyle = "#2c3a2c"; ctx.lineWidth = 1;
-  for (let x = 0; x < WORLD.w; x += 80){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, WORLD.h); ctx.stroke(); }
-  for (let y = 0; y < WORLD.h; y += 80){ ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WORLD.w, y); ctx.stroke(); }
-
-  // тропа к боссу
-  ctx.strokeStyle = "#3d3222"; ctx.lineWidth = 46; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(WORLD.w / 2, WORLD.h / 2); ctx.lineTo(boss.x, boss.y); ctx.stroke();
+  // земля: тёмная лесная подстилка
+  ctx.fillStyle = "#16210f"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+  for (let y = 0; y < WORLD.h; y += 64){
+    for (let x = 0; x < WORLD.w; x += 64){
+      ctx.fillStyle = ((x / 64 + y / 64) % 2) ? "#182411" : "#151f0e";
+      ctx.fillRect(x, y, 64, 64);
+    }
+  }
+  // тропа: пунктир из точек
+  PATH.forEach(function(pt, i){
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, i % 2 ? 4 : 7, 0, 7);
+    ctx.fillStyle = i % 2 ? "#4a3a24" : "#5c482c";
+    ctx.fill();
+  });
+  // кусты/камни/трава под персонажем
+  DECOR.forEach(function(d){
+    if (d.k === "tree") return;
+    if (d.k === "bush"){
+      ctx.fillStyle = "#1e3818";
+      ctx.beginPath(); ctx.arc(d.x, d.y - 6 * d.s, 13 * d.s, 0, 7); ctx.fill();
+      ctx.fillStyle = "#2a5020";
+      ctx.beginPath(); ctx.arc(d.x - 4 * d.s, d.y - 10 * d.s, 9 * d.s, 0, 7); ctx.fill();
+    } else if (d.k === "rock"){
+      ctx.fillStyle = "#3a3a44";
+      ctx.beginPath(); ctx.ellipse(d.x, d.y, 11 * d.s, 8 * d.s, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#4c4c58";
+      ctx.beginPath(); ctx.ellipse(d.x - 3 * d.s, d.y - 3 * d.s, 7 * d.s, 5 * d.s, 0, 0, 7); ctx.fill();
+    } else {
+      ctx.strokeStyle = "#2f4a1e"; ctx.lineWidth = 2;
+      for (let g = -1; g <= 1; g++){
+        ctx.beginPath(); ctx.moveTo(d.x + g * 4, d.y);
+        ctx.lineTo(d.x + g * 6, d.y - 9 * d.s); ctx.stroke();
+      }
+    }
+  });
 
   // зона босса
   ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.r, 0, 7);
