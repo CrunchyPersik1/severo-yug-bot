@@ -6036,17 +6036,17 @@ const MOB_TYPES = [
   {n: "Скелет",  hp: 70,  sp: 26, dmg: 11, c: "#c9c4b0", sz: 1.05, tile: [0, 7]},
   {n: "Огр",     hp: 120,  sp: 36, dmg: 14, c: "#5a8a4a", sz: 0.95, tile: [1, 8]},
   {n: "Паук",    hp: 90,  sp: 52, dmg: 13, c: "#6a4a7a", sz: 0.85, tile: [3, 9]},
-  {n: "Тролль",  hp: 300, sp: 17, dmg: 24, c: "#3f6a4a", sz: 1.45, tile: [1, 8]},
+  {n: "Тролль",  hp: 300, sp: 17, dmg: 24, c: "#3f6a4a", sz: 1.45, tile: [2, 9]},
   {n: "Демон",   hp: 520, sp: 30, dmg: 38, c: "#8a2a2a", sz: 1.3,  tile: [2, 8]},
   {n: "Призрак", hp: 430, sp: 24, dmg: 32, c: "#4a5a9a", sz: 1.15, tile: [1, 9]},
-  {n: "Крыса",    hp: 26,  sp: 58, dmg: 5,  c: "#8a7a5a", sz: 0.7,  tile: [0, 9]},
-  {n: "Зомби",    hp: 110, sp: 22, dmg: 15, c: "#5a7a4a", sz: 1.0,  tile: [0, 7]},
-  {n: "Гуль",     hp: 160, sp: 34, dmg: 22, c: "#7a6a5a", sz: 1.05, tile: [2, 8]},
+  {n: "Крыса",    hp: 26,  sp: 58, dmg: 5,  c: "#8a7a5a", sz: 0.7,  tile: [4, 9]},
+  {n: "Зомби",    hp: 110, sp: 22, dmg: 15, c: "#5a7a4a", sz: 1.0,  tile: [3, 7]},
+  {n: "Гуль",     hp: 160, sp: 34, dmg: 22, c: "#7a6a5a", sz: 1.05, tile: [4, 8]},
   {n: "Рыцарь",   hp: 240, sp: 26, dmg: 30, c: "#8a8a9a", sz: 1.1,  tile: [1, 7]},
-  {n: "Оборотень",hp: 380, sp: 46, dmg: 40, c: "#6a5a4a", sz: 1.15, tile: [1, 8]},
-  {n: "Вампир",   hp: 600, sp: 38, dmg: 55, c: "#7a1a2a", sz: 1.15, tile: [2, 8]},
-  {n: "Голем",    hp: 900, sp: 16, dmg: 70, c: "#5a5a4a", sz: 1.5,  tile: [1, 8]},
-  {n: "Дракон",   hp: 1400, sp: 30, dmg: 95, c: "#a04a1a", sz: 1.45, tile: [2, 8]}
+  {n: "Оборотень",hp: 380, sp: 46, dmg: 40, c: "#6a5a4a", sz: 1.15, tile: [5, 8]},
+  {n: "Вампир",   hp: 600, sp: 38, dmg: 55, c: "#7a1a2a", sz: 1.15, tile: [5, 9]},
+  {n: "Голем",    hp: 900, sp: 16, dmg: 70, c: "#5a5a4a", sz: 1.5,  tile: [6, 8]},
+  {n: "Дракон",   hp: 1400, sp: 30, dmg: 95, c: "#a04a1a", sz: 1.45, tile: [6, 9]}
 ];
 let spawnTimer = 0;
 function spawnOne(){
@@ -6315,8 +6315,8 @@ function drawHero(x, y, attacking){
   ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 2, 28, 6);
   ctx.globalAlpha = 1;
   ctx.translate(dx, dy + (P.moving ? Math.sin(animT * 9) * 1.2 : 0));
-  const base = LPC[attacking ? "slash" : (P.dashT > 0 ? "run" : "walk")];
-  const frames = attacking ? 6 : (P.dashT > 0 ? 8 : 9);
+  const base = LPC[attacking ? "slash" : "walk"];
+  const frames = attacking ? 6 : 9;
   const col = Math.floor(animT * (attacking ? 14 : 10)) % frames;
   if (base && base.complete && base.naturalWidth){
     ctx.drawImage(base, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
