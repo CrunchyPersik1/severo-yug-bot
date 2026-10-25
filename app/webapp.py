@@ -6158,17 +6158,7 @@ function drawHero(x, y, attacking){
     ctx.drawImage(LEGS, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
   }
   ctx.drawImage(img, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
-  // туника поверх тела — чтобы не был голым
   const w2 = P.weapon;
-  const cloth = !w2 ? "#3a5a8a" : w2.kind === "bow" ? "#3a6a3a"
-              : w2.kind === "staff" ? "#5a3a7a" : "#7a3a3a";
-  ctx.fillStyle = cloth;
-  ctx.fillRect(x - 10, y - 30, 20, 20);
-  ctx.fillStyle = "#1a1410";
-  ctx.fillRect(x - 10, y - 13, 20, 4);              // пояс
-  ctx.fillStyle = cloth;
-  ctx.fillRect(x - 14, y - 29, 5, 12);              // рукав
-  ctx.fillRect(x + 9, y - 29, 5, 12);
   // оружие в руке
   if (w2){
     ctx.strokeStyle = w2.kind === "staff" ? "#8a6a3a" : "#c9c9d6";
@@ -6263,7 +6253,19 @@ function loop(now){
   spawnTimer -= dt;
   if (spawnTimer <= 0){ spawnTimer = 2.5; if (mobs.length < 9) spawnOne(); }
   hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
-  drop = drop.filter(d => { d.t -= dt; return d.t > 0; });
+  drop = drop.filter(d => {
+    d.t -= dt;
+    if (Math.hypot(d.x - P.x, d.y - P.y) < 34){
+      const loot = WEAPONS.filter(function(w){ return w.name === d.name; })[0];
+      if (loot){
+        if (P.bag.indexOf(loot.id) < 0) P.bag.push(loot.id);
+        toast("Подобрал: " + loot.name + " · урон " + loot.dmg);
+        refreshInv();
+      }
+      return false;
+    }
+    return d.t > 0;
+  });
 
   // зона босса
   const db = Math.hypot(P.x - boss.x, P.y - boss.y);
@@ -6378,6 +6380,9 @@ function render(){
   void h; void dtFix;
 }
 let dtFix = 0;
+function refreshInv(){
+  if (document.getElementById("cls").style.display !== "none") paintInv();
+}
 function paintInv(){
   const box = document.getElementById("inv");
   box.innerHTML = P.bag.map(id => {
@@ -6399,10 +6404,12 @@ if (bagBtn) bagBtn.onclick = () => {
   document.getElementById("cls").style.display = "flex";
 };
 document.getElementById("startbtn").onclick = () => {
-  reset();
+  if (!P.started){ reset(); P.started = true; }
   document.getElementById("cls").style.display = "none";
-  toast("Ты в подземелье. Фарми мобов");
+  if (!P.started2){ P.started2 = true; toast("Ты в подземелье. Фарми мобов"); }
 };
+const startLbl = document.getElementById("startbtn");
+if (startLbl) startLbl.innerHTML = "<b>В бой</b>";
 document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll(".top [data-tab]").forEach(x => x.className = x === b ? "on" : "");
   if (b.dataset.tab !== "dungeon") toast("Этот раздел — заглушка прототипа");
