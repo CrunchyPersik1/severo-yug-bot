@@ -5892,11 +5892,18 @@ function toast(t){
 /* ---------- мир ---------- */
 function spawnMobs(n){
   mobs = [];
-  for (let i = 0; i < n; i++){
-    mobs.push({x: rnd(100, WORLD.w - 100), y: rnd(100, WORLD.h - 100),
-               hp: 30, max: 30, sp: rnd(18, 34), t: rnd(0, 6), hit: 0});
-  }
+  for (let i = 0; i < n; i++) spawnOne();
 }
+const MOB_TYPES = [
+  {n: "Слизь",   hp: 18,  sp: 20, dmg: 3,  c: "#6fa86f", sz: 0.85},
+  {n: "Крыса",   hp: 12,  sp: 48, dmg: 2,  c: "#8a7a5a", sz: 0.7},
+  {n: "Скелет",  hp: 42,  sp: 26, dmg: 6,  c: "#c9c4b0", sz: 1.05},
+  {n: "Гоблин",  hp: 70,  sp: 36, dmg: 9,  c: "#5a8a4a", sz: 0.95},
+  {n: "Паук",    hp: 55,  sp: 52, dmg: 8,  c: "#6a4a7a", sz: 0.85},
+  {n: "Тролль",  hp: 180, sp: 17, dmg: 16, c: "#3f6a4a", sz: 1.45},
+  {n: "Демон",   hp: 320, sp: 30, dmg: 26, c: "#8a2a2a", sz: 1.3},
+  {n: "Лич",     hp: 260, sp: 24, dmg: 21, c: "#4a5a9a", sz: 1.15}
+];
 let spawnTimer = 0;
 function spawnOne(){
   const edge = Math.floor(Math.random() * 4);
@@ -5905,9 +5912,12 @@ function spawnOne(){
   else if (edge === 1){ x = rnd(80, WORLD.w - 80); y = WORLD.h - 70; }
   else if (edge === 2){ x = 70; y = rnd(80, WORLD.h - 80); }
   else { x = WORLD.w - 70; y = rnd(80, WORLD.h - 80); }
-  const tier = 1 + Math.floor(stats.lvl / 3);
-  mobs.push({x: x, y: y, hp: 30 * tier, max: 30 * tier,
-             sp: rnd(20, 38), t: rnd(0, 6), hit: 0, tier: tier});
+  const pool = Math.min(MOB_TYPES.length, 1 + Math.floor(stats.lvl / 2));
+  const type = MOB_TYPES[Math.floor(Math.random() * pool)];
+  const grow = 1 + (stats.lvl - 1) * 0.18;
+  mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
+             sp: type.sp, dmg: type.dmg, c: type.c, sz: type.sz, nm: type.n,
+             t: rnd(0, 6), hit: 0});
 }
 function spawnNpcs(n){
   npcs = [];
@@ -6080,6 +6090,23 @@ function drawFighters(){
     c.fillRect(66, 112, 68, 82);
   });
 }
+let HERO = null;
+(function(){
+  const img = new Image();
+  img.onload = function(){ HERO = img; };
+  img.src = "/static/hero.png";
+})();
+let animT = 0;
+function drawHero(x, y, attacking){
+  if (!HERO){ person(x, y, "#4a9eff"); return; }
+  const fw = 32, fh = 24;
+  let row = 1, col = Math.floor(animT * 6) % 4;      // ходьба
+  if (attacking){ row = 8; col = Math.floor(animT * 10) % 4; }
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - 16, y - 18, 32, 24);
+  ctx.restore();
+}
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
   const px = 4;                 // размер «пикселя»
@@ -6144,7 +6171,7 @@ function loop(now){
       m.x += (P.x - m.x) / dm * m.sp * dt;
       m.y += (P.y - m.y) / dm * m.sp * dt;
       if (dm < 34 && P.shield <= 0){
-        P.hp -= 6 * dt * 6;
+        P.hp -= (m.dmg || 6) * dt * 1.6;
         if (P.hp <= 0){ P.hp = P.max; P.x = WORLD.w / 2; P.y = WORLD.h / 2; toast("Тебя оттащило на базу"); }
       }
     } else {
@@ -6154,6 +6181,7 @@ function loop(now){
     }
     m.hit = Math.max(0, m.hit - dt);
   });
+  animT += dt;
   spawnTimer -= dt;
   if (spawnTimer <= 0){ spawnTimer = 2.5; if (mobs.length < 9) spawnOne(); }
   hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
@@ -6217,11 +6245,18 @@ function render(){
     }
   });
   mobs.forEach(m => {
-    person(m.x, m.y, m.hit > 0 ? "#ff8a8a" : "#8a5a6a");
-    ctx.fillStyle = "#000a"; ctx.fillRect(m.x - 18, m.y - 40, 36, 5);
-    ctx.fillStyle = "#e24646"; ctx.fillRect(m.x - 18, m.y - 40, 36 * Math.max(0, m.hp / m.max), 5);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.scale(m.sz || 1, m.sz || 1);
+    person(0, 0, m.hit > 0 ? "#ff8a8a" : (m.c || "#8a5a6a"));
+    ctx.restore();
+    const bw = 36 * (m.sz || 1);
+    ctx.fillStyle = "#000a"; ctx.fillRect(m.x - bw / 2, m.y - 40 * (m.sz || 1), bw, 5);
+    ctx.fillStyle = "#e24646";
+    ctx.fillRect(m.x - bw / 2, m.y - 40 * (m.sz || 1),
+                 bw * Math.max(0, m.hp / m.max), 5);
   });
-  person(P.x, P.y, P.shield > 0 ? "#9fd6ff" : ((P.weapon && P.weapon.kind) === "bow" ? "#8bd65a" : (P.weapon && P.weapon.kind) === "staff" ? "#b98aff" : "#4a9eff"), null);
+  drawHero(P.x, P.y, P.atkCd > 0.25);
   hits.forEach(h => {
     ctx.fillStyle = h.c; ctx.font = "bold 15px ui-monospace,monospace"; ctx.textAlign = "center";
     ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
