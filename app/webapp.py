@@ -3615,6 +3615,15 @@ body .tapbtn b{font-size:56px;line-height:1;font-weight:900;letter-spacing:-2px}
     </button>
   </div>
 
+  <div style="display:flex;gap:8px;margin:10px 0">
+    <div style="flex:1;background:var(--panel);border:1px solid var(--line);
+      border-radius:11px;padding:10px 13px;font-size:13px;font-weight:800;
+      color:var(--muted)">💠 <span id="chips">0</span> фишек</div>
+    <button id="asc" style="border:0;border-radius:11px;padding:10px 16px;
+      font-size:13px;font-weight:900;background:var(--acc);color:var(--acc-ink);
+      font-family:inherit">Вознестись</button>
+  </div>
+
   <div class="capwrap">
     <div class="capbar"><i id="capFill"></i></div>
     <div class="captext"><span id="capLeft">…</span><span id="capMax">…</span></div>
@@ -3651,14 +3660,24 @@ function render(){
   if (d.cap > 1e12) {
     document.getElementById("capFill").style.width = "100%";
     document.getElementById("capLeft").textContent = "Без ограничений";
-    document.getElementById("capMax").textContent = "";
-    return;
+    document.getElementById("capMax").textContent = "кейсов " + d.cases;
+  } else {
+    document.getElementById("capLeft").textContent = d.left <= 0
+      ? "МАКСИМУМ собран"
+      : "Осталось " + fmt(d.left) + " Югов";
+    document.getElementById("capMax").textContent = "Потолок " + fmt(d.cap) + " · кейсов " + d.cases;
   }
-  document.getElementById("capLeft").textContent = d.left <= 0
-    ? "МАКСИМУМ собран"
-    : "Осталось " + fmt(d.left) + " Югов";
-  document.getElementById("capMax").textContent = "Потолок " + fmt(d.cap) + " · кейсов " + d.cases;
-  const tabs = [["building", "Здания"], ["upgrade", "Улучшения"], ["exchange", "Обмен"]];
+  document.getElementById("chips").textContent = d.chips || 0;
+  const ascBtn = document.getElementById("asc");
+  if (ascBtn && !ascBtn._wired) {
+    ascBtn._wired = 1;
+    ascBtn.onclick = async () => {
+      const r = await post("/api/yugi/ascend", {});
+      if (r && r.error) { toast(r.error); return; }
+      if (r && r.ok) { toast("Вознесение! +" + r.gain + " фишек"); await load(); }
+    };
+  }
+  const tabs = [["building", "Здания"], ["upgrade", "Улучшения"], ["tree", "🌳 Древо"], ["exchange", "Обмен"]];
   document.getElementById("tabs").innerHTML = tabs.map(t =>
     '<button class="tab' + (S.tab === t[0] ? " on" : "") + '" data-t="' + t[0] + '">' + t[1] + '</button>').join("");
   document.querySelectorAll("[data-t]").forEach(el => el.onclick = () => { S.tab = el.dataset.t; render(); });
@@ -3666,6 +3685,27 @@ function render(){
 }
 function drawList(){
   const d = S.data, box = document.getElementById("list");
+  if (S.tab === "tree"){
+    const pool = d.tree_pool || [];
+    const groups = {};
+    pool.forEach(t => { (groups[t.group] = groups[t.group] || []).push(t); });
+    box.innerHTML = Object.keys(groups).map(g =>
+      '<div style="padding:8px 2px 4px;font-size:11px;letter-spacing:1px;' +
+      'text-transform:uppercase;color:var(--muted);font-weight:800">' + g + '</div>' +
+      groups[g].map(t =>
+        '<div class="item' + (t.owned ? " has" : "") + '" data-tree="' + t.id + '"' +
+        (t.owned ? "" : ' style="opacity:' + (d.chips >= t.cost ? 1 : 0.45) + '"') + '>' +
+        '<div class="ico">' + t.emoji + '</div>' +
+        '<div class="mid"><div class="nm">' + t.name + '</div>' +
+        '<div class="sub">' + (t.owned ? "куплено" : t.cost + " фишек") + '</div></div>' +
+        (t.owned ? '<div class="n">✓</div>' : '') + '</div>').join("")).join("");
+    box.querySelectorAll("[data-tree]").forEach(el => el.onclick = async () => {
+      const r = await post("/api/yugi/tree", {id: el.dataset.tree});
+      if (r && r.error) { toast(r.error); return; }
+      toast("Узел куплен"); await load();
+    });
+    return;
+  }
   if (S.tab === "building"){
     box.innerHTML = d.buildings.map(b =>
       '<div class="row"><div class="ic">' + b.emoji + '</div>' +
