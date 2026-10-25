@@ -53,7 +53,7 @@ from .roulette import (
     roulette_day_key,
 )
 from .items import SLOT_ICONS
-from .market import (UPGRADE_PRICE, effective_stats, market_price, parse_handle, sum_bonus)
+from .market import UPGRADE_PRICE, effective_stats, parse_handle, sum_bonus
 from .boss_repo import BossError, BossRepo
 from .market_repo import MarketError, MarketRepo, item_of
 

@@ -5027,3 +5027,303 @@ load();
 </body>
 </html>
 """
+
+
+PROTO_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Прототип · Юга-кликер</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:#0f1117;color:#e8ebf2;min-height:100vh;padding-bottom:30px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.hdr{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  background:#171a23;border:1px solid #252a38;border-radius:14px;padding:12px 14px}
+.hdr .big{font-size:26px;font-weight:900;line-height:1.1;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.hdr .lbl{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#8b93a7;font-weight:800}
+.hdr .r{text-align:right}
+.tap{margin:14px 0;width:100%;border:0;border-radius:18px;padding:34px 16px;
+  font-size:22px;font-weight:900;color:#1a1205;
+  background:radial-gradient(circle at 30% 20%,#f6c94a,#b45309);
+  box-shadow:0 10px 30px rgba(246,201,74,.25);font-family:inherit}
+.tap:active{transform:scale(.985)}
+.tap small{display:block;font-size:12px;font-weight:700;opacity:.7;margin-top:4px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:#171a23;border:1px solid #252a38;border-radius:12px;
+  padding:11px 13px;margin-bottom:7px}
+.row.off{opacity:.45}
+.row .i{font-size:22px;width:30px;text-align:center}
+.row .m{flex:1;min-width:0}
+.row .n{font-size:13.5px;font-weight:800}
+.row .d{font-size:11px;color:#8b93a7;margin-top:2px;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.row button{border:0;border-radius:10px;padding:10px 13px;font-size:12.5px;
+  font-weight:800;background:#26a69a;color:#06110f;font-family:inherit}
+.row button:disabled{background:#2a2e3a;color:#5b6474}
+.sec{font-size:11px;letter-spacing:1.3px;text-transform:uppercase;
+  color:#8b93a7;font-weight:800;margin:16px 0 8px}
+.buffs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.buff{font-size:11px;font-weight:800;border-radius:99px;padding:5px 11px;
+  background:#26233a;color:#f6c94a;border:1px solid #4a3a12}
+.ach{display:flex;flex-wrap:wrap;gap:6px}
+.ach span{font-size:10.5px;padding:5px 9px;border-radius:9px;background:#171a23;
+  border:1px solid #252a38;color:#5b6474}
+.ach span.on{border-color:#26a69a;color:#26a69a}
+.ctl{display:flex;gap:8px;margin-top:14px}
+.ctl button{flex:1;border:1px solid #252a38;background:#171a23;color:#8b93a7;
+  border-radius:11px;padding:12px;font-size:12px;font-weight:800;font-family:inherit}
+#gold{position:fixed;font-size:40px;cursor:pointer;z-index:50;display:none;
+  filter:drop-shadow(0 0 14px rgba(246,201,74,.9));
+  animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:#232838;color:#fff;
+  border-radius:12px;padding:13px 15px;font-size:13px;transform:translateY(220%);
+  transition:.25s;z-index:60}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div><div class="lbl">Юги</div><div class="big" id="bal">0</div></div>
+    <div class="r"><div class="lbl">В секунду</div><div class="big" id="cps">0</div></div>
+  </div>
+  <div class="hdr" style="margin-top:8px">
+    <div><div class="lbl">За клик</div><div class="big" id="tapv">1</div></div>
+    <div class="r"><div class="lbl">Фишки</div><div class="big" id="chips">0</div></div>
+  </div>
+
+  <button class="tap" id="tap">ТАПАТЬ<small id="taphint">+1 за клик</small></button>
+  <div class="buffs" id="buffs"></div>
+
+  <div class="sec">Здания</div>
+  <div id="buildings"></div>
+
+  <div class="sec">Апгрейды</div>
+  <div id="upgrades"></div>
+
+  <div class="sec">Достижения</div>
+  <div class="ach" id="ach"></div>
+
+  <div class="ctl">
+    <button id="ascend">Вознестись</button>
+    <button id="reset">Сбросить всё</button>
+  </div>
+  <div class="d" id="ascinfo" style="font-size:11px;color:#8b93a7;margin-top:8px;
+    text-align:center;font-family:'JetBrains Mono',monospace"></div>
+</div>
+<div id="gold">🍪</div>
+<div id="toast"></div>
+<script>
+const BUILDINGS = [
+  {id:"cur", n:"Курсор", e:"👆", base:15, cps:0.1},
+  {id:"yuga", n:"Юга-мастер", e:"🧑", base:100, cps:0.7},
+  {id:"farm", n:"Ферма Югов", e:"🌱", base:1100, cps:4},
+  {id:"mine", n:"Шахта", e:"⛏", base:12000, cps:22},
+  {id:"factory", n:"Фабрика", e:"🏭", base:130000, cps:120},
+  {id:"bank", n:"Банк", e:"🏦", base:1400000, cps:650},
+  {id:"portal", n:"Портал", e:"🌀", base:20000000, cps:4000},
+  {id:"prism", n:"Призма", e:"💎", base:330000000, cps:26000},
+];
+const UPGRADES = [
+  {id:"tap2", n:"Крепкая рука", d:"+1 к клику", cost:100, check:()=>S.clicks>=10},
+  {id:"tap5", n:"Двойной тап", d:"×2 к клику", cost:2000, check:()=>S.clicks>=100},
+  {id:"cur2", n:"Курсоры ×2", d:"курсоры вдвое", cost:500, check:()=>own("cur")>=5},
+  {id:"yuga2", n:"Юга ×2", d:"юга-мастера вдвое", cost:5000, check:()=>own("yuga")>=5},
+  {id:"farm2", n:"Фермы ×2", d:"фермы вдвое", cost:25000, check:()=>own("farm")>=5},
+  {id:"all5", n:"Общий рост +5%", d:"+5% ко всему", cost:100000, check:()=>S.total>=50000},
+];
+const ACH = [
+  {id:"c1", n:"10 кликов", check:()=>S.clicks>=10},
+  {id:"c2", n:"100 кликов", check:()=>S.clicks>=100},
+  {id:"c3", n:"1000 кликов", check:()=>S.clicks>=1000},
+  {id:"b1", n:"Первое здание", check:()=>Object.values(S.b).some(v=>v>0)},
+  {id:"b2", n:"10 зданий", check:()=>Object.values(S.b).reduce((a,b)=>a+b,0)>=10},
+  {id:"b3", n:"50 зданий", check:()=>Object.values(S.b).reduce((a,b)=>a+b,0)>=50},
+  {id:"g1", n:"Поймал печеньку", check:()=>S.golden>=1},
+  {id:"g2", n:"5 печенек", check:()=>S.golden>=5},
+  {id:"p1", n:"Первое вознесение", check:()=>S.resets>=1},
+];
+const KEY = "yugi_proto_v1";
+let S = {bal:0, total:0, clicks:0, golden:0, chips:0, resets:0, b:{}, u:[], ach:[]};
+let buffs = [];   // {kind, until}
+let saved = 0;
+
+function own(id){ return S.b[id] || 0; }
+function has(id){ return S.u.indexOf(id) >= 0; }
+function achCount(){ return ACH.filter(a=>a.check()).length; }
+function tapPower(){
+  let v = 1;
+  if (has("tap2")) v += 1;
+  if (has("tap5")) v *= 2;
+  v *= (1 + S.chips * 0.01);
+  if (buffActive("click")) v *= 777;
+  return v;
+}
+function cps(){
+  let v = 0;
+  BUILDINGS.forEach(b => { v += own(b.id) * b.cps; });
+  if (has("cur2")) v += own("cur") * BUILDINGS[0].cps;
+  if (has("yuga2")) v += own("yuga") * BUILDINGS[1].cps;
+  if (has("farm2")) v += own("farm") * BUILDINGS[2].cps;
+  if (has("all5")) v *= 1.05;
+  v *= (1 + S.chips * 0.01);
+  v *= (1 + achCount() * 0.01);
+  if (buffActive("frenzy")) v *= 7;
+  return v;
+}
+function cost(b, count){
+  let c = 0, base = b.base, o = own(b.id);
+  for (let i = 0; i < count; i++) c += Math.ceil(base * Math.pow(1.15, o + i));
+  return c;
+}
+function fmt(n){
+  n = Math.floor(n);
+  if (n >= 1e12) return (n/1e12).toFixed(2) + "T";
+  if (n >= 1e9) return (n/1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n/1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
+  return String(n);
+}
+function buffActive(kind){ return buffs.some(b => b.kind === kind && b.until > Date.now()); }
+function addBuff(kind, ms){ buffs.push({kind, until: Date.now() + ms}); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(()=>el.className = "", 2600);
+}
+function click(){
+  const gain = tapPower();
+  S.bal += gain; S.total += gain; S.clicks += 1;
+  paint();
+}
+function buy(id, count){
+  const b = BUILDINGS.find(x => x.id === id);
+  const c = cost(b, count);
+  if (S.bal < c) return;
+  S.bal -= c;
+  S.b[id] = own(id) + count;
+  paint();
+}
+function buyUpgrade(id){
+  const u = UPGRADES.find(x => x.id === id);
+  if (!u || S.bal < u.cost || has(id)) return;
+  S.bal -= u.cost;
+  S.u.push(id);
+  paint();
+}
+function ascend(){
+  const gain = Math.floor(Math.cbrt(S.total / 1e6));
+  if (gain < 1){ toast("Нужно больше: до первой фишки ~1e6 югов"); return; }
+  S.chips += gain;
+  S.resets += 1;
+  S.bal = 0; S.total = 0; S.b = {}; S.u = []; S.clicks = 0;
+  buffs = [];
+  toast("Вознесение! +" + gain + " фишек");
+  paint();
+}
+function resetAll(){
+  localStorage.removeItem(KEY);
+  S = {bal:0, total:0, clicks:0, golden:0, chips:0, resets:0, b:{}, u:[], ach:[]};
+  buffs = [];
+  paint();
+  toast("Всё сброшено");
+}
+function spawnGolden(){
+  const g = document.getElementById("gold");
+  g.style.left = (10 + Math.random() * 70) + "vw";
+  g.style.top = (20 + Math.random() * 55) + "vh";
+  g.style.display = "block";
+  setTimeout(() => { g.style.display = "none"; }, 13000);
+}
+function catchGolden(){
+  const g = document.getElementById("gold");
+  g.style.display = "none";
+  S.golden += 1;
+  const roll = Math.random();
+  if (roll < 0.45){ addBuff("frenzy", 77000); toast("🍪 FRENZY! ×7 к производству на 77 сек"); }
+  else if (roll < 0.75){ addBuff("click", 13000); toast("🍪 CLICK FRENZY! ×777 к клику на 13 сек"); }
+  else { const bonus = Math.max(50, cps() * 900); S.bal += bonus; S.total += bonus; toast("🍪 LUCKY! +" + fmt(bonus)); }
+  paint();
+}
+function paint(){
+  document.getElementById("bal").textContent = fmt(S.bal);
+  document.getElementById("cps").textContent = fmt(cps());
+  document.getElementById("tapv").textContent = fmt(tapPower());
+  document.getElementById("chips").textContent = S.chips;
+  document.getElementById("taphint").textContent = "+" + fmt(tapPower()) + " за клик";
+
+  document.getElementById("buildings").innerHTML = BUILDINGS.map(b => {
+    const c1 = cost(b, 1), c10 = cost(b, 10);
+    const can1 = S.bal >= c1;
+    return '<div class="row' + (can1 ? "" : " off") + '">' +
+      '<div class="i">' + b.e + '</div>' +
+      '<div class="m"><div class="n">' + b.n + ' <span style="color:#26a69a">×' + own(b.id) + '</span></div>' +
+      '<div class="d">+' + b.cps + '/сек · ' + fmt(c1) + '</div></div>' +
+      '<button data-buy="' + b.id + '"' + (can1 ? "" : " disabled") + '>' + fmt(c1) + '</button>' +
+      '<button data-buy10="' + b.id + '"' + (S.bal >= c10 ? "" : " disabled") + '>×10</button>' +
+      '</div>';
+  }).join("");
+  document.querySelectorAll("[data-buy]").forEach(el => el.onclick = () => buy(el.dataset.buy, 1));
+  document.querySelectorAll("[data-buy10]").forEach(el => el.onclick = () => buy(el.dataset.buy10, 10));
+
+  const ups = UPGRADES.filter(u => u.check() && !has(u.id));
+  document.getElementById("upgrades").innerHTML = ups.length
+    ? ups.map(u => '<div class="row' + (S.bal >= u.cost ? "" : " off") + '">' +
+        '<div class="i">⬆️</div><div class="m"><div class="n">' + u.n + '</div>' +
+        '<div class="d">' + u.d + '</div></div>' +
+        '<button data-up="' + u.id + '"' + (S.bal >= u.cost ? "" : " disabled") + '>' + fmt(u.cost) + '</button></div>').join("")
+    : '<div style="font-size:12px;color:#8b93a7;padding:6px 2px">Пока нечего улучшать — играй дальше</div>';
+  document.querySelectorAll("[data-up]").forEach(el => el.onclick = () => buyUpgrade(el.dataset.up));
+
+  document.getElementById("ach").innerHTML = ACH.map(a =>
+    '<span class="' + (a.check() ? "on" : "") + '">' + a.n + '</span>').join("");
+
+  const bl = buffs.filter(b => b.until > Date.now());
+  document.getElementById("buffs").innerHTML = bl.map(b =>
+    '<div class="buff">' + (b.kind === "frenzy" ? "🔥 ×7 производство" : "⚡ ×777 клик") +
+    ' · ' + Math.ceil((b.until - Date.now()) / 1000) + 'с</div>').join("");
+
+  const next = Math.floor(Math.cbrt(S.total / 1e6));
+  document.getElementById("ascinfo").textContent =
+    "Вознесение даст +" + Math.max(0, next) + " фишек (сейчас " + S.chips + ", всего сбросов " + S.resets + ")";
+}
+document.getElementById("tap").onclick = click;
+document.getElementById("ascend").onclick = ascend;
+document.getElementById("reset").onclick = resetAll;
+document.getElementById("gold").onclick = catchGolden;
+
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) S = Object.assign(S, JSON.parse(raw));
+} catch(e) {}
+
+setInterval(() => {
+  const gain = cps() / 10;
+  S.bal += gain; S.total += gain;
+  buffs = buffs.filter(b => b.until > Date.now());
+  paint();
+}, 100);
+setInterval(() => {
+  if (Math.random() < 0.5) spawnGolden();
+}, 45000);
+setInterval(() => {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {}
+}, 4000);
+paint();
+</script>
+</body>
+</html>
+"""
+
+
+@router.get("/proto_yugi", response_class=HTMLResponse)
+async def proto_yugi() -> HTMLResponse:
+    """Прототип кликера: чистая симуляция в браузере, база не затрагивается."""
+    return HTMLResponse(PROTO_PAGE)

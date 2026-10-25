@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from .market import market_price
 
 from typing import Any
 
