@@ -6328,6 +6328,13 @@ function render(){
     for (let x = 0; x < WORLD.w; x += 64){
       ctx.fillStyle = ((x / 64 + y / 64) % 2) ? "#182411" : "#151f0e";
       ctx.fillRect(x, y, 64, 64);
+      if (KENNEY.complete && KENNEY.naturalWidth){
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(KENNEY, 6 * 16, 5 * 16, 16, 16, x, y, 64, 64);
+        ctx.restore();
+      }
     }
   }
   // тропа: пунктир из точек
@@ -6406,6 +6413,13 @@ function render(){
     ctx.globalAlpha = Math.max(0, h.t); ctx.fillText(h.v, h.x, h.y); ctx.globalAlpha = 1;
   });
   ctx.restore();
+  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.30,
+                                      w / 2, h / 2, Math.max(w, h) * 0.78);
+  vg.addColorStop(0, "rgba(0,0,0,0)");
+  vg.addColorStop(0.6, "rgba(0,0,0,0.35)");
+  vg.addColorStop(1, "rgba(0,0,0,0.85)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, w, h);
   void h; void dtFix;
 }
 let dtFix = 0;
