@@ -5081,8 +5081,20 @@ body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
 .burst{position:fixed;pointer-events:none;z-index:54;font-size:20px;
   animation:burst .7s ease-out forwards}
 @keyframes burst{to{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0}}
-.treewrap{overflow:auto;max-height:74vh;border-top:1px solid #5a3a1e;
-  background:#241408;border-radius:0 0 10px 10px}
+#treemodal{position:fixed;inset:0;background:rgba(18,9,4,.95);z-index:70;
+  display:none;flex-direction:column}
+#treemodal.on{display:flex}
+.tmhead{display:flex;justify-content:space-between;align-items:center;
+  padding:12px 16px;border-bottom:2px solid #6b4a22;color:#ffd98a;
+  font-weight:900;font-size:15px}
+.tmhead button{border:2px solid #6b4a22;background:#4a2e1c;color:#ffd98a;
+  border-radius:8px;padding:7px 14px;font-size:13px;font-weight:800;font-family:inherit}
+.tmbody{flex:1;overflow:hidden;position:relative;cursor:grab;touch-action:none}
+.tmbody:active{cursor:grabbing}
+.tmbody svg{position:absolute;left:0;top:0;will-change:transform}
+.tmhint{position:absolute;left:0;right:0;bottom:10px;text-align:center;
+  font-size:11px;color:#a98a5f;pointer-events:none}
+.treewrap{background:#241408;border-radius:0 0 10px 10px}
 .treewrap svg{display:block}
 .node{cursor:pointer}
 .node circle{transition:stroke .15s,fill .15s}
@@ -5141,6 +5153,9 @@ body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
     <div id="ascinfo" style="padding:0 9px 9px;font-size:10px;color:#a98a5f;text-align:center"></div>
   </div>
 </div>
+<div id="treemodal"><div class="tmhead"><span>🌳 Древо престижа</span>
+<button id="tmclose">Закрыть</button></div>
+<div class="tmbody" id="tmb"><div class="tmhint">тяни пальцем или мышкой</div></div></div>
 <div id="particles"></div>
 <div id="gold">🍪</div>
 <div id="toast"></div>
@@ -5195,6 +5210,20 @@ const TREE = [];
   });
 })();
 function treeHas(id){ return S.tree.indexOf(id) >= 0; }
+var pan = {x:0, y:0, drag:false, sx:0, sy:0, ox:0, oy:0, moved:0};
+function applyPan(){
+  var svg = document.querySelector("#tmb svg");
+  if (svg) svg.style.transform = "translate(" + pan.x + "px," + pan.y + "px)";
+}
+function openTree(){
+  var m = document.getElementById("treemodal");
+  m.classList.add("on");
+  pan.x = 0; pan.y = 0;
+  document.getElementById("tmb").innerHTML = treeSVG() +
+    '<div class="tmhint">тяни пальцем или мышкой</div>';
+  applyPan();
+}
+function closeTree(){ document.getElementById("treemodal").classList.remove("on"); }
 function treeSVG(){
   var groups = {}, order = [];
   TREE.forEach(function(t){
@@ -5518,6 +5547,7 @@ document.getElementById("shop").addEventListener("click", function(e){
 document.getElementById("tabs").addEventListener("click", function(e){
   var b = e.target.closest("[data-tab]");
   if (!b) return;
+  if (b.dataset.tab === "u"){ openTree(); return; }
   S.tab = b.dataset.tab;
   document.querySelectorAll("#tabs [data-tab]").forEach(function(x){
     x.className = x === b ? "on" : "";
@@ -5525,6 +5555,30 @@ document.getElementById("tabs").addEventListener("click", function(e){
   dirty = true; lists();
 });
 document.getElementById("tap").onclick = click;
+document.getElementById("tmclose").onclick = closeTree;
+(function(){
+  var body = document.getElementById("tmb");
+  body.addEventListener("pointerdown", function(e){
+    pan.drag = true; pan.moved = 0;
+    pan.sx = e.clientX; pan.sy = e.clientY;
+    pan.ox = pan.x; pan.oy = pan.y;
+  });
+  window.addEventListener("pointermove", function(e){
+    if (!pan.drag) return;
+    var dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
+    pan.moved = Math.max(pan.moved, Math.abs(dx) + Math.abs(dy));
+    pan.x = pan.ox + dx; pan.y = pan.oy + dy;
+    applyPan();
+  });
+  window.addEventListener("pointerup", function(e){
+    if (!pan.drag) return;
+    pan.drag = false;
+    if (pan.moved < 8){
+      var t = e.target.closest("[data-tree]");
+      if (t) buyTree(t.dataset.tree);
+    }
+  });
+})();
 document.getElementById("ascend").onclick = ascend;
 document.getElementById("reset").onclick = resetAll;
 document.getElementById("gold").onclick = catchGolden;
