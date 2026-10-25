@@ -1,0 +1,26 @@
+# Fly.io: бесплатный уровень делится на 3 shared-cpu машины.
+# Деплой: fly launch --no-deploy  ->  fly secrets set ...  ->  fly deploy
+app = "severo-yug-bot"
+primary_region = "fra"
+
+[build]
+
+[env]
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Бот не должен засыпать: иначе история курса и тикеры встанут.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
