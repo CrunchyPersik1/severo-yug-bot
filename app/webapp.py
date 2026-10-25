@@ -5922,7 +5922,7 @@ function spawnOne(){
 function spawnNpcs(n){
   npcs = [];
   for (let i = 0; i < n; i++){
-    npcs.push({x: 120 + i * 46, y: 120, name: "OFFLINE"});
+    npcs.push({x: 110 + i * 70, y: 130, name: "OFFLINE"});
   }
 }
 function reset(){
@@ -6100,11 +6100,15 @@ let animT = 0;
 function drawHero(x, y, attacking){
   if (!HERO){ person(x, y, "#4a9eff"); return; }
   const fw = 32, fh = 24;
+  const dw = 52, dh = 39;                            // рисуем крупнее
   let row = 1, col = Math.floor(animT * 6) % 4;      // ходьба
   if (attacking){ row = 8; col = Math.floor(animT * 10) % 4; }
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - 16, y - 18, 32, 24);
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 14, 28, 6);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(HERO, col * fw, row * fh, fw, fh, x - dw / 2, y + 20 - dh, dw, dh);
   ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
@@ -6235,7 +6239,15 @@ function render(){
     ctx.fillText(Math.ceil(5 - boss.t), boss.x, boss.y + 34);
   }
 
-  npcs.forEach(n => person(n.x, n.y, "#3a4152", n.name, 0.55));
+  npcs.forEach(n => {
+    ctx.save();
+    ctx.translate(n.x, n.y);
+    ctx.scale(1.25, 1.25);
+    person(0, 0, "#3a4152", null, 0.55);
+    ctx.restore();
+    ctx.fillStyle = "#6a6a7a"; ctx.font = "7px 'Press Start 2P',monospace";
+    ctx.textAlign = "center"; ctx.fillText(n.name, n.x, n.y + 44);
+  });
   drop.forEach(d => {
     ctx.fillStyle = "#f6c94a"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("🗡", d.x, d.y);
@@ -6247,7 +6259,7 @@ function render(){
   mobs.forEach(m => {
     ctx.save();
     ctx.translate(m.x, m.y);
-    ctx.scale(m.sz || 1, m.sz || 1);
+    ctx.scale((m.sz || 1) * 1.25, (m.sz || 1) * 1.25);
     person(0, 0, m.hit > 0 ? "#ff8a8a" : (m.c || "#8a5a6a"));
     ctx.restore();
     const bw = 36 * (m.sz || 1);
