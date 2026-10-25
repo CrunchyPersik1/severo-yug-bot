@@ -5735,9 +5735,10 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
 .top{justify-content:space-between;background:none}
 .top .grp{display:flex;gap:7px}
-.top button{border:3px solid #6b4a22;background:radial-gradient(circle at 30% 25%,#3a2a1a,#1a1008);
-  color:#d8b45a;border-radius:10px;width:44px;height:44px;font-size:17px;
-  font-family:inherit;box-shadow:0 0 0 2px #120c06,inset 0 0 10px #00000099}
+.top button{border:0;color:#f0d79a;border-radius:50%;width:46px;height:46px;
+  font-size:18px;font-family:inherit;padding:0;
+  background:url(/static/ui/btn_yellow.png) center/100% 100% no-repeat;
+  filter:drop-shadow(0 3px 6px #000a)}
 .top button:active{transform:translateY(2px)}
 #wpanel{position:fixed;left:8px;right:8px;bottom:8px;display:flex;gap:8px;
   z-index:10}
@@ -5766,15 +5767,14 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a4020,#241608);
   border:3px solid #c9a227;box-shadow:0 0 12px #000000aa,inset 0 0 8px #00000088}
 .btns{position:fixed;right:14px;bottom:112px;display:flex;align-items:flex-end;gap:10px;z-index:11}
-.ab{width:58px;height:58px;border-radius:50%;border:3px solid #6b4a22;
-  background:radial-gradient(circle at 32% 26%,#3a2a18,#140d06);
-  color:#d8b45a;font-size:22px;font-family:inherit;position:relative;
+.ab{width:62px;height:62px;border:0;border-radius:50%;color:#f0d79a;
+  font-size:24px;font-family:inherit;position:relative;
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 0 0 3px #120c06,inset 0 0 12px #000000aa}
-.ab:active{transform:translateY(2px)}
-.ab.atk{width:74px;height:74px;border-color:#c9a227;color:#ffe9a0;
-  background:radial-gradient(circle at 32% 26%,#5a1a18,#24080a);
-  box-shadow:0 0 0 3px #120c06,inset 0 0 14px #000000aa,0 0 22px #c9a22744}
+  background:url(/static/ui/btn_grey.png) center/100% 100% no-repeat;
+  filter:drop-shadow(0 3px 6px #000a)}
+.ab:active{transform:translateY(2px);filter:drop-shadow(0 1px 3px #000a)}
+.ab.atk{width:80px;height:80px;color:#ffd0c0;font-size:28px;
+  background:url(/static/ui/btn_red.png) center/100% 100% no-repeat}
 .ab .cd{position:absolute;inset:-3px;border-radius:50%;background:#000a;display:none;
   align-items:center;justify-content:center;font-size:13px;font-weight:900}
 .ab.cool .cd{display:flex}
