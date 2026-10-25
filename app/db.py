@@ -974,26 +974,19 @@ class Database:
                         [winner_id, loser_id],
                     )
                     return
+                # Награда за победу — кейс 7Г, а не очки.
                 await con.execute(
-                    """
-                    update players
-                       set wins = wins + 1,
-                           kills = kills + 1,
-                           bonus_points = bonus_points + $2
-                     where user_id = $1
-                    """,
+                    "update players set wins = wins + 1, kills = kills + 1 "
+                    "where user_id = $1",
                     winner_id,
-                    int(stake),
                 )
                 await con.execute(
-                    """
-                    update players
-                       set losses = losses + 1,
-                           bonus_points = bonus_points - $2
-                     where user_id = $1
-                    """,
+                    "insert into cases (user_id, source) values ($1, 'battle')",
+                    winner_id,
+                )
+                await con.execute(
+                    "update players set losses = losses + 1 where user_id = $1",
                     loser_id,
-                    int(stake),
                 )
                 if winner_card_id:
                     await con.execute(
@@ -1865,7 +1858,7 @@ class Database:
         return state, cost
 
     async def yugi_buy_cases(self, user_id: int, count: int, cost: float) -> dict[str, Any] | None:
-        """Обмен Югов на кейс. Только по одному и не чаще раза в минуту."""
+        """Обмен Югов на кейс. Без лимитов: сколько заработал — столько и меняй."""
         from datetime import datetime, timezone
 
         if int(count) != 1:
@@ -1873,9 +1866,6 @@ class Database:
         now = datetime.now(timezone.utc)
         async with self._p().acquire() as con:
             async with con.transaction():
-                limit = await self._case_limit(con, user_id, now)
-                if limit["wait"] > 0 or limit["left"] <= 0:
-                    return None
                 row = await self._yugi_lock(con, user_id)
                 state = self._yugi_state(row)
                 state = await self._yugi_offline(row, state, now)
