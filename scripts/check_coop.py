@@ -110,6 +110,7 @@ async def main(argv: list[str] | None = None) -> int:
     from app.dungeon_hero import DungeonHeroRepo
     from app.dungeon_hub import DungeonHub
     from app.dungeon_repo import DungeonBossRepo
+    from app.quest_repo import QuestRepo
     from app.webapp import router as webapp_router
 
     db = Database(dsn)
@@ -126,6 +127,7 @@ async def main(argv: list[str] | None = None) -> int:
     api.state.dungeon = repo
     api.state.hub = hub
     api.state.hero = hero_repo
+    api.state.quests = QuestRepo(db)
 
     config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
     server = uvicorn.Server(config)
@@ -161,6 +163,17 @@ async def main(argv: list[str] | None = None) -> int:
             )
             await con.execute(
                 "delete from dungeon_hero where user_id = any($1::bigint[])",
+                list(TEST_USERS),
+            )
+            await con.execute(
+                "delete from quest_claim where user_id = any($1::bigint[])",
+                list(TEST_USERS),
+            )
+            await con.execute(
+                "delete from cases where user_id = any($1::bigint[])", list(TEST_USERS)
+            )
+            await con.execute(
+                "delete from upgrader_log where user_id = any($1::bigint[])",
                 list(TEST_USERS),
             )
 
@@ -406,6 +419,38 @@ async def main(argv: list[str] | None = None) -> int:
         status, maxed = await call("POST", "/api/dungeon/upgrade", first,
                                    {"weapon": "bow_9_0"})
         check("улучшение: максимум отказ", status, 400)
+
+        # Квесты: награда забирается кнопкой, ровно один раз
+        async with db._p().acquire() as con:
+            await con.execute(
+                "insert into upgrader_log (user_id, from_card, to_card, chance, won) "
+                "values ($1::bigint, 'a', 'b', 0.5, true)",
+                TEST_USERS[0],
+            )
+        status, quest_list = await call("GET", "/api/quests", first)
+        items = {q["key"]: q for q in (quest_list.get("quests") or [])}
+        check("квесты: весь список", len(items), 7)
+        check("квесты: апгрейд засчитан", (items.get("upgrades") or {}).get("done"), True)
+        check("квесты: ещё не забран", (items.get("upgrades") or {}).get("claimed"), False)
+        check("квесты: награда описана",
+              isinstance((items.get("upgrades") or {}).get("reward_text"), str), True)
+        status, claim = await call("POST", "/api/quests/claim", first, {"key": "upgrades"})
+        check("квесты: награда выдана", status, 200)
+        check("квесты: очки", (claim.get("reward") or {}).get("points"), 15000)
+        check("квесты: кейс", (claim.get("reward") or {}).get("cases"), 1)
+        check("квесты: баланс вырос", (claim.get("balance") or 0) >= 15000, True)
+        status, again_claim = await call("POST", "/api/quests/claim", first,
+                                         {"key": "upgrades"})
+        check("квесты: второй раз отказ", status, 400)
+        status, not_done = await call("POST", "/api/quests/claim", first, {"key": "casino"})
+        check("квесты: невыполненный отказ", status, 400)
+        status, unknown = await call("POST", "/api/quests/claim", first,
+                                     {"key": "нет такого"})
+        check("квесты: неизвестный отказ", status, 400)
+        status, after = await call("GET", "/api/quests", first)
+        after_items = {q["key"]: q for q in (after.get("quests") or [])}
+        check("квесты: помечено полученным",
+              (after_items.get("upgrades") or {}).get("claimed"), True)
     finally:
         if not args.keep_rows:
             await wipe()

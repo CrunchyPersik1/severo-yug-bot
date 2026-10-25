@@ -736,3 +736,14 @@ create table if not exists dungeon_hero (
     bag        jsonb   not null default '[]'::jsonb,
     updated_at timestamptz not null default now()
 );
+
+-- ===================================================================== --
+-- Квесты со страницы «Задания»: награда забирается один раз
+-- ===================================================================== --
+
+create table if not exists quest_claim (
+    user_id    bigint not null,
+    quest_key  text   not null,
+    claimed_at timestamptz not null default now(),
+    primary key (user_id, quest_key)
+);

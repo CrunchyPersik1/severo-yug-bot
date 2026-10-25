@@ -48,6 +48,7 @@ from .casino_repo import CasinoRepo
 from .cases import roll_case_card
 from . import dungeon
 from .dungeon_repo import DungeonError
+from .quest_repo import QuestError
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
 from .items import ACCESSORIES
@@ -4994,20 +4995,11 @@ async def api_quests(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(error)}, status_code=401)
 
     uid = int(user["id"])
-    quests = []
+    repo = getattr(state, "quests", None)
+    if repo is None:
+        return JSONResponse({"error": "Квесты ещё не включены"}, status_code=400)
+    items = await repo.list(uid)
     async with state.db.pool.acquire() as con:  # type: ignore[attr-defined]
-        for source, sql in event_week.SOURCES.items():
-            now_value = int(await con.fetchval(sql, uid) or 0)
-            need = event_week.need_for(source, 1)
-            quests.append(
-                {
-                    "key": source,
-                    "title": event_week.TITLES.get(source, source),
-                    "need": need,
-                    "now": min(now_value, need),
-                    "done": now_value >= need,
-                }
-            )
         streak = int(
             await con.fetchval(
                 "select coalesce(pvp_streak, 0) from players where user_id = $1", uid
@@ -5022,9 +5014,11 @@ async def api_quests(request: Request) -> JSONResponse:
         )
     return JSONResponse(
         {
-            "quests": quests,
-            "done": sum(1 for q in quests if q["done"]),
-            "total": len(quests),
+            "quests": items,
+            "done": sum(1 for q in items if q["done"]),
+            "claimed": sum(1 for q in items if q["claimed"]),
+            "ready": sum(1 for q in items if q["done"] and not q["claimed"]),
+            "total": len(items),
             "pvp": {
                 "streak": streak,
                 "wins": wins,
@@ -5035,6 +5029,25 @@ async def api_quests(request: Request) -> JSONResponse:
             },
         }
     )
+
+
+@router.post("/api/quests/claim")
+async def api_quests_claim(request: Request) -> JSONResponse:
+    """Забрать награду за выполненный квест. Ровно один раз на квест."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "quests", None)
+    if repo is None:
+        return JSONResponse({"error": "Квесты ещё не включены"}, status_code=400)
+    body = await _json_body(request)
+    try:
+        result = await repo.claim(int(user["id"]), body.get("key"))
+    except QuestError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, **result})
 
 
 @router.get("/quests", response_class=HTMLResponse)
@@ -5070,6 +5083,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .bar{height:7px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:8px}
 .bar i{display:block;height:100%;background:var(--acc);border-radius:99px}
 .q.done .bar i{background:#26a69a}
+.q .rw{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px}
+.q .rw span{font-size:11.5px;color:var(--muted)}
+.claim{border:0;border-radius:9px;padding:7px 13px;font-family:inherit;font-size:11px;
+  font-weight:800;background:var(--acc);color:#08131a}
+.claim:disabled{opacity:.5}
+.claim.got{background:none;color:#26a69a;padding:7px 0}
+.claim.wait{background:none;color:var(--muted);padding:7px 0;font-size:10.5px}
+.note{font-size:11.5px;color:var(--muted);margin:2px 0 10px}
 .pvp{background:var(--panel);border:1px solid var(--line);border-radius:14px;
   padding:15px;margin-top:14px}
 .pvp h3{margin:0 0 4px;font-size:15px}
@@ -5094,6 +5115,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     <div class="b ok" id="streak">…</div>
   </div>
   <div id="list"></div>
+  <div class="note">Награда за задание забирается кнопкой — один раз за каждое.</div>
   <div class="pvp" id="pvp"></div>
 </div>
 <div id="toast"></div>
@@ -5111,14 +5133,20 @@ async function load(){
     const r = await fetch("/api/quests", {headers});
     const d = await r.json();
     if (d.error){ toast(d.error); return; }
-    document.getElementById("cnt").textContent = "Выполнено " + d.done + " из " + d.total;
+    document.getElementById("cnt").textContent = "Выполнено " + d.done + " из " + d.total +
+      (d.claimed ? " · забрано " + d.claimed : "");
     document.getElementById("streak").textContent = "🔥 стрик " + d.pvp.streak;
     document.getElementById("list").innerHTML = d.quests.map(q => {
       const pct = Math.min(100, Math.round(q.now / q.need * 100));
-      return '<div class="q' + (q.done ? " done" : "") + '">' +
+      let action;
+      if (q.claimed) action = '<span class="claim got">ПОЛУЧЕНО</span>';
+      else if (q.done) action = '<button class="claim" data-claim="' + esc(q.key) + '">ЗАБРАТЬ</button>';
+      else action = '<span class="claim wait">' + q.now + " из " + q.need + '</span>';
+      return '<div class="q' + (q.done ? " done" : "") + (q.claimed ? " got" : "") + '">' +
         '<div class="h"><div class="t">' + esc(q.title) + '</div>' +
         '<div class="n">' + q.now + "/" + q.need + '</div></div>' +
-        '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
+        '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="rw"><span>' + esc(q.reward_text) + '</span>' + action + '</div></div>';
     }).join("");
     const p = d.pvp;
     document.getElementById("pvp").innerHTML =
@@ -5129,10 +5157,25 @@ async function load(){
         '<div class="step' + (s.reached ? " on" : "") + '">' +
         '<span>' + s.need + ' побед подряд</span>' +
         '<b>' + (s.reached ? "✓ " : "") + '+' + s.cases + ' кейсов</b></div>').join("") +
-      '<div class="sub" style="margin-top:10px">Награды приходят автоматически. ' +
+      '<div class="sub" style="margin-top:10px">Кейсы за стрик приходят автоматически. ' +
       'Больше 10 боёв с одним игроком — стрик сгорает и минус 250 000.</div>';
   }catch(e){ toast("Не смог загрузить"); }
 }
+document.getElementById("list").addEventListener("click", async function(e){
+  const btn = e.target && e.target.closest ? e.target.closest("[data-claim]") : null;
+  if (!btn) return;
+  btn.disabled = true;
+  try{
+    const r = await fetch("/api/quests/claim", {
+      method: "POST", headers,
+      body: JSON.stringify({key: btn.dataset.claim})
+    });
+    const d = await r.json();
+    if (!d.ok){ toast(d.error || "Не вышло"); btn.disabled = false; return; }
+    toast("Награда: " + d.reward_text);
+    load();
+  }catch(err){ toast("Не смог забрать"); btn.disabled = false; }
+});
 if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
