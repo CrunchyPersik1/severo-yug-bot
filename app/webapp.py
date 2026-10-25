@@ -7192,6 +7192,73 @@ document.getElementById("chtext").addEventListener("keydown", function(e){
   if (e.key === "Enter") chatSend();
 });
 
+/* ---------- оффлайн-игроки в углу локации ---------- */
+const OFFLINE = [];
+
+function applyOffline(rows){
+  OFFLINE.length = 0;
+  (rows || []).forEach(function(row){
+    if (row && row.zone != null) OFFLINE.push(row);
+  });
+}
+
+function offlineSpot(spot, index){
+  // угол локации: слева, у нижнего края её полосы
+  const base = (ZONES.length - 1 - spot.zone) * ZONE_H;
+  return {
+    x: 46 + (index % 2) * 26,
+    y: base + ZONE_H - 52 - Math.floor(index / 2) * 46
+  };
+}
+
+function drawOffline(spot, index, t){
+  const pos = offlineSpot(spot, index);
+  if (Math.abs(pos.y - P.y) > ZONE_H * 1.6) return;
+  const x = pos.x;
+  const y = pos.y;
+  const im = HEROES[spot.weapon === "bow" ? "elf_m" : "knight_m"];
+  ctx.save();
+  ctx.globalAlpha = 0.32;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(x - 12, y + 6, 24, 5);
+  ctx.globalAlpha = 0.55;
+  if (im && im.complete && im.naturalWidth){
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, 0, 0, 16, 16, x - 24, y - 32, 48, 48);
+  } else {
+    person(x, y, "#6a6a7a");
+  }
+  ctx.restore();
+  // табличка OFFLINE
+  ctx.font = "7px 'Press Start 2P',monospace";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#12161dee";
+  ctx.fillRect(x - 26, y + 10, 52, 12);
+  ctx.fillStyle = "#8a8a9a";
+  ctx.fillText("OFFLINE", x, y + 19);
+  ctx.fillStyle = "#c9c4b0";
+  ctx.fillText(String(spot.name || "Игрок").slice(0, 10), x, y - 38);
+  // zZz
+  const z = Math.sin(t * 1.6 + index) * 2;
+  ctx.fillStyle = "#8fd8ff";
+  ctx.globalAlpha = 0.75;
+  ctx.fillText("z", x + 16, y - 44 + z);
+  ctx.globalAlpha = 0.5;
+  ctx.fillText("z", x + 24, y - 52 + z * 1.4);
+  ctx.globalAlpha = 1;
+}
+
+function drawOfflineAll(t){
+  const here = zoneIndex(P.y);
+  let shown = 0;
+  for (let i = 0; i < OFFLINE.length && shown < 12; i++){
+    const spot = OFFLINE[i];
+    if (Math.abs(spot.zone - here) > 1) continue;
+    drawOffline(spot, shown, t);
+    shown++;
+  }
+}
+
 /* ---------- живые игроки на карте ---------- */
 // Основной транспорт — WebSocket: 10 тактов в секунду, база не участвует.
 // Если сокет не поднялся (прокси, старый WebView) — тихий откат на HTTP.
@@ -7259,6 +7326,7 @@ function wsStart(){
     if (data.error){ wsOk = false; try { sock.close(); } catch (e){} return; }
     wsAuth = false;
     applyPlayers(data.players);
+    applyOffline(data.offline);
   };
   sock.onclose = function(){
     wsOk = false;
@@ -7274,7 +7342,10 @@ async function presenceTick(){
   presenceBusy = true;
   try {
     const data = await coopApi("/api/dungeon/presence", presencePayload());
-    if (data && data.ok) applyPlayers(data.players);
+    if (data && data.ok){
+      applyPlayers(data.players);
+      applyOffline(data.offline);
+    }
   } catch (e){
   } finally {
     presenceBusy = false;
@@ -7382,6 +7453,11 @@ function heroApply(hero, heal){
   HERO_OFFER = hero.upgrade || null;
   HERO_ARMOR = hero.armor_offer || null;
   P.armor = hero.armor | 0;
+  // проснуться там, где уснул
+  if (hero.zone != null && hero.x != null && hero.y != null){
+    P.x = Math.max(60, Math.min(WORLD.w - 60, hero.x));
+    P.y = Math.max(60, Math.min(WORLD.h - 60, hero.y));
+  }
   P.max = 120 + (level - 1) * 8;        // ровно как даёт повышение уровня
   if (heal !== false) P.hp = P.max;
 }
@@ -8226,6 +8302,8 @@ function render(dt){
   Object.keys(REMOTE).forEach(function(key){
     drawRemote(REMOTE[key], animT);
   });
+  // те, кто вышел: спят в углу своей локации
+  drawOfflineAll(animT);
   drop.forEach(d => {
     FX.glowAt(d.x, d.y - 4, 60 + Math.sin(animT * 5) * 10, "#f6c94a", 0.8);
     ctx.fillStyle = "#f6c94a"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
@@ -8524,9 +8602,16 @@ async def api_dungeon_presence(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Карта ещё не включена"}, status_code=400)
     user_id = int(user["id"])
     name = str(user.get("first_name") or user.get("username") or "Игрок")
-    hub.touch(user_id, name, await _json_body(request))
+    spot = hub.touch(user_id, name, await _json_body(request))
     hub.prune()
-    return JSONResponse({"ok": True, "players": hub.snapshot(user_id)})
+    await _save_spot(state, user_id, spot)
+    return JSONResponse(
+        {
+            "ok": True,
+            "players": hub.snapshot(user_id),
+            "offline": await _offline_rows(state),
+        }
+    )
 
 
 async def _dungeon_broadcast(hub, message: dict) -> None:
@@ -8539,6 +8624,45 @@ async def _dungeon_broadcast(hub, message: dict) -> None:
             dead.append(socket)
     for socket in dead:
         hub.leave_socket(socket)
+
+
+# Оффлайн-игроки нужны всем сразу: держим один запрос на 4 секунды.
+_OFFLINE_CACHE: dict[str, Any] = {"at": 0.0, "rows": []}
+_LAST_SPOT: dict[int, float] = {}
+
+
+async def _offline_rows(state) -> list[dict]:
+    """Кто вышел — аватаром в углу своей локации. Кэш на 4 секунды."""
+    import time
+
+    now = time.monotonic()
+    if now - float(_OFFLINE_CACHE["at"]) < 4.0:
+        return _OFFLINE_CACHE["rows"]  # type: ignore[return-value]
+    repo = getattr(state, "hero", None)
+    rows: list[dict] = []
+    if repo is not None:
+        with contextlib.suppress(Exception):
+            rows = await repo.offline(24)
+    _OFFLINE_CACHE["at"] = now
+    _OFFLINE_CACHE["rows"] = rows
+    return rows
+
+
+async def _save_spot(state, user_id: int, spot, force: bool = False) -> None:
+    """Пишем последнюю точку не чаще раза в 20 секунд и всегда при выходе."""
+    import time
+
+    if spot is None:
+        return
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return
+    now = time.monotonic()
+    if not force and now - float(_LAST_SPOT.get(user_id, 0.0)) < 20.0:
+        return
+    _LAST_SPOT[user_id] = now
+    with contextlib.suppress(Exception):
+        await repo.save_spot(user_id, spot.zone, spot.x, spot.y)
 
 
 @router.websocket("/ws/dungeon")
@@ -8588,8 +8712,15 @@ async def ws_dungeon(websocket: WebSocket) -> None:
                         {"type": "chat", "id": user_id, "name": name, "text": text},
                     )
                 continue
-            hub.touch(user_id, name, data)
-            await websocket.send_json({"ok": True, "players": hub.snapshot(user_id)})
+            spot = hub.touch(user_id, name, data)
+            await _save_spot(state, user_id, spot)
+            await websocket.send_json(
+                {
+                    "ok": True,
+                    "players": hub.snapshot(user_id),
+                    "offline": await _offline_rows(state),
+                }
+            )
     except WebSocketDisconnect:
         pass
     except Exception:  # noqa: BLE001 - сокет мог отвалиться на любом шаге
@@ -8597,7 +8728,9 @@ async def ws_dungeon(websocket: WebSocket) -> None:
     finally:
         hub.leave_socket(websocket)
         if user_id:
-            hub.drop(user_id)
+            spot = hub.snapshot_spot(user_id)
+            hub.drop(user_id)          # сначала перестаём быть «живым»
+            await _save_spot(state, user_id, spot, force=True)
 
 @router.get("/api/dungeon/hero")
 async def api_dungeon_hero(request: Request) -> JSONResponse:

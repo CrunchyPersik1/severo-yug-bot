@@ -110,15 +110,16 @@ def test_boss_reward_is_applied_once():
 
 
 def test_live_players_on_map():
-    """Другие игроки видны в реальном времени, заглушек OFFLINE больше нет."""
+    """Другие игроки видны в реальном времени, заглушек-ботов больше нет."""
     assert "/ws/dungeon" in DUNGEON_PAGE            # основной транспорт
     assert "function wsStart(" in DUNGEON_PAGE
     assert "/api/dungeon/presence" in DUNGEON_PAGE   # запасной путь
     assert "function drawRemote(" in DUNGEON_PAGE
     assert "const REMOTE = {}" in DUNGEON_PAGE
     assert "remoteTick(dt)" in DUNGEON_PAGE
-    assert "OFFLINE" not in DUNGEON_PAGE
+    # старые NPC-заглушки убраны: оффлайн-игроки теперь настоящие, из базы
     assert "npcs" not in DUNGEON_PAGE
+    assert "const OFFLINE = []" in DUNGEON_PAGE
 
 
 def test_mobs_live_in_neighbour_zones():

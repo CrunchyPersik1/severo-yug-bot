@@ -749,3 +749,10 @@ create table if not exists quest_claim (
 );
 
 alter table dungeon_hero add column if not exists armor integer not null default 0;
+
+-- Последняя точка героя: где он стоял, когда вышел. Из неё же показываем
+-- оффлайн-игроков в углу локации и туда же возвращаем при следующем входе.
+alter table dungeon_hero add column if not exists zone integer;
+alter table dungeon_hero add column if not exists x real;
+alter table dungeon_hero add column if not exists y real;
+alter table dungeon_hero add column if not exists seen_at timestamptz;

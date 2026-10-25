@@ -107,6 +107,7 @@ async def main(argv: list[str] | None = None) -> int:
     from app.config import settings
     from app.db import Database
     from app import dungeon as dungeon_rules
+    from app import webapp as webapp_module
     from app import dungeon_hero as hero_rules
     from app.dungeon_hero import DungeonHeroRepo
     from app.dungeon_hub import DungeonHub
@@ -374,6 +375,10 @@ async def main(argv: list[str] | None = None) -> int:
             await sock_x.send(json.dumps({"init": "плохая подпись", "x": 1, "y": 1, "zone": 0}))
             denied = json.loads(await asyncio.wait_for(sock_x.recv(), 10))
             check("сокет: без подписи отказ", isinstance(denied.get("error"), str), True)
+        for _ in range(20):
+            if len(hub) == 0:
+                break
+            await asyncio.sleep(0.1)
         check("сокет: точки не остались в памяти", len(hub), 0)
 
         # Чат: тот же сокет, отдельный кадр, общий на всех в подземелье
@@ -481,6 +486,31 @@ async def main(argv: list[str] | None = None) -> int:
         check("лидеры: поля на месте",
               sorted(top_rows[0].keys()) if top_rows else [],
               ["armor", "coins", "id", "kills", "level", "name"])
+
+        # Оффлайн: точка сохраняется, и игрока видно спящим в углу локации
+        await call("POST", "/api/dungeon/hero", second, {
+            "level": 4, "coins": 10, "weapon": "bow_1_1", "bag": ["bow_1_1"]})
+        await hero_repo.save_spot(TEST_USERS[1], 2, 300, 4500)
+        async with db._p().acquire() as con:
+            await con.execute(
+                "update dungeon_hero set seen_at = now() - interval '40 seconds' "
+                "where user_id = $1::bigint",
+                TEST_USERS[1],
+            )
+        webapp_module._OFFLINE_CACHE["at"] = 0.0
+        async with websockets.connect(ws_url) as sock:
+            await sock.send(json.dumps({"init": first, "x": 100, "y": 9000, "zone": 2}))
+            frame = json.loads(await asyncio.wait_for(sock.recv(), 10))
+            sleeping = frame.get("offline") or []
+            check("оффлайн: видно спящего",
+                  any(row["id"] == TEST_USERS[1] for row in sleeping), True)
+            his = next((row for row in sleeping if row["id"] == TEST_USERS[1]), {})
+            check("оффлайн: его локация", his.get("zone"), 2)
+            check("оффлайн: его имя", his.get("name"), "Саня")
+        status, woke = await call("GET", "/api/dungeon/hero", second)
+        hero_woke = woke.get("hero") or {}
+        check("пробуждение: локация помнится", hero_woke.get("zone"), 2)
+        check("пробуждение: точка помнится", round(hero_woke.get("x") or 0), 300)
 
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:

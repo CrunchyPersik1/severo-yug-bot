@@ -161,6 +161,10 @@ class DungeonHub:
                 break
         return result
 
+    def snapshot_spot(self, user_id: int):
+        """Точка игрока без чужих: нужна, чтобы сохранить его перед выходом."""
+        return self._spots.get(int(user_id))
+
     def drop(self, user_id: int) -> None:
         self._spots.pop(int(user_id), None)
 

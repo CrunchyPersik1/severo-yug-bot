@@ -163,6 +163,9 @@ def hero_payload(row: asyncpg.Record | None) -> dict:
         "weapon": row["weapon"],
         "bag": clean_bag(row["bag"]),
         "armor": armor,
+        "zone": int(row["zone"]) if "zone" in row and row["zone"] is not None else None,
+        "x": float(row["x"]) if "x" in row and row["x"] is not None else None,
+        "y": float(row["y"]) if "y" in row and row["y"] is not None else None,
     }
     payload["upgrade"] = upgrade_offer(payload["weapon"])
     payload["armor_discount"] = armor_discount(armor)
@@ -327,6 +330,57 @@ class DungeonHeroRepo:
                 "level": int(row["level"]),
                 "kills": int(row["kills"]),
                 "coins": int(row["coins"]),
+                "armor": int(row["armor"]) if "armor" in row else 0,
+            }
+            for row in rows
+        ]
+
+
+    async def save_spot(
+        self, user_id: int, zone: object, x: object, y: object
+    ) -> None:
+        """Запомнить, где стоит герой: отсюда показываем его оффлайн."""
+        async with self.pool.acquire() as con:
+            await con.execute(
+                """
+                update dungeon_hero
+                   set zone = $2::integer, x = $3::real, y = $4::real,
+                       seen_at = now(), updated_at = now()
+                 where user_id = $1::bigint
+                """,
+                int(user_id),
+                clamp_int(zone, 0, 9),
+                max(0.0, min(20000.0, float(x or 0))),
+                max(0.0, min(20000.0, float(y or 0))),
+            )
+
+    async def offline(self, limit: int = 24) -> list[dict]:
+        """Кто играл и вышел: показываем аватаром в углу его локации."""
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                select h.user_id, h.level, h.zone, h.x, h.y, h.weapon, h.armor,
+                       h.seen_at,
+                       coalesce(nullif(p.first_name, ''), p.username, 'Игрок') as name
+                  from dungeon_hero h
+                  left join players p on p.user_id = h.user_id
+                 where h.zone is not null
+                   and h.seen_at is not null
+                   and h.seen_at < now() - interval '12 seconds'
+                 order by h.seen_at desc
+                 limit $1::integer
+                """,
+                max(1, min(60, int(limit))),
+            )
+        return [
+            {
+                "id": int(row["user_id"]),
+                "name": str(row["name"])[:24],
+                "level": int(row["level"]),
+                "zone": int(row["zone"]),
+                "x": float(row["x"] or 0),
+                "y": float(row["y"] or 0),
+                "weapon": str(row["weapon"] or "sword"),
                 "armor": int(row["armor"]) if "armor" in row else 0,
             }
             for row in rows
