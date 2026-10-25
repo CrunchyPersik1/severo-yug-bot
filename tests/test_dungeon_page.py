@@ -86,6 +86,21 @@ def test_hint_when_opened_outside_bot():
     assert "#tghint" in DUNGEON_PAGE
 
 
+def test_chat_panel_is_wired():
+    assert 'id="chat"' in DUNGEON_PAGE
+    assert 'id="chtext"' in DUNGEON_PAGE
+    assert "function chatSend(" in DUNGEON_PAGE
+    assert 'type: "chat"' in DUNGEON_PAGE            # кадр по сокету
+    assert 'data.type === "chat"' in DUNGEON_PAGE    # приём
+    assert "Чат — в большой версии" not in DUNGEON_PAGE
+    assert "BUBBLES" in DUNGEON_PAGE                  # пузырь над героем
+
+
+def test_boss_reward_is_applied_once():
+    assert "room.reward" in DUNGEON_PAGE
+    assert "COOP.rewarded" in DUNGEON_PAGE
+
+
 def test_live_players_on_map():
     """Другие игроки видны в реальном времени, заглушек OFFLINE больше нет."""
     assert "/ws/dungeon" in DUNGEON_PAGE            # основной транспорт

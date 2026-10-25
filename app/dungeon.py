@@ -38,6 +38,11 @@ IDLE_SECONDS = 20.0         # столько комната живёт без з
 MAX_DAMAGE = 400            # защита от абсурда из запроса
 MIN_DAMAGE = 1
 
+BOSS_COINS = 120            # награда за босса в первой локации
+COOP_COIN_BONUS = 1.5       # вдвоём — больше
+CHAT_COOLDOWN = 1.2         # секунд между сообщениями чата
+CHAT_MAX = 80               # символов в сообщении
+
 
 def zone_count() -> int:
     return len(ZONES)
@@ -80,6 +85,16 @@ def base_hp(zone: int, players: int = 1) -> int:
 def boss_damage(zone: int) -> int:
     """Сколько снимает босс за один свой удар."""
     return int(round(5 + clamp_zone(zone) * 3))
+
+
+def boss_reward(zone: int, players: int = 1) -> dict:
+    """Награда за победу: монеты и зачёт убийства.
+
+    Начисляет клиент (он же хозяин прогресса героя), а число приходит с
+    сервера — чтобы за двоих платили честно и одинаково.
+    """
+    coins = int(round(BOSS_COINS * zone_factor(zone) * (COOP_COIN_BONUS if players > 1 else 1.0)))
+    return {"coins": max(1, coins), "kills": 1}
 
 
 def ticks_since(last: datetime | None, now: datetime, every: float = BOSS_HIT_EVERY) -> int:

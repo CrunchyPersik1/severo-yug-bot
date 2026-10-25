@@ -46,6 +46,7 @@ from .cards import (
 )
 from .casino_repo import CasinoRepo
 from .cases import roll_case_card
+from . import dungeon
 from .dungeon_repo import DungeonError
 from .games_page import CASE_PAGE, ROULETTE_PAGE
 from .webtheme import inject
@@ -5822,6 +5823,25 @@ body.fxon #fx{opacity:1}
   font-size:7px;line-height:1.5;color:#ffb4b4;background:#2a0e12ee;
   border:1px solid #6b1a22;border-radius:8px;padding:5px 9px;
   pointer-events:none;text-align:center;max-width:80vw}
+/* чат подземелья */
+#chat{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;
+  align-items:center;justify-content:flex-end;padding:14px;background:#07060ad8}
+#chat.on{display:flex}
+.chwrap{width:100%;max-width:420px;border:3px solid #2a3346;border-radius:12px;
+  background:#0d1016f2;padding:10px;display:flex;flex-direction:column;gap:8px}
+.chhead{display:flex;justify-content:space-between;align-items:center;
+  font-size:8px;color:#c9a227;letter-spacing:1px}
+.chhead button{border:0;background:none;color:#8a7a5a;font-size:14px;
+  font-family:inherit;padding:0 4px}
+.chlog{height:210px;overflow-y:auto;font-size:9px;line-height:1.7;
+  color:#c9d3e3;font-family:ui-monospace,monospace;display:flex;
+  flex-direction:column;gap:3px}
+.chlog b{color:#ffd98a}
+.chin{display:flex;gap:8px}
+.chin input{flex:1;min-width:0;border:2px solid #2a3346;border-radius:9px;
+  background:#151a25;color:#e8ebf2;font-family:inherit;font-size:10px;padding:9px}
+.chin button{width:52px;border:0;border-radius:9px;color:#fff;font-size:14px;
+  background:linear-gradient(#3b6fff,#22409e);font-family:inherit}
 /* кооп-босс: общий бой на двоих */
 #coop{position:fixed;inset:0;z-index:45;display:none;flex-direction:column;
   align-items:center;justify-content:center;padding:14px;
@@ -5979,6 +5999,16 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <div class="cact">
       <button id="chit">⚔ УДАР</button>
       <button id="cleave" class="leave">ВЫЙТИ</button>
+    </div>
+  </div>
+</div>
+<div id="chat">
+  <div class="chwrap">
+    <div class="chhead"><span>ЧАТ ПОДЗЕМЕЛЬЯ</span><button id="chclose">✕</button></div>
+    <div class="chlog" id="chlog"></div>
+    <div class="chin">
+      <input id="chtext" maxlength="80" placeholder="сообщение…">
+      <button id="chsend">→</button>
     </div>
   </div>
 </div>
@@ -6504,7 +6534,7 @@ const TG_INIT = readInitData();
   document.body.appendChild(hint);
 })();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
-const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false};
+const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false, rewarded: 0};
 
 async function coopApi(path, body){
   const opts = {headers: {"X-Telegram-Init-Data": TG_INIT}};
@@ -6594,6 +6624,17 @@ function coopApply(room){
     coopLog("<b>Напарник подсел</b> — боссу добавили HP");
   }
   if (!room.coop) COOP.coopSeen = false;
+  // Награда начисляется один раз на комнату: число приходит с сервера,
+  // а монеты добавляем в свой прогресс и сразу сохраняем.
+  if (room.status === "dead" && room.reward && COOP.rewarded !== room.id){
+    COOP.rewarded = room.id;
+    const coins = Math.max(0, room.reward.coins | 0);
+    P.coins += coins;
+    stats.kills += Math.max(0, room.reward.kills | 0);
+    coopLog("<b>Победа!</b> +" + coins + " монет");
+    toast("Босс повержен: +" + coins + " монет");
+    heroSave(true);
+  }
   if (room.status === "dead" && before !== "dead") toast("Босс повержен!");
   if (room.status === "failed" && before !== "failed") toast("Вы пали. Возвращайся сильнее");
   if (room.status !== "waiting" && room.status !== "fight" && COOP.timer){
@@ -6613,6 +6654,7 @@ async function coopJoin(zone){
   COOP.id = data.boss.id;
   COOP.log = [];
   COOP.coopSeen = !!data.boss.coop;
+  COOP.rewarded = 0;
   document.getElementById("coop").classList.add("on");
   coopLog("<b>Комната открыта</b> · " + data.boss.zone_name);
   if (data.boss.status === "waiting") coopLog("Ждём второго игрока на точке");
@@ -6700,6 +6742,64 @@ function bossEngage(bs){
 document.getElementById("chit").onclick = coopHit;
 document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
+/* ---------- чат подземелья ---------- */
+// Общий чат на всех, кто в подземелье: тот же сокет, отдельный тип кадра.
+const CHAT = {open: false, log: []};
+const BUBBLES = {};
+
+function chatRender(){
+  const box = document.getElementById("chlog");
+  if (!box) return;
+  box.textContent = "";
+  CHAT.log.forEach(function(m){
+    const line = document.createElement("div");
+    const who = document.createElement("b");
+    who.textContent = m.name + ":";
+    line.appendChild(who);
+    line.appendChild(document.createTextNode(" " + m.text));
+    box.appendChild(line);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function chatAdd(name, text){
+  CHAT.log.push({
+    name: String(name || "Игрок").slice(0, 16),
+    text: String(text || "").slice(0, 80)
+  });
+  CHAT.log = CHAT.log.slice(-60);
+  if (CHAT.open) chatRender();
+}
+
+function chatOpen(){
+  CHAT.open = true;
+  document.getElementById("chat").classList.add("on");
+  chatRender();
+  const field = document.getElementById("chtext");
+  if (field && field.focus) field.focus();
+}
+
+function chatClose(){
+  CHAT.open = false;
+  document.getElementById("chat").classList.remove("on");
+}
+
+function chatSend(){
+  const field = document.getElementById("chtext");
+  const raw = String((field && field.value) || "");
+  const text = raw.replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!text) return;
+  if (!WS || WS.readyState !== 1){ toast("Чат: нет соединения с картой"); return; }
+  if (field) field.value = "";
+  try { WS.send(JSON.stringify({type: "chat", text: text})); } catch (e){}
+}
+
+document.getElementById("chclose").onclick = chatClose;
+document.getElementById("chsend").onclick = chatSend;
+document.getElementById("chtext").addEventListener("keydown", function(e){
+  if (e.key === "Enter") chatSend();
+});
+
 /* ---------- живые игроки на карте ---------- */
 // Основной транспорт — WebSocket: 10 тактов в секунду, база не участвует.
 // Если сокет не поднялся (прокси, старый WebView) — тихий откат на HTTP.
@@ -6755,6 +6855,15 @@ function wsStart(){
     let data = null;
     try { data = JSON.parse(ev.data); } catch (e){ return; }
     if (!data) return;
+    if (data.type === "chat"){
+      chatAdd(data.name, data.text);
+      if (data.id) BUBBLES[data.id] = {text: String(data.text || "").slice(0, 40),
+                                      until: performance.now() + 5000};
+      if (!CHAT.open){
+        toast(String(data.name || "Игрок").slice(0, 12) + ": " + String(data.text || "").slice(0, 40));
+      }
+      return;
+    }
     if (data.error){ wsOk = false; try { sock.close(); } catch (e){} return; }
     wsAuth = false;
     applyPlayers(data.players);
@@ -6837,6 +6946,15 @@ function drawRemote(r, t){
   ctx.font = "7px 'Press Start 2P',monospace";
   ctx.textAlign = "center";
   ctx.fillText(String(r.name || "Игрок").slice(0, 12), x, y - 58);
+  const bubble = BUBBLES[r.id];
+  if (bubble && bubble.until > performance.now()){
+    const label = String(bubble.text || "").slice(0, 26);
+    const width = Math.min(170, ctx.measureText(label).width + 12);
+    ctx.fillStyle = "#0d1016ee";
+    ctx.fillRect(x - width / 2, y - 76, width, 14);
+    ctx.fillStyle = "#ffe9b8";
+    ctx.fillText(label, x, y - 66);
+  }
 }
 
 if (TG_INIT){
@@ -7777,7 +7895,7 @@ if (bag2) bag2.onclick = () => {
 const wUpg = document.getElementById("wupg");
 if (wUpg) wUpg.onclick = () => toast("Улучшение оружия — за монеты, в большой версии");
 const wChat = document.getElementById("wchat");
-if (wChat) wChat.onclick = () => toast("Чат — в большой версии");
+if (wChat) wChat.onclick = () => chatOpen();
 const bagClose = document.getElementById("bagclose");
 if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
 document.getElementById("startbtn").onclick = () => {
@@ -7975,6 +8093,18 @@ async def api_dungeon_presence(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "players": hub.snapshot(user_id)})
 
 
+async def _dungeon_broadcast(hub, message: dict) -> None:
+    """Разослать кадр всем, кто на карте; отвалившиеся сокеты убрать."""
+    dead = []
+    for socket in list(hub.sockets):
+        try:
+            await socket.send_json(message)
+        except Exception:  # noqa: BLE001 - сокет мог закрыться
+            dead.append(socket)
+    for socket in dead:
+        hub.leave_socket(socket)
+
+
 @router.websocket("/ws/dungeon")
 async def ws_dungeon(websocket: WebSocket) -> None:
     """Живая карта по сокету: 10 тактов в секунду, база не участвует.
@@ -7988,6 +8118,7 @@ async def ws_dungeon(websocket: WebSocket) -> None:
         await websocket.close(code=1011)
         return
     await websocket.accept()
+    hub.join_socket(websocket)
     user_id = 0
     name = "Игрок"
     try:
@@ -8013,6 +8144,14 @@ async def ws_dungeon(websocket: WebSocket) -> None:
                     await state.db.ensure_player(
                         user_id, found.get("username"), found.get("first_name")
                     )
+            if data.get("type") == "chat":
+                text = " ".join(str(data.get("text") or "").split())[:dungeon.CHAT_MAX]
+                if text and hub.can_talk(user_id):
+                    await _dungeon_broadcast(
+                        hub,
+                        {"type": "chat", "id": user_id, "name": name, "text": text},
+                    )
+                continue
             hub.touch(user_id, name, data)
             await websocket.send_json({"ok": True, "players": hub.snapshot(user_id)})
     except WebSocketDisconnect:
@@ -8020,6 +8159,7 @@ async def ws_dungeon(websocket: WebSocket) -> None:
     except Exception:  # noqa: BLE001 - сокет мог отвалиться на любом шаге
         log.debug("Сокет карты упал", exc_info=True)
     finally:
+        hub.leave_socket(websocket)
         if user_id:
             hub.drop(user_id)
 

@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from .dungeon import CHAT_COOLDOWN
+
 TTL_SECONDS = 6.0        # дольше этого точку не показываем
 MAX_REMOTE = 24          # больше в кадр всё равно не влезет
 MAX_COORD = 4000.0       # ширина мира — экран, высота 11 000
@@ -88,13 +90,34 @@ class Spot:
 
 
 class DungeonHub:
-    """Реестр позиций. Один на процесс, потоков не касается (только asyncio)."""
+    """Реестр позиций и открытые сокеты. Потоков не касается (только asyncio)."""
 
     def __init__(self) -> None:
         self._spots: dict[int, Spot] = {}
+        self.sockets: set = set()
+        self._talk: dict[int, float] = {}
 
     def __len__(self) -> int:
         return len(self._spots)
+
+    # ------------------------------------------------------------------ #
+    # Сокеты и чат
+    # ------------------------------------------------------------------ #
+
+    def join_socket(self, socket) -> None:
+        self.sockets.add(socket)
+
+    def leave_socket(self, socket) -> None:
+        self.sockets.discard(socket)
+
+    def can_talk(self, user_id: int, now: float | None = None) -> bool:
+        """Не чаще CHAT_COOLDOWN секунд с человека."""
+        moment = time_now() if now is None else now
+        last = self._talk.get(int(user_id), 0.0)
+        if moment - last < CHAT_COOLDOWN:
+            return False
+        self._talk[int(user_id)] = moment
+        return True
 
     def touch(
         self, user_id: int, name: str, payload: dict, now: float | None = None

@@ -108,3 +108,19 @@ def test_zone_lock_is_unique_per_zone():
     assert len(keys) == dungeon.zone_count()
     assert dungeon.zone_lock(0) == dungeon.zone_lock(-5)
     assert dungeon.zone_lock(0) != dungeon.zone_lock(1)
+
+
+def test_boss_reward_grows_with_zone_and_coop():
+    solo = dungeon.boss_reward(0, 1)
+    coop = dungeon.boss_reward(0, 2)
+    deep = dungeon.boss_reward(9, 1)
+    assert solo["coins"] == dungeon.BOSS_COINS
+    assert coop["coins"] > solo["coins"]
+    assert deep["coins"] > solo["coins"]
+    assert solo["kills"] == 1 and coop["kills"] == 1
+    assert dungeon.boss_reward(0, 2)["coins"] == int(round(dungeon.BOSS_COINS * dungeon.COOP_COIN_BONUS))
+
+
+def test_chat_limits_are_sane():
+    assert 0 < dungeon.CHAT_COOLDOWN <= 5
+    assert 20 <= dungeon.CHAT_MAX <= 200

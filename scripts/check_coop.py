@@ -267,6 +267,21 @@ async def main(argv: list[str] | None = None) -> int:
         await call("POST", "/api/dungeon/boss/leave", first, {})
         await call("POST", "/api/dungeon/boss/leave", second, {})
 
+        # Победа: добиваем босса и проверяем награду
+        kill_room = await repo.join(TEST_USERS[0], 3, datetime.now(timezone.utc))
+        await start_room(db, kill_room["id"])
+        await call("GET", "/api/dungeon/boss/state", first)
+        last = None
+        for _ in range(10):
+            await ready_cooldown(db, kill_room["id"])
+            last = await repo.hit(TEST_USERS[0], 400, datetime.now(timezone.utc))
+            if last["status"] != "fight":
+                break
+        check("босс добит", (last or {}).get("status"), "dead")
+        check("награда за победу", ((last or {}).get("reward") or {}).get("coins"), 264)
+        check("убийство зачтено", ((last or {}).get("reward") or {}).get("kills"), 1)
+        await call("POST", "/api/dungeon/boss/leave", first, {})
+
         # Живая карта: каждый видит другого с его координатами и анимацией.
         status, mine = await call("POST", "/api/dungeon/presence", first, {
             "x": 100, "y": 9000, "zone": 0, "facing": 2, "anim": "run",
@@ -326,6 +341,21 @@ async def main(argv: list[str] | None = None) -> int:
             check("сокет: без подписи отказ", isinstance(denied.get("error"), str), True)
         check("сокет: точки не остались в памяти", len(hub), 0)
 
+        # Чат: тот же сокет, отдельный кадр, общий на всех в подземелье
+        async with websockets.connect(ws_url) as sock_a, \
+                websockets.connect(ws_url) as sock_b:
+            for sock, init_data, spot_x in ((sock_a, first, 500), (sock_b, second, 640)):
+                await sock.send(json.dumps({
+                    "init": init_data, "x": spot_x, "y": 9000, "zone": 0}))
+                await asyncio.wait_for(sock.recv(), 10)          # снапшот на вход
+            await sock_a.send(json.dumps({"type": "chat", "text": "  привет   карта  "}))
+            mine_msg = json.loads(await asyncio.wait_for(sock_a.recv(), 10))
+            other_msg = json.loads(await asyncio.wait_for(sock_b.recv(), 10))
+            check("чат: тип кадра", mine_msg.get("type"), "chat")
+            check("чат: лишние пробелы убраны", mine_msg.get("text"), "привет карта")
+            check("чат: имя отправителя", mine_msg.get("name"), "Тимка")
+            check("чат: дошло второму", other_msg.get("text"), "привет карта")
+
         # Прогресс героя: сохраняется в базе и переживает перезагрузку страницы
         status, fresh_hero = await call("GET", "/api/dungeon/hero", first)
         check("герой: пустой прогресс по умолчанию",
@@ -369,6 +399,16 @@ async def rewind(db, boss_id, seconds: int) -> None:
             "seen_at = now() where boss_id = $1::bigint",
             int(boss_id or 0),
             int(seconds),
+        )
+
+
+async def ready_cooldown(db, boss_id) -> None:
+    """Снимаем кулдаун удара игрока, чтобы не спать по полсекунды."""
+    async with db._p().acquire() as con:
+        await con.execute(
+            "update dungeon_boss_players set last_hit_at = now() - interval '2 seconds' "
+            "where boss_id = $1::bigint",
+            int(boss_id or 0),
         )
 
 

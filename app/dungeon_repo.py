@@ -537,6 +537,8 @@ class DungeonBossRepo:
         cooldown = 0.0
         if me_row is not None:
             cooldown = round(dungeon.cooldown_left(me_row["last_hit_at"], now), 2)
+        alive = len([p for p in players if not p["left"]]) or 1
+        reward = dungeon.boss_reward(boss["zone"], alive) if status == "dead" else None
         return {
             "id": int(boss["id"]),
             "zone": int(boss["zone"]),
@@ -545,9 +547,10 @@ class DungeonBossRepo:
             "max_hp": int(boss["max_hp"]),
             "status": status,
             "status_text": dungeon.status_text(status),
-            "coop": len([p for p in players if not p["left"]]) > 1,
+            "coop": alive > 1,
             "ready_in": dungeon.ready_in(boss["ready_at"], now) if status == "waiting" else 0,
             "players": players,
             "me": me,
             "cooldown": cooldown,
+            "reward": reward,
         }

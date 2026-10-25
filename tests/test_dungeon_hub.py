@@ -94,3 +94,21 @@ def test_payload_shape():
 def test_fresh_window():
     assert fresh(10.0, 11.0) is True
     assert fresh(10.0, 10.0 + TTL_SECONDS + 0.1) is False
+
+
+def test_chat_rate_limit():
+    hub = DungeonHub()
+    assert hub.can_talk(1, now=1000.0) is True
+    assert hub.can_talk(1, now=1000.1) is False       # спам режем
+    assert hub.can_talk(2, now=1000.1) is True        # другой человек — можно
+    assert hub.can_talk(1, now=1000.0 + 2) is True    # подождал — снова можно
+
+
+def test_sockets_registry():
+    hub = DungeonHub()
+    first, second = object(), object()
+    hub.join_socket(first)
+    hub.join_socket(second)
+    assert len(hub.sockets) == 2
+    hub.leave_socket(first)
+    assert len(hub.sockets) == 1
