@@ -6127,8 +6127,8 @@ function drawFighters(){
   });
 }
 const LPC = {};
-const LEGS = new Image();
-LEGS.src = "/static/lpc_legs.png";
+const HEAD = new Image();
+HEAD.src = "/static/lpc_head.png";
 ["walk", "slash", "run"].forEach(function(k){
   const im = new Image();
   im.src = "/static/lpc_" + k + ".png";
@@ -6154,10 +6154,11 @@ function drawHero(x, y, attacking){
   ctx.globalAlpha = 0.25;
   ctx.fillStyle = "#000"; ctx.fillRect(x - 15, y - 2, 30, 7);
   ctx.globalAlpha = 1;
-  if (LEGS.complete && LEGS.naturalWidth){
-    ctx.drawImage(LEGS, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
-  }
   ctx.drawImage(img, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
+  if (HEAD.complete && HEAD.naturalWidth){
+    const hcol = Math.floor(animT * 9) % 9;
+    ctx.drawImage(HEAD, hcol * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
+  }
   const w2 = P.weapon;
   // оружие в руке
   if (w2){
