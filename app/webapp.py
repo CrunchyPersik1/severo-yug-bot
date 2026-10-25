@@ -5922,7 +5922,7 @@ const ZONES = [
   {n: "Бездна",         g: "#1a0f14", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
 ];
 const WORLD = {
-  w: Math.max(480, Math.min(900, window.innerWidth || 480)),
+  w: Math.max(480, window.innerWidth || 480),
   h: ZONE_H * ZONES.length
 };
 function zoneIndex(y){
@@ -6474,8 +6474,8 @@ function render(){
   cam.x += ((P.x - w / 2) - cam.x) * 0.12;
   cam.y += ((P.y - h / 2) - cam.y) * 0.12;
   // границы карты не показываем: камера упирается в края мира
-  if (Math.abs(WORLD.w - Math.max(480, Math.min(900, w))) > 40){
-    WORLD.w = Math.max(480, Math.min(900, w));
+  if (Math.abs(WORLD.w - Math.max(480, w)) > 40){
+    WORLD.w = Math.max(480, w);
   }
   const maxX = Math.max(0, WORLD.w - w), maxY = Math.max(0, WORLD.h - h);
   cam.x = Math.max(0, Math.min(maxX, cam.x));
