@@ -3368,16 +3368,7 @@ async def api_yugi(request: Request) -> JSONResponse:
         state, user_id = await _yugi_ready(request)
     except ShopError as error:
         return JSONResponse({"error": str(error)}, status_code=401)
-    try:
-        return await _yugi_extended(state, user_id)
-    except Exception as error:  # noqa: BLE001
-        import traceback
-
-        return JSONResponse(
-            {"error": "debug: %s: %s" % (type(error).__name__, str(error)[:300]),
-             "tb": traceback.format_exc()[-1200:]},
-            status_code=500,
-        )
+    return await _yugi_extended(state, user_id)
 
 
 async def _yugi_extended(state: Any, user_id: int) -> JSONResponse:

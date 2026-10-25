@@ -127,7 +127,9 @@ def tap_take(available: float, count: int) -> tuple[int, float, int]:
 
 def building_cost(spec: dict[str, Any], count: int) -> float:
     """Цена следующей такой постройки: каждая покупка дороже предыдущей."""
-    return float(spec["cost"]) * (float(spec["grow"]) ** max(0, int(count)))
+    # Предохранитель: 1.15^400 уже переполняет float, а такое количество
+    # зданий всё равно недостижимо.
+    return float(spec["cost"]) * (float(spec["grow"]) ** min(300, max(0, int(count))))
 
 
 def tap_power(upgrades: list[str]) -> float:
