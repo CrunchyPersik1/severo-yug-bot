@@ -5803,12 +5803,14 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
-#toast{position:fixed;left:50%;bottom:300px;width:auto;max-width:76vw;
-  background:#1a1410f0;color:#ffe9b8;border:2px solid #6b4a22;
+/* перебиваем общий стиль темы: он тянет тост на всю ширину */
+body #toast{position:fixed!important;left:50%!important;right:auto!important;
+  width:auto!important;max-width:76vw;bottom:300px;
+  background:#1a1410f5;color:#ffe9b8;border:2px solid #6b4a22;
   border-radius:8px;padding:7px 12px;font-size:7px;line-height:1.5;
-  text-align:center;transform:translate(-50%,300%);transition:.22s;z-index:60;
-  box-shadow:0 0 0 2px #120c06,0 6px 16px #000000aa}
-#toast.on{transform:translate(-50%,0)}
+  text-align:center;transform:translate(-50%,320%);transition:.22s;z-index:60;
+  box-shadow:0 0 0 2px #120c06,0 6px 16px #000000aa;animation:none!important}
+body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </style>
 </head>
 <body>
