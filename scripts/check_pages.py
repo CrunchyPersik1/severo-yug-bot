@@ -76,6 +76,17 @@ def check_glsl(name: str, html: str) -> list[str]:
     return problems
 
 
+def check_telegram(name: str, html: str) -> list[str]:
+    """Страница, которая ходит в API с initData, должна грузить скрипт Telegram.
+
+    Без него window.Telegram пуст, initData пустой, и все ручки отвечают 401 —
+    так кооп-босс молча уходил в локальный бой.
+    """
+    if "X-Telegram-Init-Data" in html and "telegram-web-app.js" not in html:
+        return ["%s: использует initData, но telegram-web-app.js не подключён" % name]
+    return []
+
+
 def last_script(html: str) -> str | None:
     found = re.findall(r"<script>(.*?)</script>", html, re.S)
     return found[-1] if found else None
@@ -130,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = 0
     for rel, name, html in pages:
-        problems = check_html(name, html) + check_glsl(name, html)
+        problems = check_html(name, html) + check_glsl(name, html) + check_telegram(name, html)
         js = last_script(html)
         ok = js is not None
         note = "скрипта нет"

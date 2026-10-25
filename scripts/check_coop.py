@@ -161,6 +161,21 @@ async def main(argv: list[str] | None = None) -> int:
         check("без подписи — отказ", status, 401)
         check("текст отказа на месте", isinstance(denied.get("error"), str), True)
 
+        # Гонка: оба ждут 10 секунд и жмут «в бой» одновременно.
+        # Без блокировки каждый создал бы свою комнату и дрался один.
+        pair = await asyncio.gather(
+            call("POST", "/api/dungeon/boss/join", first, {"zone": 7}),
+            call("POST", "/api/dungeon/boss/join", second, {"zone": 7}),
+        )
+        ids = [((body.get("boss") or {}).get("id")) for _status, body in pair]
+        check("одновременный вход: комнаты совпали", len(set(ids)), 1)
+        status, together = await call("GET", "/api/dungeon/boss/state", first)
+        check("одновременный вход: двое в комнате",
+              len((together.get("boss") or {}).get("players") or []), 2)
+        check("одновременный вход: кооп", (together.get("boss") or {}).get("coop"), True)
+        await call("POST", "/api/dungeon/boss/leave", first, {})
+        await call("POST", "/api/dungeon/boss/leave", second, {})
+
         status, joined = await call("POST", "/api/dungeon/boss/join", first, {"zone": 0})
         check("join отвечает 200", status, 200)
         room = joined.get("boss") or {}

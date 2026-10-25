@@ -101,3 +101,10 @@ def test_late_join_grace():
     """Напарник может подсесть в уже начавшийся бой."""
     assert dungeon.JOIN_GRACE >= dungeon.BOSS_HIT_EVERY * 5
     assert dungeon.JOIN_GRACE <= 60
+
+
+def test_zone_lock_is_unique_per_zone():
+    keys = {dungeon.zone_lock(zone) for zone in range(dungeon.zone_count())}
+    assert len(keys) == dungeon.zone_count()
+    assert dungeon.zone_lock(0) == dungeon.zone_lock(-5)
+    assert dungeon.zone_lock(0) != dungeon.zone_lock(1)

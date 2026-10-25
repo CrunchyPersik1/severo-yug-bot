@@ -47,6 +47,14 @@ class DungeonBossRepo:
         zone_number = dungeon.clamp_zone(zone)
         async with self.pool.acquire() as con:
             async with con.transaction():
+                # Два игрока ждут ровно 10 секунд и жмут «в бой» почти
+                # одновременно. Без блокировки на локацию оба не видят
+                # комнату друг друга и создают по своей — каждый дерётся
+                # один. Блокировка держится до конца транзакции.
+                await con.execute(
+                    "select pg_advisory_xact_lock($1::bigint)",
+                    dungeon.zone_lock(zone_number),
+                )
                 current = await self._room_for(con, user_id)
                 if current is not None:
                     boss = await self._advance(con, current["id"], now)
@@ -54,20 +62,19 @@ class DungeonBossRepo:
                         await self._touch(con, boss["id"], user_id, now)
                         return await self._payload(con, boss, user_id, now)
 
-                partner_room = await self._find_waiting(con, zone_number, now)
-                started = False
-                if partner_room is None:
-                    # Напарник опоздал: бой уже идёт, но место свободно и
-                    # начался он только что — подсаживаем вторым.
-                    partner_room = await self._find_young_fight(con, zone_number, now)
-                    started = partner_room is not None
+                # Ждущая комната любой давности и бой, который только что
+                # начался: и туда, и туда можно сесть вторым.
+                partner_room = await self._find_open(con, zone_number, user_id, now)
                 if partner_room is not None:
+                    partner_room = await self._advance(con, partner_room["id"], now)
+                if partner_room is not None and partner_room["status"] in OPEN_STATUSES:
                     seats = await con.fetchval(
                         "select count(*) from dungeon_boss_players "
                         "where boss_id = $1::bigint and left_at is null",
                         partner_room["id"],
                     )
-                    if int(seats or 0) < dungeon.MAX_PLAYERS:
+                    seats = int(seats or 0)
+                    if seats < dungeon.MAX_PLAYERS:
                         await con.execute(
                             """
                             insert into dungeon_boss_players
@@ -83,14 +90,22 @@ class DungeonBossRepo:
                             """,
                             partner_room["id"],
                             user_id,
-                            int(seats or 0) + 1,
+                            seats + 1,
                             dungeon.PLAYER_HP,
                             now,
                         )
-                        if started:
+                        if partner_room["status"] == "fight":
                             await self._grow_boss(
-                                con, partner_room["id"], zone_number,
-                                int(seats or 0) + 1, now,
+                                con, partner_room["id"], zone_number, seats + 1, now
+                            )
+                            await con.execute(
+                                "update dungeon_boss_players "
+                                "set last_boss_hit_at = $2::timestamptz, "
+                                "seen_at = $2::timestamptz "
+                                "where boss_id = $1::bigint and user_id = $3::bigint",
+                                partner_room["id"],
+                                now,
+                                user_id,
                             )
                         else:
                             await con.execute(
@@ -105,24 +120,16 @@ class DungeonBossRepo:
                                 """,
                                 partner_room["id"],
                                 now,
-                                dungeon.base_hp(zone_number, int(seats or 0) + 1),
+                                dungeon.base_hp(zone_number, seats + 1),
                             )
-                        # расписание ударов босса — с момента входа
-                        await con.execute(
-                            "update dungeon_boss_players "
-                            "set last_boss_hit_at = $2::timestamptz, seen_at = $2::timestamptz "
-                            "where boss_id = $1::bigint and last_boss_hit_at is null",
-                            partner_room["id"],
-                            now,
-                        )
-                        await con.execute(
-                            "update dungeon_boss_players "
-                            "set last_boss_hit_at = $2::timestamptz, seen_at = $2::timestamptz "
-                            "where boss_id = $1::bigint and user_id = $3::bigint",
-                            partner_room["id"],
-                            now,
-                            user_id,
-                        )
+                            # расписание ударов босса — общее, с этого момента
+                            await con.execute(
+                                "update dungeon_boss_players "
+                                "set last_boss_hit_at = $2::timestamptz, "
+                                "seen_at = $2::timestamptz where boss_id = $1::bigint",
+                                partner_room["id"],
+                                now,
+                            )
                         boss = await self._reload(con, partner_room["id"])
                         return await self._payload(con, boss, user_id, now)
 
@@ -324,43 +331,25 @@ class DungeonBossRepo:
             user_id,
         )
 
-    async def _find_waiting(
-        self, con: asyncpg.Connection, zone: int, now: datetime
+    async def _find_open(
+        self, con: asyncpg.Connection, zone: int, user_id: int, now: datetime
     ) -> asyncpg.Record | None:
-        """Ждущая комната в этой локации, куда можно сесть вторым.
+        """Комната в этой локации, куда можно сесть вторым.
 
-        for update: два игрока, нажавшие «в бой» одновременно, не сядут
-        в одну комнату вдвоём.
+        Годится любая ожидающая (даже если окно уже истекло — просто ещё
+        никто не открывал состояние) и бой, начавшийся не дольше JOIN_GRACE
+        назад. for update: второй не сядет в занятую комнату.
         """
         return await con.fetchrow(
             """
             select b.* from dungeon_boss b
-             where b.status = 'waiting'
-               and b.zone = $1::integer
-               and b.ready_at > $2::timestamptz
+             where b.zone = $1::integer
+               and b.status in ('waiting', 'fight')
+               and (b.status = 'waiting' or b.started_at > $2::timestamptz)
                and (select count(*) from dungeon_boss_players p
                      where p.boss_id = b.id and p.left_at is null) < $3::integer
-             order by b.id
-             limit 1
-             for update
-            """,
-            zone,
-            now,
-            dungeon.MAX_PLAYERS,
-        )
-
-    async def _find_young_fight(
-        self, con: asyncpg.Connection, zone: int, now: datetime
-    ) -> asyncpg.Record | None:
-        """Бой, который только что начался и ещё пускает второго."""
-        return await con.fetchrow(
-            """
-            select b.* from dungeon_boss b
-             where b.status = 'fight'
-               and b.zone = $1::integer
-               and b.started_at > $2::timestamptz
-               and (select count(*) from dungeon_boss_players p
-                     where p.boss_id = b.id and p.left_at is null) < $3::integer
+               and not exists (select 1 from dungeon_boss_players p2
+                                where p2.boss_id = b.id and p2.user_id = $4::bigint)
              order by b.id
              limit 1
              for update
@@ -368,6 +357,7 @@ class DungeonBossRepo:
             zone,
             now - timedelta(seconds=dungeon.JOIN_GRACE),
             dungeon.MAX_PLAYERS,
+            user_id,
         )
 
     async def _grow_boss(

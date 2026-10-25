@@ -116,6 +116,16 @@ def ready_in(ready_at: datetime | None, now: datetime) -> int:
     return max(0, int(round((ready_at - now).total_seconds())))
 
 
+def zone_lock(zone: int) -> int:
+    """Ключ advisory-блокировки на локацию.
+
+    Два игрока ждут на точке ровно 10 секунд и нажимают «в бой» почти
+    одновременно. Без блокировки оба не видят комнату друг друга и создают
+    по своей — каждый дерётся один.
+    """
+    return 9_100_000 + clamp_zone(zone)
+
+
 def room_is_open(status: str) -> bool:
     """В такой бой ещё можно зайти или его надо опрашивать."""
     return status in ("waiting", "fight")

@@ -5722,6 +5722,7 @@ DUNGEON_PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Прототип · Подземелье Тимура</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
@@ -5816,6 +5817,11 @@ body.fxon #fx{opacity:1}
   font-size:9px;text-align:left;line-height:1.5}
 #gfx button.on{border-color:#c9a227;background:#3a2a12;color:#fff}
 #gfx .fps{margin-top:8px;font-size:7px;color:#8a7a5a;line-height:1.6}
+/* подсказка, если страницу открыли не как мини-аппку */
+#tghint{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:9;
+  font-size:7px;line-height:1.5;color:#ffb4b4;background:#2a0e12ee;
+  border:1px solid #6b1a22;border-radius:8px;padding:5px 9px;
+  pointer-events:none;text-align:center;max-width:80vw}
 /* кооп-босс: общий бой на двоих */
 #coop{position:fixed;inset:0;z-index:45;display:none;flex-direction:column;
   align-items:center;justify-content:center;padding:14px;
@@ -6464,6 +6470,23 @@ const TG_INIT = (function(){
   try { return (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) || ""; }
   catch (e){ return ""; }
 })();
+// Без этого Telegram не раскрывает мини-апп на весь экран.
+(function(){
+  try {
+    if (window.Telegram && Telegram.WebApp){
+      Telegram.WebApp.ready();
+      if (Telegram.WebApp.expand) Telegram.WebApp.expand();
+    }
+  } catch (e){}
+})();
+// Открыли ссылкой в браузере — кооп не заработает, честно предупреждаем.
+(function(){
+  if (TG_INIT || !document.body || !document.body.appendChild) return;
+  const hint = document.createElement("div");
+  hint.id = "tghint";
+  hint.textContent = "КООП НЕДОСТУПЕН · открой через /dungeon в боте";
+  document.body.appendChild(hint);
+})();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
 const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false};
 
@@ -6654,6 +6677,7 @@ function coopUiTick(dt){
 
 function bossEngage(bs){
   if (TG_INIT){ coopJoin(bs ? bs.zone : zoneIndex(P.y)); return; }
+  toast("Нет данных Телеграма — бой локальный, без напарника");
   startBattle();                          // вне Телеграма — старый локальный бой
 }
 

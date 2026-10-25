@@ -24,9 +24,10 @@ def test_page_parses_and_ids_are_unique():
     assert {"cv", "fx", "gfx", "toast", "attack", "shield", "ability"} <= set(parser.ids)
 
 
-def test_single_script_block():
-    assert DUNGEON_PAGE.count("<script>") == 1
-    assert DUNGEON_PAGE.count("</script>") == 1
+def test_single_inline_script_block():
+    # один инлайн-скрипт страницы плюс подключение телеграм-скрипта тегом с src
+    assert len(re.findall(r"<script>", DUNGEON_PAGE)) == 1
+    assert DUNGEON_PAGE.count("</script>") == 2
 
 
 def test_fx_shaders_are_balanced_glsl():
@@ -70,6 +71,19 @@ def test_coop_overlay_and_api():
                  "/api/dungeon/boss/start"):
         assert path in DUNGEON_PAGE, path
     assert "X-Telegram-Init-Data" in DUNGEON_PAGE
+
+
+def test_telegram_script_is_loaded():
+    """Без скрипта Telegram initData пустой и кооп не работает вообще."""
+    assert "telegram-web-app.js" in DUNGEON_PAGE
+    assert "Telegram.WebApp.initData" in DUNGEON_PAGE
+    assert "Telegram.WebApp.ready()" in DUNGEON_PAGE
+
+
+def test_hint_when_opened_outside_bot():
+    """Открыли ссылкой в браузере — говорим об этом прямо на экране."""
+    assert "КООП НЕДОСТУПЕН" in DUNGEON_PAGE
+    assert "#tghint" in DUNGEON_PAGE
 
 
 def test_mobs_live_in_neighbour_zones():

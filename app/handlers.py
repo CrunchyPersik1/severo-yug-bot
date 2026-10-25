@@ -2078,6 +2078,45 @@ async def cmd_stocks(message: Message) -> None:
     )
 
 
+@router.message(Command("dungeon", "подземелье"))
+@router.message(NormalizedText("подземелье", "данж", "кооп"))
+async def cmd_dungeon(message: Message) -> None:
+    """Подземелье Тимура — мини-аппка с картой и кооп-боссом.
+
+    Важно открывать именно кнопкой web_app: только тогда Telegram отдаёт
+    initData, без него кооп-босс не работает и остаётся локальный бой.
+    """
+    base = _base_url()
+    if not base:
+        await message.answer("⚠️ Подземелье не настроено: нет PUBLIC_URL.")
+        return
+    if message.chat.type != "private":
+        await message.answer(
+            "🗡 Подземелье открывается только в личке со мной — напиши мне туда."
+        )
+        return
+
+    from aiogram.types import WebAppInfo
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🗡 Открыть подземелье",
+                    web_app=WebAppInfo(url=f"{base}/proto_dungeon"),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "🗡 <b>Подземелье Тимура</b>\n\n"
+        "10 локаций, мобы по уровням, босс в каждой локации.\n"
+        "Босс — на двоих: встань в круг на 10 секунд, и если друг стоит "
+        "в круге той же локации, бой будет общим.",
+        reply_markup=keyboard,
+    )
+
+
 @router.message(Command("fav", "favorite"))
 @router.message(NormalizedText("любимая", "любимая карта", "фаворит"))
 async def cmd_favorite(message: Message, db: Database, market: MarketRepo) -> None:
