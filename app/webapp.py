@@ -6066,7 +6066,7 @@ function spawnOne(){
   const grow = (1 + (stats.lvl - 1) * 0.12) * zoneMul;
   mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
              sp: type.sp, dmg: type.dmg * (1 + zc * 0.9), c: type.c, sz: type.sz, nm: type.n,
-             t: rnd(0, 6), hit: 0});
+             tile: type.tile, t: rnd(0, 6), hit: 0});
 }
 function spawnNpcs(n){
   npcs = [];
@@ -6306,29 +6306,15 @@ function faceRow(face){                    // LPC: 0 вверх, 1 влево, 2
 }
 let animT = 0;
 function drawHero(x, y, attacking){
-  const fw = 64, fh = 64;
-  const row = faceRow(P.facing || 0);
-  const dx = x - 32, dy = y - 54;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  // тот же атлас, что у монстров — стиль совпадает
+  const bob = attacking ? -2 : (P.moving ? Math.sin(animT * 9) * 1.5 : 0);
+  const lunge = attacking ? (P.atkCd > 0.25 ? 4 : 0) : 0;
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 2, 28, 6);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 6, 28, 6);
   ctx.globalAlpha = 1;
-  ctx.translate(dx, dy + (P.moving ? Math.sin(animT * 9) * 1.2 : 0));
-  const base = LPC[attacking ? "slash" : "walk"];
-  const frames = attacking ? 6 : 9;
-  const col = Math.floor(animT * (attacking ? 14 : 10)) % frames;
-  if (base && base.complete && base.naturalWidth){
-    ctx.drawImage(base, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
-  }
-  const wcol = Math.floor(animT * 10) % 9;
-  if (TORSO.complete && TORSO.naturalWidth){
-    ctx.drawImage(TORSO, wcol * fw, row * fh, fw, fh, 0, 0, fw, fh);
-  }
-  if (HEAD.complete && HEAD.naturalWidth){
-    ctx.drawImage(HEAD, wcol * fw, row * fh, fw, fh, 0, 0, fw, fh);
-  }
-  ctx.restore();
+  if (drawTile([2, 6], x + lunge, y + bob, 42, 0)) return;
+  if (drawTile([1, 6], x, y, 42, 0)) return;
+  person(x, y, "#4a9eff");
 }
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
