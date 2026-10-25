@@ -5749,11 +5749,11 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .wstat{display:flex;justify-content:space-between;font-size:7px;color:#b8a888;
   padding:2px 0}
 .wstat b{color:#8bd65a}
-.hpbar{position:fixed;left:14px;right:14px;bottom:196px;height:15px;z-index:12;
+.hpbar{position:fixed;left:14px;right:14px;bottom:244px;height:15px;z-index:13;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
   transition:width .2s;width:100%}
-.hptxt{position:fixed;left:0;right:0;bottom:214px;text-align:center;font-size:11px;
+.hptxt{position:fixed;left:0;right:0;bottom:262px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
 .joy{position:fixed;left:14px;bottom:112px;width:118px;height:118px;border-radius:50%;
@@ -5805,7 +5805,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
 /* перебиваем общий стиль темы: он тянет тост на всю ширину */
 body #toast{position:fixed!important;left:50%!important;right:auto!important;
-  width:auto!important;max-width:76vw;bottom:300px;
+  width:auto!important;max-width:76vw;bottom:304px;
   background:#1a1410f5;color:#ffe9b8;border:2px solid #6b4a22;
   border-radius:8px;padding:7px 12px;font-size:7px;line-height:1.5;
   text-align:center;transform:translate(-50%,320%);transition:.22s;z-index:60;
