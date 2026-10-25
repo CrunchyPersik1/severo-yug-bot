@@ -6465,7 +6465,7 @@ const TG_INIT = (function(){
   catch (e){ return ""; }
 })();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
-const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false};
+const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false};
 
 async function coopApi(path, body){
   const opts = {headers: {"X-Telegram-Init-Data": TG_INIT}};
@@ -6495,7 +6495,7 @@ function coopLog(text){
 
 function coopTitle(room){
   if (room.status === "waiting") return "ЖДЁМ ВТОРОГО · " + room.ready_in + " с";
-  if (room.status === "fight") return room.coop ? "БОЙ ВДВОЁМ" : "БОЙ";
+  if (room.status === "fight") return room.coop ? "БОЙ ВДВОЁМ" : "БОЙ · ОДИН";
   if (room.status === "dead") return "БОСС ПОВЕРЖЕН";
   if (room.status === "failed") return "ВСЕ ПАЛИ";
   return "КОМНАТА ЗАКРЫТА";
@@ -6547,7 +6547,14 @@ function coopApply(room){
   }
   if (before === "waiting" && room.status === "fight"){
     toast(room.coop ? "Напарник зашёл — бьём вдвоём!" : "Бой начался");
+    if (!room.coop) coopLog("Напарника нет. Друг может подсесть в бой — пусть встанет в круг в этой же локации");
   }
+  if (room.coop && !COOP.coopSeen){
+    COOP.coopSeen = true;
+    toast("Напарник в бою!");
+    coopLog("<b>Напарник подсел</b> — боссу добавили HP");
+  }
+  if (!room.coop) COOP.coopSeen = false;
   if (room.status === "dead" && before !== "dead") toast("Босс повержен!");
   if (room.status === "failed" && before !== "failed") toast("Вы пали. Возвращайся сильнее");
   if (room.status !== "waiting" && room.status !== "fight" && COOP.timer){
@@ -6566,6 +6573,7 @@ async function coopJoin(zone){
   COOP.open = true;
   COOP.id = data.boss.id;
   COOP.log = [];
+  COOP.coopSeen = !!data.boss.coop;
   document.getElementById("coop").classList.add("on");
   coopLog("<b>Комната открыта</b> · " + data.boss.zone_name);
   if (data.boss.status === "waiting") coopLog("Ждём второго игрока на точке");
@@ -6770,9 +6778,37 @@ function toast(t){
   clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2500);
 }
 /* ---------- мир ---------- */
+// Мобы живут во всех локациях, а не только там, где сейчас игрок: иначе
+// соседние уровни пустые и кажется, что мир вымер.
+const MOB_PER_ZONE = 6;      // в локации игрока
+const MOB_PER_NEAR = 3;      // в соседних
+const MOB_CAP = 44;          // больше держать нет смысла
+const MOB_KEEP_ZONES = 2;    // дальше этого от игрока мобов выкидываем
+let spawnTimer = 0;
+
+function zoneBand(zi){
+  const base = (ZONES.length - 1 - zi) * ZONE_H;
+  return {from: base + 90, to: base + ZONE_H - 90};
+}
+function mobsInZone(zi){
+  let n = 0;
+  for (let i = 0; i < mobs.length; i++){
+    if (zoneIndex(mobs[i].y) === zi) n++;
+  }
+  return n;
+}
 function spawnMobs(n){
   mobs = [];
-  for (let i = 0; i < n; i++) spawnOne();
+  fillMobs();
+}
+function fillMobs(){
+  const here = zoneIndex(P.y);
+  for (let d = -1; d <= 1; d++){
+    const zi = here + d;
+    if (zi < 0 || zi >= ZONES.length) continue;
+    const quota = d === 0 ? MOB_PER_ZONE : MOB_PER_NEAR;
+    for (let i = mobsInZone(zi); i < quota; i++) spawnOne(zi);
+  }
 }
 const MOB_TYPES = [
   {n: "Слизь",   hp: 30,  sp: 20, dmg: 6,  c: "#6fa86f", sz: 0.85, tile: [0, 9]},
@@ -6792,25 +6828,21 @@ const MOB_TYPES = [
   {n: "Голем",    hp: 900, sp: 16, dmg: 70, c: "#5a5a4a", sz: 1.5,  tile: [0, 9]},
   {n: "Дракон",   hp: 1400, sp: 30, dmg: 95, c: "#a04a1a", sz: 1.45, tile: [1, 9]}
 ];
-let spawnTimer = 0;
-function spawnOne(){
-  const edge = Math.floor(Math.random() * 4);
-  let x, y;
-  if (edge === 0){ x = rnd(80, WORLD.w - 80); y = 70; }
-  else if (edge === 1){ x = rnd(80, WORLD.w - 80); y = WORLD.h - 70; }
-  else if (edge === 2){ x = 70; y = rnd(80, WORLD.h - 80); }
-  else { x = WORLD.w - 70; y = rnd(80, WORLD.h - 80); }
-  const zc = zoneIndex(P.y);
-  const pool = Math.min(MOB_TYPES.length, 2 + zc * 2 + Math.floor(stats.lvl / 6));
+function spawnOne(zi){
+  if (mobs.length >= MOB_CAP) return;
+  zi = (zi == null) ? zoneIndex(P.y) : Math.max(0, Math.min(ZONES.length - 1, zi));
+  const band = zoneBand(zi);
+  const x = rnd(90, Math.max(140, WORLD.w - 90));
+  const y = band.from + Math.random() * (band.to - band.from);
+  const pool = Math.min(MOB_TYPES.length, 2 + zi * 2 + Math.floor(stats.lvl / 6));
   const type = MOB_TYPES[Math.floor(Math.random() * Math.max(2, pool))];
-  // мобы спавнятся в зоне игрока, поэтому слабый игрок выше не пройдёт
-  const zy = (ZONES.length - 1 - zc) * ZONE_H + 100 + Math.random() * (ZONE_H - 200);
-  y = zy;
-  const zoneMul = Math.pow(2.4, zc);
+  // сила зависит от локации, в которой моб стоит, а не от игрока:
+  // в глубину слабый игрок просто не пройдёт
+  const zoneMul = Math.pow(2.4, zi);
   const grow = (1 + (stats.lvl - 1) * 0.12) * zoneMul;
   mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
-             sp: type.sp, dmg: type.dmg * (1 + zc * 0.9), c: type.c, sz: type.sz, nm: type.n,
-             tile: type.tile, t: rnd(0, 6), hit: 0});
+             sp: type.sp, dmg: type.dmg * (1 + zi * 0.9), c: type.c, sz: type.sz, nm: type.n,
+             tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
 }
 function spawnNpcs(n){
   npcs = [];
@@ -6903,7 +6935,7 @@ function killMob(m){
           " · " + loot.cls + " · урон " + loot.dmg + " · дальн. " + loot.range +
           (isNew ? " — загляни в сумку" : ""));
   }
-  if (mobs.length < 10) spawnMobs(4);
+  if (mobs.length < 10) fillMobs();
   sync();
 }
 function shieldUp(){
@@ -7166,7 +7198,14 @@ function loop(now){
         P.hp -= (m.dmg || 6) * dt * 1.6 * (stats.lvl < zoneReq(m.y) ? 2.5 : 1);
         FX.hurt();
         FX.burst(m.x, m.y - 12, 4, "#ff3b52", 90, 9);
-        if (P.hp <= 0){ P.hp = P.max; P.x = WORLD.w / 2; P.y = WORLD.h / 2; toast("Тебя оттащило на базу"); }
+        if (P.hp <= 0){
+          // База — это старт подземелья (Опушка), а не середина карты.
+          P.hp = P.max;
+          P.x = WORLD.w / 2;
+          P.y = WORLD.h - 260;
+          FX.shake(6);
+          toast("Тебя оттащило на базу · ЛОК. 1/10");
+        }
       }
     } else {
       m.x += (m.vx || 0) * m.sp * dt; m.y += (m.vy || 0) * m.sp * dt;
@@ -7176,8 +7215,28 @@ function loop(now){
     m.hit = Math.max(0, m.hit - dt);
   });
   animT += dt;
+  // население мира: своя локация и соседние держим заполненными,
+  // а тех, кто остался далеко позади, убираем
   spawnTimer -= dt;
-  if (spawnTimer <= 0){ spawnTimer = 1.2; if (mobs.length < 26) spawnOne(); }
+  if (spawnTimer <= 0){
+    spawnTimer = 0.25;
+    const here = zoneIndex(P.y);
+    let far = 0;
+    for (let i = 0; i < mobs.length; i++){
+      if (Math.abs(zoneIndex(mobs[i].y) - here) > MOB_KEEP_ZONES) far++;
+    }
+    if (far){
+      mobs = mobs.filter(function(m){
+        return Math.abs(zoneIndex(m.y) - here) <= MOB_KEEP_ZONES;
+      });
+    }
+    for (let d = -1; d <= 1; d++){
+      const zi = here + d;
+      if (zi < 0 || zi >= ZONES.length) continue;
+      const quota = d === 0 ? MOB_PER_ZONE : MOB_PER_NEAR;
+      if (mobsInZone(zi) < quota){ spawnOne(zi); break; }
+    }
+  }
   hits = hits.filter(h => { h.t -= dt; h.y -= 26 * dt; return h.t > 0; });
   drop = drop.filter(d => {
     d.t -= dt;

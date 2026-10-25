@@ -55,6 +55,12 @@ class DungeonBossRepo:
                         return await self._payload(con, boss, user_id, now)
 
                 partner_room = await self._find_waiting(con, zone_number, now)
+                started = False
+                if partner_room is None:
+                    # Напарник опоздал: бой уже идёт, но место свободно и
+                    # начался он только что — подсаживаем вторым.
+                    partner_room = await self._find_young_fight(con, zone_number, now)
+                    started = partner_room is not None
                 if partner_room is not None:
                     seats = await con.fetchval(
                         "select count(*) from dungeon_boss_players "
@@ -68,7 +74,12 @@ class DungeonBossRepo:
                                 (boss_id, user_id, slot, hp, max_hp, seen_at)
                             values ($1::bigint, $2::bigint, $3::integer,
                                     $4::integer, $4::integer, $5::timestamptz)
-                            on conflict (boss_id, user_id) do nothing
+                            on conflict (boss_id, user_id) do update
+                               set left_at = null,
+                                   dead = false,
+                                   hp = dungeon_boss_players.max_hp,
+                                   slot = excluded.slot,
+                                   seen_at = excluded.seen_at
                             """,
                             partner_room["id"],
                             user_id,
@@ -76,26 +87,41 @@ class DungeonBossRepo:
                             dungeon.PLAYER_HP,
                             now,
                         )
+                        if started:
+                            await self._grow_boss(
+                                con, partner_room["id"], zone_number,
+                                int(seats or 0) + 1, now,
+                            )
+                        else:
+                            await con.execute(
+                                """
+                                update dungeon_boss
+                                   set status = 'fight',
+                                       started_at = $2::timestamptz,
+                                       hp = $3::bigint,
+                                       max_hp = $3::bigint,
+                                       updated_at = $2::timestamptz
+                                 where id = $1::bigint and status = 'waiting'
+                                """,
+                                partner_room["id"],
+                                now,
+                                dungeon.base_hp(zone_number, int(seats or 0) + 1),
+                            )
+                        # расписание ударов босса — с момента входа
                         await con.execute(
-                            """
-                            update dungeon_boss
-                               set status = 'fight',
-                                   started_at = $2::timestamptz,
-                                   hp = $3::bigint,
-                                   max_hp = $3::bigint,
-                                   updated_at = $2::timestamptz
-                             where id = $1::bigint and status = 'waiting'
-                            """,
+                            "update dungeon_boss_players "
+                            "set last_boss_hit_at = $2::timestamptz, seen_at = $2::timestamptz "
+                            "where boss_id = $1::bigint and last_boss_hit_at is null",
                             partner_room["id"],
                             now,
-                            dungeon.base_hp(zone_number, int(seats or 0) + 1),
                         )
                         await con.execute(
                             "update dungeon_boss_players "
                             "set last_boss_hit_at = $2::timestamptz, seen_at = $2::timestamptz "
-                            "where boss_id = $1::bigint",
+                            "where boss_id = $1::bigint and user_id = $3::bigint",
                             partner_room["id"],
                             now,
+                            user_id,
                         )
                         boss = await self._reload(con, partner_room["id"])
                         return await self._payload(con, boss, user_id, now)
@@ -321,6 +347,47 @@ class DungeonBossRepo:
             zone,
             now,
             dungeon.MAX_PLAYERS,
+        )
+
+    async def _find_young_fight(
+        self, con: asyncpg.Connection, zone: int, now: datetime
+    ) -> asyncpg.Record | None:
+        """Бой, который только что начался и ещё пускает второго."""
+        return await con.fetchrow(
+            """
+            select b.* from dungeon_boss b
+             where b.status = 'fight'
+               and b.zone = $1::integer
+               and b.started_at > $2::timestamptz
+               and (select count(*) from dungeon_boss_players p
+                     where p.boss_id = b.id and p.left_at is null) < $3::integer
+             order by b.id
+             limit 1
+             for update
+            """,
+            zone,
+            now - timedelta(seconds=dungeon.JOIN_GRACE),
+            dungeon.MAX_PLAYERS,
+        )
+
+    async def _grow_boss(
+        self, con: asyncpg.Connection, boss_id: int, zone: int, players: int,
+        now: datetime,
+    ) -> None:
+        """Напарник подсел на ходу — поднимаем и максимум, и текущее HP."""
+        target = dungeon.base_hp(zone, players)
+        await con.execute(
+            """
+            update dungeon_boss
+               set max_hp = greatest(max_hp, $2::bigint),
+                   hp = least(greatest(max_hp, $2::bigint),
+                              hp + greatest(0, $2::bigint - max_hp)),
+                   updated_at = $3::timestamptz
+             where id = $1::bigint
+            """,
+            int(boss_id),
+            target,
+            now,
         )
 
     async def _reload(self, con: asyncpg.Connection, boss_id: int) -> asyncpg.Record:

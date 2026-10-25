@@ -72,6 +72,21 @@ def test_coop_overlay_and_api():
     assert "X-Telegram-Init-Data" in DUNGEON_PAGE
 
 
+def test_mobs_live_in_neighbour_zones():
+    # раньше мобы спавнились только в зоне игрока, соседние локации пустовали
+    assert "function spawnOne(zi)" in DUNGEON_PAGE
+    assert "MOB_PER_NEAR" in DUNGEON_PAGE
+    assert "mobsInZone" in DUNGEON_PAGE
+    assert "MOB_KEEP_ZONES" in DUNGEON_PAGE
+    assert "fillMobs()" in DUNGEON_PAGE
+
+
+def test_death_returns_to_base_not_middle():
+    # WORLD.h / 2 — это середина карты, игрока уносило на середину
+    assert "P.y = WORLD.h / 2" not in DUNGEON_PAGE
+    assert "P.y = WORLD.h - 260;" in DUNGEON_PAGE
+
+
 def test_graphics_panel_replaces_stub():
     assert "Настройки — заглушка" not in DUNGEON_PAGE
     assert "function openGfx()" in DUNGEON_PAGE

@@ -222,6 +222,25 @@ async def main(argv: list[str] | None = None) -> int:
         me = ((hurt.get("boss") or {}).get("me") or {})
         check("босс бьёт, пока не смотришь", me.get("hp", 120) < 120, True)
         await call("POST", "/api/dungeon/boss/leave", first, {})
+
+        # Напарник опоздал: бой уже идёт соло, но место свободно —
+        # второй должен подсесть в тот же бой, а HP босса подрасти.
+        status, late_host = await call("POST", "/api/dungeon/boss/join", first, {"zone": 4})
+        host_room = late_host.get("boss") or {}
+        await start_room(db, host_room.get("id"))
+        status, solo = await call("GET", "/api/dungeon/boss/state", first)
+        solo_room = solo.get("boss") or {}
+        check("соло-бой уже идёт", solo_room.get("status"), "fight")
+        check("соло без коопа", solo_room.get("coop"), False)
+
+        status, late = await call("POST", "/api/dungeon/boss/join", second, {"zone": 4})
+        late_room = late.get("boss") or {}
+        check("опоздавший в том же бою", late_room.get("id"), host_room.get("id"))
+        check("кооп включился на ходу", late_room.get("coop"), True)
+        check("HP босса выросло", late_room.get("max_hp") > solo_room.get("max_hp"), True)
+        check("в комнате двое", len(late_room.get("players") or []), 2)
+        await call("POST", "/api/dungeon/boss/leave", first, {})
+        await call("POST", "/api/dungeon/boss/leave", second, {})
     finally:
         if not args.keep_rows:
             await wipe()

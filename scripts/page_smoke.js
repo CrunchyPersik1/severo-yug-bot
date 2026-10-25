@@ -146,9 +146,10 @@ function frames(count, base){
   }
 }
 frames(8, 1000);
-if (has("startbtn")) run("кнопка старта", () => {
+// кнопку старта ищем по id: глобальной переменной с таким именем нет
+run("кнопка старта", () => {
   const el = sandbox.document.getElementById("startbtn");
-  if (typeof el.onclick === "function") el.onclick({});
+  if (el && typeof el.onclick === "function") el.onclick({});
 });
 run("кадры", () => frames(12, 2000));
 run("атака", () => { for (let i = 0; i < 4; i++){ call("attack"); frames(1, 3000 + i * 16); } });
@@ -220,7 +221,26 @@ async function coopScenario(){
   console.log("  запросы: " + seen.map(function(s){ return s.replace(/^http:\/\/x/, ""); }).join(" | "));
 }
 
+function mobScenario(){
+  const run1 = (expr) => vm.runInContext(expr, context);
+  run1("P.x = WORLD.w / 2; P.y = WORLD.h - 260; fillMobs();");
+  check("мобы: в локации игрока", run1("mobsInZone(0)") >= 5, true);
+  check("мобы: в соседней локации", run1("mobsInZone(1)") >= 2, true);
+  // в глубине герой быстро умирает — для проверки делаем его неубиваемым
+  run1("P.max = 999999; P.hp = 999999;");
+  run1("P.y = zoneBand(5).from + 120; fillMobs();");
+  check("мобы: новая локация заполнилась", run1("mobsInZone(5)") >= 5, true);
+  frames(24, 6000);                       // не меньше секунды: сработает чистка
+  check("мобы: игрок не умер", run1("P.hp") > 1000, true);
+  check("мобы: дальние убраны", run1("mobsInZone(0)"), 0);
+  check("мобы: потолок не пробит", run1("mobs.length") <= run1("MOB_CAP"), true);
+}
+
 (async function(){
+  if (has("fillMobs")){
+    try { mobScenario(); }
+    catch (e){ errors.push("сценарий мобов: " + ((e && e.stack) || e)); }
+  }
   if (has("COOP")){
     try { await coopScenario(); }
     catch (e){ errors.push("сценарий кооп-боя: " + ((e && e.stack) || e)); }

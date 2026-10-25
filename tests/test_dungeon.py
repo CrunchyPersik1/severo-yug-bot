@@ -95,3 +95,9 @@ def test_wait_is_ten_seconds():
     assert dungeon.WAIT_SECONDS == 10
     assert dungeon.MAX_PLAYERS == 2
     assert dungeon.PLAYER_HP == 120
+
+
+def test_late_join_grace():
+    """Напарник может подсесть в уже начавшийся бой."""
+    assert dungeon.JOIN_GRACE >= dungeon.BOSS_HIT_EVERY * 5
+    assert dungeon.JOIN_GRACE <= 60
