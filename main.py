@@ -24,6 +24,7 @@ from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
 from app import event
 from app.db import Database
+from app.dungeon_hero import DungeonHeroRepo
 from app.dungeon_hub import DungeonHub
 from app.dungeon_repo import DungeonBossRepo
 from app.handlers import router
@@ -155,6 +156,7 @@ async def lifespan(app: FastAPI):
     boss_repo = BossRepo(db)
     dungeon_boss = DungeonBossRepo(db)
     hub = DungeonHub()
+    hero = DungeonHeroRepo(db)
 
     # мини-аппка магазина читает это из app.state
     app.state.settings = settings
@@ -165,6 +167,7 @@ async def lifespan(app: FastAPI):
     app.state.boss = boss_repo
     app.state.dungeon = dungeon_boss
     app.state.hub = hub
+    app.state.hero = hero
     runtime.update(
         db=db,
         bot=bot,

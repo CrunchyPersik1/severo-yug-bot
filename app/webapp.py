@@ -6844,6 +6844,67 @@ if (TG_INIT){
   setInterval(presenceLoop, 100);
 }
 
+/* ---------- прогресс героя: живёт в базе, а не во вкладке ---------- */
+let heroLoaded = false, heroBusy = false, heroStamp = "";
+
+function heroSnapshot(){
+  return {
+    level: stats.lvl,
+    exp: Math.round(stats.exp),
+    coins: Math.max(0, Math.round(P.coins)),
+    kills: stats.kills,
+    weapon: P.weapon ? P.weapon.id : null,
+    bag: (P.bag || []).slice(0, 200)
+  };
+}
+
+function heroApply(hero){
+  if (!hero) return;
+  const level = Math.max(1, hero.level | 0);
+  stats.lvl = level;
+  stats.exp = Math.max(0, hero.exp | 0);
+  stats.kills = Math.max(0, hero.kills | 0);
+  P.coins = Math.max(0, hero.coins | 0);
+  const bag = (hero.bag || []).filter(function(id){ return !!weaponById(id); });
+  if (bag.length) P.bag = bag;
+  const weapon = hero.weapon ? weaponById(hero.weapon) : null;
+  if (weapon) P.weapon = weapon;
+  P.max = 120 + (level - 1) * 8;        // ровно как даёт повышение уровня
+  P.hp = P.max;
+}
+
+async function heroLoad(){
+  if (!TG_INIT || heroLoaded) return;
+  const data = await coopApi("/api/dungeon/hero");
+  if (data && data.ok && data.hero){
+    heroApply(data.hero);
+    heroLoaded = true;
+    heroStamp = JSON.stringify(heroSnapshot());
+    if (data.hero.level > 1 || data.hero.coins > 0){
+      toast("Прогресс загружен: ур. " + data.hero.level + " · " + data.hero.coins + " монет");
+    }
+    fillMobs();                          // мобы по уровню, а не по первому
+    sync();
+  }
+}
+
+async function heroSave(force){
+  if (!TG_INIT || !heroLoaded || heroBusy) return;
+  const snapshot = heroSnapshot();
+  const stamp = JSON.stringify(snapshot);
+  if (!force && stamp === heroStamp) return;
+  heroBusy = true;
+  try {
+    const data = await coopApi("/api/dungeon/hero", snapshot);
+    if (data && data.ok) heroStamp = stamp;
+  } catch (e){
+  } finally {
+    heroBusy = false;
+  }
+}
+
+if (TG_INIT) setInterval(function(){ heroSave(false); }, 5000);
+
 const ZONE_H = 1100;
 const ZONES = [
   {n: "Опушка",         g: "#2a3d18", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
@@ -7103,7 +7164,7 @@ function killMob(m){
   }
   stats.kills += 1;
   if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.max += 8; P.hp = P.max;
-    toast("Уровень " + stats.lvl + "! HP вырос"); }
+    toast("Уровень " + stats.lvl + "! HP вырос"); heroSave(true); }
   if (Math.random() < 0.22){
     const loot = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
     const isNew = P.bag.indexOf(loot.id) < 0;
@@ -7720,7 +7781,11 @@ if (wChat) wChat.onclick = () => toast("Чат — в большой верси�
 const bagClose = document.getElementById("bagclose");
 if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
 document.getElementById("startbtn").onclick = () => {
-  if (!P.started){ reset(); P.started = true; }
+  if (!P.started){
+    reset();
+    P.started = true;
+    heroLoad();                 // прогресс подтянется, мобы пересоберутся по уровню
+  }
   document.getElementById("cls").style.display = "none";
   if (!P.started2){ P.started2 = true; toast("Ты в подземелье. Фарми мобов"); }
 };
@@ -7957,3 +8022,32 @@ async def ws_dungeon(websocket: WebSocket) -> None:
     finally:
         if user_id:
             hub.drop(user_id)
+
+@router.get("/api/dungeon/hero")
+async def api_dungeon_hero(request: Request) -> JSONResponse:
+    """Прогресс героя: уровень, монеты, сумка и оружие в руках."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Прогресс ещё не включён"}, status_code=400)
+    hero = await repo.load(int(user["id"]))
+    return JSONResponse({"ok": True, "hero": hero})
+
+
+@router.post("/api/dungeon/hero")
+async def api_dungeon_hero_save(request: Request) -> JSONResponse:
+    """Сохранить прогресс. Всё приходит с клиента и режется в dungeon_hero."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Прогресс ещё не включён"}, status_code=400)
+    hero = await repo.save(int(user["id"]), await _json_body(request))
+    return JSONResponse({"ok": True, "hero": hero})

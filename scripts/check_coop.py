@@ -106,6 +106,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from app.config import settings
     from app.db import Database
+    from app.dungeon_hero import DungeonHeroRepo
     from app.dungeon_hub import DungeonHub
     from app.dungeon_repo import DungeonBossRepo
     from app.webapp import router as webapp_router
@@ -116,12 +117,14 @@ async def main(argv: list[str] | None = None) -> int:
 
     repo = DungeonBossRepo(db)
     hub = DungeonHub()
+    hero = DungeonHeroRepo(db)
     api = FastAPI()
     api.include_router(webapp_router)
     api.state.settings = settings
     api.state.db = db
     api.state.dungeon = repo
     api.state.hub = hub
+    api.state.hero = hero
 
     config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
     server = uvicorn.Server(config)
@@ -154,6 +157,10 @@ async def main(argv: list[str] | None = None) -> int:
             )
             await con.execute(
                 "delete from players where user_id = any($1::bigint[])", list(TEST_USERS)
+            )
+            await con.execute(
+                "delete from dungeon_hero where user_id = any($1::bigint[])",
+                list(TEST_USERS),
             )
 
     if not args.keep_rows:
@@ -318,6 +325,31 @@ async def main(argv: list[str] | None = None) -> int:
             denied = json.loads(await asyncio.wait_for(sock_x.recv(), 10))
             check("сокет: без подписи отказ", isinstance(denied.get("error"), str), True)
         check("сокет: точки не остались в памяти", len(hub), 0)
+
+        # Прогресс героя: сохраняется в базе и переживает перезагрузку страницы
+        status, fresh_hero = await call("GET", "/api/dungeon/hero", first)
+        check("герой: пустой прогресс по умолчанию",
+              (fresh_hero.get("hero") or {}).get("level"), 1)
+        status, saved = await call("POST", "/api/dungeon/hero", first, {
+            "level": 27, "exp": 430, "coins": 51234, "kills": 210,
+            "weapon": "bow_3_1", "bag": ["bow_3_1", "мусор", "bow_3_1", "sword_1_0"]})
+        hero_data = saved.get("hero") or {}
+        check("герой: сохранён", status, 200)
+        check("герой: уровень", hero_data.get("level"), 27)
+        check("герой: монеты", hero_data.get("coins"), 51234)
+        check("герой: мусор из сумки выкинут", hero_data.get("bag"),
+              ["bow_3_1", "sword_1_0"])
+        check("герой: оружие в руках", hero_data.get("weapon"), "bow_3_1")
+        status, again = await call("GET", "/api/dungeon/hero", first)
+        check("герой: читается после записи",
+              (again.get("hero") or {}).get("level"), 27)
+        status, clipped = await call("POST", "/api/dungeon/hero", first, {
+            "level": 100000, "coins": -5, "weapon": "ракета", "bag": "не список"})
+        clipped_hero = clipped.get("hero") or {}
+        check("герой: уровень обрезан", clipped_hero.get("level"), 999)
+        check("герой: монеты не отрицательные", clipped_hero.get("coins"), 0)
+        check("герой: пушка из ракеты не вышла", clipped_hero.get("weapon") in (None, "bow_3_1"),
+              True)
     finally:
         if not args.keep_rows:
             await wipe()

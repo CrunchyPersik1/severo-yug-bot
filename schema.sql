@@ -721,3 +721,18 @@ create table if not exists dungeon_boss_players (
 create index if not exists dungeon_boss_players_user_idx
     on dungeon_boss_players (user_id, boss_id);
 
+
+-- ===================================================================== --
+-- Подземелье: прогресс героя (уровень, монеты, сумка)
+-- ===================================================================== --
+
+create table if not exists dungeon_hero (
+    user_id    bigint primary key,
+    level      integer not null default 1,
+    exp        integer not null default 0,
+    coins      bigint  not null default 0,
+    kills      integer not null default 0,
+    weapon     text,
+    bag        jsonb   not null default '[]'::jsonb,
+    updated_at timestamptz not null default now()
+);

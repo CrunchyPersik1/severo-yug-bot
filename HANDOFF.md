@@ -34,7 +34,7 @@ DSN для локальных скриптов:
 ## 3. Как деплоить
 
     $py = ".venv\Scripts\python.exe"
-    & $py -m pytest -q tests                 # 280 passed, 29 skipped
+    & $py -m pytest -q tests                 # 289 passed, 29 skipped
     & $py scripts\check_pages.py --smoke     # все страницы: теги, id, node --check, стенд
     & $py scripts\check_coop.py              # живой прогон кооп-босса по HTTP
     git add -A ; git commit -m "..." ; git push
@@ -147,6 +147,10 @@ Free-план засыпает через 15 минут простоя, перв
   (если сокет не поднялся). Метка живёт 6 с, показываем ±1 локацию.
   Чужие герои рисуются спрайтами с именем, HP и анимацией idle/run/attack.
   NPC-заглушки «OFFLINE» убраны
+- Прогресс героя сохраняется: таблица dungeon_hero (уровень, опыт, монеты,
+  убийства, оружие, сумка), ручки GET/POST /api/dungeon/hero. Клиент
+  подтягивает прогресс на «В бой», автосейв раз в 5 секунд и сразу после
+  нового уровня. Всё приходящее с клиента режется в app/dungeon_hero.py
 
 ## 7. Что ОСТАЛОСЬ (по приоритету владельца)
 
@@ -223,7 +227,7 @@ Free-план засыпает через 15 минут простоя, перв
 ## 9. Тесты
 
     & .venv\Scripts\python.exe -m pytest -q tests
-    # 280 passed, 29 skipped
+    # 289 passed, 29 skipped
 
 Любая правка экономики должна оставлять их зелёными.
 
