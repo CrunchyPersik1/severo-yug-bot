@@ -5929,14 +5929,14 @@ function spawnMobs(n){
   for (let i = 0; i < n; i++) spawnOne();
 }
 const MOB_TYPES = [
-  {n: "Слизь",   hp: 18,  sp: 20, dmg: 3,  c: "#6fa86f", sz: 0.85},
-  {n: "Крыса",   hp: 12,  sp: 48, dmg: 2,  c: "#8a7a5a", sz: 0.7},
-  {n: "Скелет",  hp: 42,  sp: 26, dmg: 6,  c: "#c9c4b0", sz: 1.05},
-  {n: "Гоблин",  hp: 70,  sp: 36, dmg: 9,  c: "#5a8a4a", sz: 0.95},
-  {n: "Паук",    hp: 55,  sp: 52, dmg: 8,  c: "#6a4a7a", sz: 0.85},
-  {n: "Тролль",  hp: 180, sp: 17, dmg: 16, c: "#3f6a4a", sz: 1.45},
-  {n: "Демон",   hp: 320, sp: 30, dmg: 26, c: "#8a2a2a", sz: 1.3},
-  {n: "Лич",     hp: 260, sp: 24, dmg: 21, c: "#4a5a9a", sz: 1.15}
+  {n: "Слизь",   hp: 18,  sp: 20, dmg: 3,  c: "#6fa86f", sz: 0.85, tile: [0, 8]},
+  {n: "Летучая", hp: 12,  sp: 48, dmg: 2,  c: "#8a7a5a", sz: 0.7,  tile: [0, 9]},
+  {n: "Скелет",  hp: 42,  sp: 26, dmg: 6,  c: "#c9c4b0", sz: 1.05, tile: [0, 7]},
+  {n: "Огр",     hp: 70,  sp: 36, dmg: 9,  c: "#5a8a4a", sz: 0.95, tile: [1, 8]},
+  {n: "Паук",    hp: 55,  sp: 52, dmg: 8,  c: "#6a4a7a", sz: 0.85, tile: [3, 9]},
+  {n: "Тролль",  hp: 180, sp: 17, dmg: 16, c: "#3f6a4a", sz: 1.45, tile: [1, 8]},
+  {n: "Демон",   hp: 320, sp: 30, dmg: 26, c: "#8a2a2a", sz: 1.3,  tile: [2, 8]},
+  {n: "Призрак", hp: 260, sp: 24, dmg: 21, c: "#4a5a9a", sz: 1.15, tile: [1, 9]}
 ];
 let spawnTimer = 0;
 function spawnOne(){
@@ -6129,6 +6129,17 @@ function drawFighters(){
 const LPC = {};
 const HEAD = new Image();
 HEAD.src = "/static/lpc_head.png";
+const KENNEY = new Image();
+KENNEY.src = "/static/kenney.png";
+function drawTile(t, x, y, size, bob){
+  if (!t || !KENNEY.complete || !KENNEY.naturalWidth) return false;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(KENNEY, t[0] * 16, t[1] * 16, 16, 16,
+                x - size / 2, y - size + 6 + (bob || 0), size, size);
+  ctx.restore();
+  return true;
+}
 ["walk", "slash", "run"].forEach(function(k){
   const im = new Image();
   im.src = "/static/lpc_" + k + ".png";
@@ -6140,40 +6151,12 @@ function faceRow(face){                    // LPC: 0 вверх, 1 влево, 2
 }
 let animT = 0;
 function drawHero(x, y, attacking){
-  let key = "walk";
-  if (attacking) key = "slash";
-  else if (P.dashT > 0) key = "run";
-  const img = LPC[key];
-  if (!img || !img.complete || !img.naturalWidth){ person(x, y, "#4a9eff"); return; }
-  const fw = 64, fh = 64;
-  const frames = LPC_FRAMES[key];
-  const row = faceRow(P.facing || 0);
-  const col = Math.floor(animT * (key === "slash" ? 14 : 9)) % frames;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
+  const bob = attacking ? -3 : (P.moving ? Math.sin(animT * 9) * 1.5 : 0);
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 15, y - 2, 30, 7);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 13, y + 2, 26, 6);
   ctx.globalAlpha = 1;
-  ctx.drawImage(img, col * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
-  if (HEAD.complete && HEAD.naturalWidth){
-    const hcol = Math.floor(animT * 9) % 9;
-    ctx.drawImage(HEAD, hcol * fw, row * fh, fw, fh, x - 32, y - 54, 64, 64);
-  }
-  const w2 = P.weapon;
-  // оружие в руке
-  if (w2){
-    ctx.strokeStyle = w2.kind === "staff" ? "#8a6a3a" : "#c9c9d6";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    if (w2.kind === "bow"){
-      ctx.arc(x + 16, y - 22, 10, -1.1, 1.1);
-    } else {
-      ctx.moveTo(x + 15, y - 16);
-      ctx.lineTo(x + 15 + (w2.kind === "staff" ? 16 : 11), y - 44);
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
+  if (drawTile([1, 6], x, y, 40, bob)) return;
+  person(x, y, "#4a9eff");
 }
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
@@ -6222,6 +6205,7 @@ function loop(now){
     P.x = Math.max(30, Math.min(WORLD.w - 30, P.x + (P.dashVX || 0) * dt));
     P.y = Math.max(30, Math.min(WORLD.h - 30, P.y + (P.dashVY || 0) * dt));
   }
+  P.moving = len > 0.05;
   if (len > 0.05){
     P.dir = Math.atan2(vy, vx);
     P.facing = Math.abs(vx) > Math.abs(vy) ? (vx < 0 ? 1 : 2) : (vy < 0 ? 3 : 0);
@@ -6345,9 +6329,8 @@ function render(){
 
   npcs.forEach(n => {
     ctx.save();
-    ctx.translate(n.x, n.y);
-    ctx.scale(1.25, 1.25);
-    person(0, 0, "#3a4152", null, 0.55);
+    ctx.globalAlpha = 0.55;
+    drawTile([1, 7], n.x, n.y, 34, 0);
     ctx.restore();
     ctx.fillStyle = "#6a6a7a"; ctx.font = "7px 'Press Start 2P',monospace";
     ctx.textAlign = "center"; ctx.fillText(n.name, n.x, n.y + 44);
@@ -6364,7 +6347,9 @@ function render(){
     ctx.save();
     ctx.translate(m.x, m.y);
     ctx.scale((m.sz || 1) * 1.25, (m.sz || 1) * 1.25);
-    person(0, 0, m.hit > 0 ? "#ff8a8a" : (m.c || "#8a5a6a"));
+    if (!drawTile(m.tile, 0, 0, 34, m.hit > 0 ? -2 : 0)){
+      person(0, 0, m.hit > 0 ? "#ff8a8a" : (m.c || "#8a5a6a"));
+    }
     ctx.restore();
     const bw = 36 * (m.sz || 1);
     ctx.fillStyle = "#000a"; ctx.fillRect(m.x - bw / 2, m.y - 40 * (m.sz || 1), bw, 5);
