@@ -2262,7 +2262,16 @@ async def api_hub(request: Request) -> JSONResponse:
             "sections": [
                 dict(section, url=f"{request.base_url}".rstrip("/"))
                 for section in (
-                    (
+                    [
+                        {
+                            "id": "quests",
+                            "title": "ЗАДАНИЯ",
+                            "note": "квесты и PvP",
+                            "kind": "app",
+                            "path": "/quests",
+                        }
+                    ]
+                    + (
                         [
                             {
                                 "id": "event",
@@ -2272,10 +2281,10 @@ async def api_hub(request: Request) -> JSONResponse:
                                 "path": "/event",
                             }
                         ]
-                        + list(HUB_SECTIONS)
+                        if (await state.db.event_state()).get("active")
+                        else []
                     )
-                    if (await state.db.event_state()).get("active")
-                    else HUB_SECTIONS
+                    + list(HUB_SECTIONS)
                 )
             ],
         }
@@ -4857,3 +4866,164 @@ async def api_case_buy_d(request: Request) -> JSONResponse:
             "cases": len(await state.db.user_cases(uid)),
         }
     )
+
+
+# --------------------------------------------------------------------------- #
+# Задания — ежедневные квесты + PvP-стрик
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/api/quests")
+async def api_quests(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    uid = int(user["id"])
+    quests = []
+    async with state.db.pool.acquire() as con:  # type: ignore[attr-defined]
+        for source, sql in event_week.SOURCES.items():
+            now_value = int(await con.fetchval(sql, uid) or 0)
+            need = event_week.need_for(source, 1)
+            quests.append(
+                {
+                    "key": source,
+                    "title": event_week.TITLES.get(source, source),
+                    "need": need,
+                    "now": min(now_value, need),
+                    "done": now_value >= need,
+                }
+            )
+        streak = int(
+            await con.fetchval(
+                "select coalesce(pvp_streak, 0) from players where user_id = $1", uid
+            )
+            or 0
+        )
+        wins = int(
+            await con.fetchval(
+                "select coalesce(wins, 0) from players where user_id = $1", uid
+            )
+            or 0
+        )
+    return JSONResponse(
+        {
+            "quests": quests,
+            "done": sum(1 for q in quests if q["done"]),
+            "total": len(quests),
+            "pvp": {
+                "streak": streak,
+                "wins": wins,
+                "steps": [
+                    {"need": 3, "cases": 5, "reached": streak >= 3},
+                    {"need": 10, "cases": 15, "reached": streak >= 10},
+                ],
+            },
+        }
+    )
+
+
+@router.get("/quests", response_class=HTMLResponse)
+async def quests_page() -> HTMLResponse:
+    return HTMLResponse(inject(QUESTS_PAGE))
+
+
+QUESTS_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Задания</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:24px}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.top .b{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:8px 14px;font-size:13px;font-weight:800}
+.top .b.ok{color:#26a69a}
+.q{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:13px 15px;margin-bottom:8px}
+.q.done{border-color:#26a69a}
+.q .h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.q .t{font-size:13.5px;font-weight:700}
+.q .n{font-size:12px;color:var(--muted);font-weight:700;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.q.done .n{color:#26a69a}
+.bar{height:7px;background:var(--panel2);border-radius:99px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:99px}
+.q.done .bar i{background:#26a69a}
+.pvp{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:15px;margin-top:14px}
+.pvp h3{margin:0 0 4px;font-size:15px}
+.pvp .st{font-size:32px;font-weight:900;color:#f6c94a;line-height:1.1;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.pvp .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.step{display:flex;justify-content:space-between;align-items:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;margin-top:8px;font-size:13px}
+.step.on{border-color:#26a69a;color:#26a69a}
+.step b{font-family:'JetBrains Mono',ui-monospace,monospace}
+#toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);
+  color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
+  font-size:13px;transform:translateY(220%);transition:.25s;z-index:30}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="b" id="cnt">…</div>
+    <div class="b ok" id="streak">…</div>
+  </div>
+  <div id="list"></div>
+  <div class="pvp" id="pvp"></div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2800);
+}
+async function load(){
+  try{
+    const r = await fetch("/api/quests", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    document.getElementById("cnt").textContent = "Выполнено " + d.done + " из " + d.total;
+    document.getElementById("streak").textContent = "🔥 стрик " + d.pvp.streak;
+    document.getElementById("list").innerHTML = d.quests.map(q => {
+      const pct = Math.min(100, Math.round(q.now / q.need * 100));
+      return '<div class="q' + (q.done ? " done" : "") + '">' +
+        '<div class="h"><div class="t">' + esc(q.title) + '</div>' +
+        '<div class="n">' + q.now + "/" + q.need + '</div></div>' +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
+    }).join("");
+    const p = d.pvp;
+    document.getElementById("pvp").innerHTML =
+      '<h3>⚔️ PvP-стрик</h3>' +
+      '<div class="st">' + p.streak + '</div>' +
+      '<div class="sub">побед подряд · всего побед ' + p.wins + '</div>' +
+      p.steps.map(s =>
+        '<div class="step' + (s.reached ? " on" : "") + '">' +
+        '<span>' + s.need + ' побед подряд</span>' +
+        '<b>' + (s.reached ? "✓ " : "") + '+' + s.cases + ' кейсов</b></div>').join("") +
+      '<div class="sub" style="margin-top:10px">Награды приходят автоматически. ' +
+      'Больше 10 боёв с одним игроком — стрик сгорает и минус 250 000.</div>';
+  }catch(e){ toast("Не смог загрузить"); }
+}
+if (tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""
