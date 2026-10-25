@@ -5062,6 +5062,25 @@ body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
 .street .row2{display:flex;flex-wrap:wrap;gap:1px;font-size:22px;line-height:1;max-height:52px;overflow:hidden}
 .street .num{position:absolute;right:9px;top:7px;font-size:13px;font-weight:900;
   color:#ffd98a;font-family:ui-monospace,monospace;text-shadow:0 1px 3px #000}
+
+#particles{position:fixed;inset:0;pointer-events:none;z-index:1;overflow:hidden}
+#particles i{position:absolute;top:-50px;opacity:.3;animation:fall linear infinite;
+  will-change:transform}
+@keyframes fall{to{transform:translateY(118vh) rotate(420deg)}}
+.pop{position:fixed;pointer-events:none;font-weight:900;color:#ffd98a;font-size:19px;
+  z-index:55;animation:popup .95s cubic-bezier(.2,.8,.3,1) forwards;
+  text-shadow:0 2px 8px #000;font-family:ui-monospace,monospace}
+@keyframes popup{0%{transform:translate(-50%,-50%) scale(.7);opacity:1}
+  100%{transform:translate(-50%,-190%) scale(1.15);opacity:0}}
+.cookie.squash{animation:squash .13s ease}
+@keyframes squash{50%{transform:scale(.9)}}
+.street{animation:streetIn .35s cubic-bezier(.2,.9,.3,1.05)}
+@keyframes streetIn{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
+.item.flash{animation:flash .45s ease}
+@keyframes flash{0%{background:#8a5a28}100%{background:transparent}}
+.burst{position:fixed;pointer-events:none;z-index:54;font-size:20px;
+  animation:burst .7s ease-out forwards}
+@keyframes burst{to{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0}}
 .tabs{display:flex;gap:4px;padding:6px}
 .tabs button{flex:1;border:2px solid #6b4a22;background:#4a2e1c;border-radius:8px;
   padding:8px 0;font-size:16px;font-family:inherit;cursor:pointer}
@@ -5111,6 +5130,7 @@ body{font-family:"Trebuchet MS",-apple-system,"Segoe UI",Roboto,sans-serif;
     <div id="ascinfo" style="padding:0 9px 9px;font-size:10px;color:#a98a5f;text-align:center"></div>
   </div>
 </div>
+<div id="particles"></div>
 <div id="gold">🍪</div>
 <div id="toast"></div>
 <script>
@@ -5212,9 +5232,45 @@ function toast(t){
   el.textContent = t; el.className = "on";
   clearTimeout(el._t); el._t = setTimeout(function(){ el.className = ""; }, 2600);
 }
-function click(){
+function makeParticles(){
+  var box = document.getElementById("particles");
+  var gl = ["🍪","✦","·","🍪","🌾"];
+  var html = "";
+  for (var i = 0; i < 26; i++){
+    var dur = 9 + Math.random() * 14;
+    html += '<i style="left:' + (Math.random() * 100) + 'vw;font-size:' +
+      (10 + Math.random() * 14) + 'px;animation-duration:' + dur.toFixed(1) +
+      's;animation-delay:-' + (Math.random() * dur).toFixed(1) + 's">' +
+      gl[Math.floor(Math.random() * gl.length)] + '</i>';
+  }
+  box.innerHTML = html;
+}
+function pop(x, y, text){
+  var el = document.createElement("div");
+  el.className = "pop"; el.textContent = text;
+  el.style.left = x + "px"; el.style.top = y + "px";
+  document.body.appendChild(el);
+  setTimeout(function(){ el.remove(); }, 950);
+}
+function burst(x, y, glyph){
+  for (var i = 0; i < 10; i++){
+    var b = document.createElement("div");
+    b.className = "burst"; b.textContent = glyph;
+    b.style.left = x + "px"; b.style.top = y + "px";
+    b.style.setProperty("--dx", (Math.random() * 160 - 80) + "px");
+    b.style.setProperty("--dy", (Math.random() * 160 - 80) + "px");
+    document.body.appendChild(b);
+    setTimeout(function(){ b.remove(); }, 720);
+  }
+}
+function click(ev){
   var g = tapPower();
   S.bal += g; S.total += g; S.clicks += 1;
+  var c = document.getElementById("tap");
+  c.classList.remove("squash"); void c.offsetWidth; c.classList.add("squash");
+  var x = ev && ev.clientX ? ev.clientX : window.innerWidth / 2;
+  var y = ev && ev.clientY ? ev.clientY : window.innerHeight / 2;
+  pop(x, y, "+" + fmt(g));
   numbers();
 }
 function buyN(id, count){
@@ -5223,6 +5279,8 @@ function buyN(id, count){
   if (S.bal < c) return;
   S.bal -= c; S.b[id] = own(id) + count;
   dirty = true; numbers(); lists();
+  var row = document.querySelector('[data-buy="' + id + '"]');
+  if (row){ row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); }
 }
 function buyUp(id){
   var u = UPGRADES.find(function(x){ return x.id === id; });
@@ -5252,8 +5310,10 @@ function spawnGolden(){
   g.style.display = "block";
   setTimeout(function(){ g.style.display = "none"; }, 13000);
 }
-function catchGolden(){
+function catchGolden(ev){
   document.getElementById("gold").style.display = "none";
+  burst(ev && ev.clientX ? ev.clientX : window.innerWidth / 2,
+        ev && ev.clientY ? ev.clientY : window.innerHeight / 2, "🍪");
   S.golden += 1;
   var r = Math.random();
   if (r < .45){ addBuff("frenzy", 77000); toast("🍪 FRENZY ×7 на 77 сек"); }
@@ -5351,7 +5411,7 @@ setInterval(function(){
 setInterval(function(){ dirty = true; lists(); }, 2000);
 setInterval(function(){ if (Math.random() < .5) spawnGolden(); }, 45000);
 setInterval(function(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }, 4000);
-numbers(); lists();
+numbers(); lists(); makeParticles();
 </script>
 </body>
 </html>
