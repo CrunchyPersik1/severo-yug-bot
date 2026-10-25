@@ -5739,6 +5739,16 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   color:#d8b45a;border-radius:10px;width:44px;height:44px;font-size:17px;
   font-family:inherit;box-shadow:0 0 0 2px #120c06,inset 0 0 10px #00000099}
 .top button:active{transform:translateY(2px)}
+#wpanel{position:fixed;left:10px;right:10px;bottom:126px;display:flex;gap:8px;
+  z-index:10}
+.wcol{flex:1;background:linear-gradient(#2a1c10ee,#140d06ee);border:3px solid #6b4a22;
+  border-radius:10px;padding:8px 10px;box-shadow:0 0 0 2px #120c06}
+.wttl{font-size:7px;letter-spacing:1px;color:#c9a227;margin-bottom:5px}
+.wname{font-size:9px;color:#ffe9b8;line-height:1.4}
+.wsub{font-size:7px;color:#8a7a5a;margin-top:3px}
+.wstat{display:flex;justify-content:space-between;font-size:7px;color:#b8a888;
+  padding:2px 0}
+.wstat b{color:#8bd65a}
 .hpbar{position:fixed;left:14px;right:14px;bottom:104px;height:16px;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
@@ -5820,6 +5830,19 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   background:#161020dd;border:2px solid #3a2a4a;color:#cbb9d6;border-radius:8px;
   padding:8px 12px;font-family:inherit;font-size:10px">🎒 СУМКА</button>
 
+<div id="wpanel">
+  <div class="wcol">
+    <div class="wttl">ОРУЖИЕ</div>
+    <div class="wname" id="wname">—</div>
+    <div class="wsub" id="wcls">—</div>
+  </div>
+  <div class="wcol">
+    <div class="wttl">СТАТИСТИКА ОРУЖИЯ</div>
+    <div class="wstat"><span>Урон</span><b id="wdmg">0</b></div>
+    <div class="wstat"><span>Дальность</span><b id="wrange">0</b></div>
+    <div class="wstat"><span>Скорость</span><b id="wspd">0</b></div>
+  </div>
+</div>
 <div class="hpbar"><i id="hpfill"></i></div>
 <div class="hptxt" id="hptxt">HP 120 / 120</div>
 
@@ -5991,14 +6014,14 @@ function spawnMobs(n){
   for (let i = 0; i < n; i++) spawnOne();
 }
 const MOB_TYPES = [
-  {n: "Слизь",   hp: 18,  sp: 20, dmg: 3,  c: "#6fa86f", sz: 0.85, tile: [0, 8]},
-  {n: "Летучая", hp: 12,  sp: 48, dmg: 2,  c: "#8a7a5a", sz: 0.7,  tile: [0, 9]},
-  {n: "Скелет",  hp: 42,  sp: 26, dmg: 6,  c: "#c9c4b0", sz: 1.05, tile: [0, 7]},
-  {n: "Огр",     hp: 70,  sp: 36, dmg: 9,  c: "#5a8a4a", sz: 0.95, tile: [1, 8]},
-  {n: "Паук",    hp: 55,  sp: 52, dmg: 8,  c: "#6a4a7a", sz: 0.85, tile: [3, 9]},
-  {n: "Тролль",  hp: 180, sp: 17, dmg: 16, c: "#3f6a4a", sz: 1.45, tile: [1, 8]},
-  {n: "Демон",   hp: 320, sp: 30, dmg: 26, c: "#8a2a2a", sz: 1.3,  tile: [2, 8]},
-  {n: "Призрак", hp: 260, sp: 24, dmg: 21, c: "#4a5a9a", sz: 1.15, tile: [1, 9]}
+  {n: "Слизь",   hp: 30,  sp: 20, dmg: 6,  c: "#6fa86f", sz: 0.85, tile: [0, 8]},
+  {n: "Летучая", hp: 22,  sp: 48, dmg: 5,  c: "#8a7a5a", sz: 0.7,  tile: [0, 9]},
+  {n: "Скелет",  hp: 70,  sp: 26, dmg: 11, c: "#c9c4b0", sz: 1.05, tile: [0, 7]},
+  {n: "Огр",     hp: 120,  sp: 36, dmg: 14, c: "#5a8a4a", sz: 0.95, tile: [1, 8]},
+  {n: "Паук",    hp: 90,  sp: 52, dmg: 13, c: "#6a4a7a", sz: 0.85, tile: [3, 9]},
+  {n: "Тролль",  hp: 300, sp: 17, dmg: 24, c: "#3f6a4a", sz: 1.45, tile: [1, 8]},
+  {n: "Демон",   hp: 520, sp: 30, dmg: 38, c: "#8a2a2a", sz: 1.3,  tile: [2, 8]},
+  {n: "Призрак", hp: 430, sp: 24, dmg: 32, c: "#4a5a9a", sz: 1.15, tile: [1, 9]}
 ];
 let spawnTimer = 0;
 function spawnOne(){
@@ -6382,6 +6405,18 @@ function loop(now){
   document.getElementById("hptxt").textContent =
     "HP " + Math.round(P.hp) + " / " + P.max + "  ·  ур. " + stats.lvl;
   document.getElementById("coins").textContent = P.coins;
+  if (P.weapon){
+    const el = document.getElementById("wname");
+    if (el) el.textContent = P.weapon.name;
+    const e2 = document.getElementById("wcls");
+    if (e2) e2.textContent = P.weapon.cls;
+    const e3 = document.getElementById("wdmg");
+    if (e3) e3.textContent = P.weapon.dmg;
+    const e4 = document.getElementById("wrange");
+    if (e4) e4.textContent = P.weapon.range;
+    const e5 = document.getElementById("wspd");
+    if (e5) e5.textContent = P.weapon.spd || 1;
+  }
   const zi = zoneIndex(P.y);
   const zel = document.getElementById("zone");
   if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n;
@@ -6420,6 +6455,24 @@ function render(){
       }
     }
     ctx.restore();
+  }
+  // декорации текущей локации
+  const zc = zoneIndex(P.y);
+  const zin = ZONES[zc];
+  for (let d = 0; d < 26; d++){
+    const hx = (d * 137 + zc * 53) % (WORLD.w - 120) + 60;
+    const hy = zc * ZONE_H + (d * 71) % ZONE_H;
+    if (d % 3 === 0){
+      ctx.fillStyle = zin.a;
+      ctx.beginPath(); ctx.arc(hx, hy, 5 + (d % 4), 0, 7); ctx.fill();
+    } else if (d % 3 === 1){
+      ctx.fillStyle = "#00000044";
+      ctx.beginPath(); ctx.ellipse(hx, hy, 9, 6, 0, 0, 7); ctx.fill();
+    } else {
+      ctx.strokeStyle = zin.a; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx - 3, hy - 10); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + 4, hy - 8); ctx.stroke();
+    }
   }
   // тропа: пунктир из точек
   PATH.forEach(function(pt){
@@ -6561,6 +6614,18 @@ document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   if (t === "settings"){ toast("Настройки — заглушка"); return; }
 });
 function sync(){ document.getElementById("coins").textContent = P.coins;
+  if (P.weapon){
+    const el = document.getElementById("wname");
+    if (el) el.textContent = P.weapon.name;
+    const e2 = document.getElementById("wcls");
+    if (e2) e2.textContent = P.weapon.cls;
+    const e3 = document.getElementById("wdmg");
+    if (e3) e3.textContent = P.weapon.dmg;
+    const e4 = document.getElementById("wrange");
+    if (e4) e4.textContent = P.weapon.range;
+    const e5 = document.getElementById("wspd");
+    if (e5) e5.textContent = P.weapon.spd || 1;
+  }
   const zi = zoneIndex(P.y);
   const zel = document.getElementById("zone");
   if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n; }
