@@ -106,6 +106,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from app.config import settings
     from app.db import Database
+    from app import dungeon_hero as hero_rules
     from app.dungeon_hero import DungeonHeroRepo
     from app.dungeon_hub import DungeonHub
     from app.dungeon_repo import DungeonBossRepo
@@ -117,14 +118,14 @@ async def main(argv: list[str] | None = None) -> int:
 
     repo = DungeonBossRepo(db)
     hub = DungeonHub()
-    hero = DungeonHeroRepo(db)
+    hero_repo = DungeonHeroRepo(db)
     api = FastAPI()
     api.include_router(webapp_router)
     api.state.settings = settings
     api.state.db = db
     api.state.dungeon = repo
     api.state.hub = hub
-    api.state.hero = hero
+    api.state.hero = hero_repo
 
     config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
     server = uvicorn.Server(config)
@@ -380,6 +381,31 @@ async def main(argv: list[str] | None = None) -> int:
         check("герой: монеты не отрицательные", clipped_hero.get("coins"), 0)
         check("герой: пушка из ракеты не вышла", clipped_hero.get("weapon") in (None, "bow_3_1"),
               True)
+
+        # Улучшение оружия: цена на сервере, монеты списываются из прогресса
+        await call("POST", "/api/dungeon/hero", first, {
+            "level": 27, "coins": 5000, "weapon": "bow_3_1", "bag": ["bow_3_1"]})
+        status, offer = await call("GET", "/api/dungeon/hero", first)
+        offer_data = (offer.get("hero") or {}).get("upgrade") or {}
+        check("улучшение: оффер есть", offer_data.get("next"), "bow_4_1")
+        check("улучшение: цена", offer_data.get("price"), hero_rules.upgrade_price("bow_3_1"))
+        status, upgraded = await call("POST", "/api/dungeon/upgrade", first,
+                                      {"weapon": "bow_3_1"})
+        upgraded_hero = upgraded.get("hero") or {}
+        check("улучшение: оружие стало выше", upgraded_hero.get("weapon"), "bow_4_1")
+        check("улучшение: монеты списаны", upgraded_hero.get("coins"),
+              5000 - hero_rules.upgrade_price("bow_3_1"))
+        check("улучшение: в сумке тоже", upgraded_hero.get("bag"), ["bow_4_1"])
+        status, broke = await call("POST", "/api/dungeon/upgrade", first,
+                                   {"weapon": "bow_4_1"})
+        check("улучшение: без монет отказ", status, 400)
+        check("улучшение: текст ошибки", isinstance((broke or {}).get("error"), str), True)
+        status, wrong = await call("POST", "/api/dungeon/upgrade", first,
+                                   {"weapon": "sword_1_1"})
+        check("улучшение: чужое оружие отказ", status, 400)
+        status, maxed = await call("POST", "/api/dungeon/upgrade", first,
+                                   {"weapon": "bow_9_0"})
+        check("улучшение: максимум отказ", status, 400)
     finally:
         if not args.keep_rows:
             await wipe()

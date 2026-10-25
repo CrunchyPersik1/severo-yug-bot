@@ -86,6 +86,14 @@ def test_hint_when_opened_outside_bot():
     assert "#tghint" in DUNGEON_PAGE
 
 
+def test_weapon_upgrade_is_wired():
+    assert "function heroUpgrade(" in DUNGEON_PAGE
+    assert "/api/dungeon/upgrade" in DUNGEON_PAGE
+    assert "HERO_OFFER" in DUNGEON_PAGE
+    assert "УЛУЧШИТЬ · " in DUNGEON_PAGE
+    assert "Улучшение оружия — за монеты" not in DUNGEON_PAGE
+
+
 def test_chat_panel_is_wired():
     assert 'id="chat"' in DUNGEON_PAGE
     assert 'id="chtext"' in DUNGEON_PAGE

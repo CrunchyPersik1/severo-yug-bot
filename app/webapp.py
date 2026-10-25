@@ -6963,7 +6963,7 @@ if (TG_INIT){
 }
 
 /* ---------- прогресс героя: живёт в базе, а не во вкладке ---------- */
-let heroLoaded = false, heroBusy = false, heroStamp = "";
+let heroLoaded = false, heroBusy = false, heroStamp = "", HERO_OFFER = null;
 
 function heroSnapshot(){
   return {
@@ -6976,7 +6976,7 @@ function heroSnapshot(){
   };
 }
 
-function heroApply(hero){
+function heroApply(hero, heal){
   if (!hero) return;
   const level = Math.max(1, hero.level | 0);
   stats.lvl = level;
@@ -6987,8 +6987,9 @@ function heroApply(hero){
   if (bag.length) P.bag = bag;
   const weapon = hero.weapon ? weaponById(hero.weapon) : null;
   if (weapon) P.weapon = weapon;
+  HERO_OFFER = hero.upgrade || null;
   P.max = 120 + (level - 1) * 8;        // ровно как даёт повышение уровня
-  P.hp = P.max;
+  if (heal !== false) P.hp = P.max;
 }
 
 async function heroLoad(){
@@ -7022,6 +7023,28 @@ async function heroSave(force){
 }
 
 if (TG_INIT) setInterval(function(){ heroSave(false); }, 5000);
+
+async function heroUpgrade(){
+  const weapon = P.weapon;
+  if (!weapon){ toast("Возьми оружие в руки"); return; }
+  if (!TG_INIT){ toast("Улучшение: открой через бота"); return; }
+  if (!HERO_OFFER){ toast("Дальше улучшать некуда"); return; }
+  if (P.coins < HERO_OFFER.price){
+    toast("Нужно " + HERO_OFFER.price + " монет, есть " + Math.round(P.coins));
+    return;
+  }
+  // Сначала сохраняем монеты, чтобы сервер считал по актуальной сумме.
+  await heroSave(true);
+  const data = await coopApi("/api/dungeon/upgrade", {weapon: weapon.id});
+  if (!data || !data.ok){
+    toast((data && data.error) || "Не вышло улучшить");
+    return;
+  }
+  heroApply(data.hero, false);
+  sync();
+  if (typeof paintInv === "function") paintInv();
+  toast("Оружие улучшено: " + (P.weapon ? P.weapon.name : ""));
+}
 
 const ZONE_H = 1100;
 const ZONES = [
@@ -7893,7 +7916,7 @@ if (bag2) bag2.onclick = () => {
   paintInv();
 };
 const wUpg = document.getElementById("wupg");
-if (wUpg) wUpg.onclick = () => toast("Улучшение оружия — за монеты, в большой версии");
+if (wUpg) wUpg.onclick = () => heroUpgrade();
 const wChat = document.getElementById("wchat");
 if (wChat) wChat.onclick = () => chatOpen();
 const bagClose = document.getElementById("bagclose");
@@ -7957,6 +7980,11 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
     if (e4) e4.textContent = P.weapon.range;
     const e5 = document.getElementById("wspd");
     if (e5) e5.textContent = P.weapon.spd || 1;
+  }
+  const up = document.getElementById("wupg");
+  if (up){
+    up.textContent = HERO_OFFER ? ("УЛУЧШИТЬ · " + HERO_OFFER.price) : "УЛУЧШИТЬ";
+    up.disabled = !HERO_OFFER || P.coins < HERO_OFFER.price;
   }
   const zi = zoneIndex(P.y);
   const zel = document.getElementById("zone");
@@ -8190,4 +8218,22 @@ async def api_dungeon_hero_save(request: Request) -> JSONResponse:
     if repo is None:
         return JSONResponse({"error": "Прогресс ещё не включён"}, status_code=400)
     hero = await repo.save(int(user["id"]), await _json_body(request))
+    return JSONResponse({"ok": True, "hero": hero})
+
+@router.post("/api/dungeon/upgrade")
+async def api_dungeon_upgrade(request: Request) -> JSONResponse:
+    """Улучшить оружие за монеты: цена и списание — на сервере."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Прогресс ещё не включён"}, status_code=400)
+    body = await _json_body(request)
+    try:
+        hero = await repo.upgrade(int(user["id"]), body.get("weapon"))
+    except DungeonError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "hero": hero})

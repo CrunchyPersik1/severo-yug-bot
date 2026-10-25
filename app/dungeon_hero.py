@@ -16,13 +16,17 @@ import re
 import asyncpg
 
 from .db import Database
+from .dungeon_repo import DungeonError
 
 MAX_LEVEL = 999
 MAX_EXP = 1_000_000
 MAX_COINS = 10 ** 12
 MAX_KILLS = 1_000_000
 MAX_BAG = 150          # ровно столько оружий генерирует страница: 3 вида × 10 × 5
-WEAPON_ID = re.compile(r"^(sword|bow|staff)_[0-9]_[0-4]$")
+MAX_TIER = 9           # тиры 0..9, выше улучшать некуда
+WEAPON_ID = re.compile(r"^(sword|bow|staff)_([0-9])_([0-4])$")
+
+UPGRADE_BASE = 200     # цена первого улучшения, дальше растёт квадратично
 
 EMPTY = {
     "level": 1,
@@ -67,8 +71,46 @@ def clean_bag(value: object) -> list[str]:
     return result
 
 
+def parse_weapon(weapon_id: object) -> tuple[str, int, int] | None:
+    """'bow_3_1' → ('bow', 3, 1). Мусор → None."""
+    match = WEAPON_ID.match(str(weapon_id or "").strip())
+    if not match:
+        return None
+    return match.group(1), int(match.group(2)), int(match.group(3))
+
+
+def upgrade_price(weapon_id: object) -> int | None:
+    """Сколько стоит поднять тир. None — если улучшать уже нечего."""
+    parsed = parse_weapon(weapon_id)
+    if parsed is None:
+        return None
+    _, tier, _ = parsed
+    if tier >= MAX_TIER:
+        return None
+    return UPGRADE_BASE * (tier + 1) ** 2
+
+
+def upgraded_id(weapon_id: object) -> str | None:
+    """Тот же вид и вариант, но тиром выше."""
+    parsed = parse_weapon(weapon_id)
+    if parsed is None:
+        return None
+    kind, tier, variant = parsed
+    if tier >= MAX_TIER:
+        return None
+    return "%s_%d_%d" % (kind, tier + 1, variant)
+
+
+def upgrade_offer(weapon_id: object) -> dict | None:
+    """Что предложить кнопкой улучшения для оружия в руках."""
+    price = upgrade_price(weapon_id)
+    target = upgraded_id(weapon_id)
+    if price is None or target is None:
+        return None
+    return {"price": price, "next": target}
+
+
 def sanitize(payload: dict) -> dict:
-    """Приводит присланное клиентом к безопасному виду."""
     bag = clean_bag(payload.get("bag"))
     weapon = clean_weapon(payload.get("weapon"))
     if weapon is None and bag:
@@ -87,8 +129,10 @@ def sanitize(payload: dict) -> dict:
 
 def hero_payload(row: asyncpg.Record | None) -> dict:
     if row is None:
-        return dict(EMPTY)
-    return {
+        payload = dict(EMPTY)
+        payload["upgrade"] = None
+        return payload
+    payload = {
         "level": int(row["level"]),
         "exp": int(row["exp"]),
         "coins": int(row["coins"]),
@@ -96,6 +140,8 @@ def hero_payload(row: asyncpg.Record | None) -> dict:
         "weapon": row["weapon"],
         "bag": clean_bag(row["bag"]),
     }
+    payload["upgrade"] = upgrade_offer(payload["weapon"])
+    return payload
 
 
 class DungeonHeroRepo:
@@ -140,4 +186,46 @@ class DungeonHeroRepo:
                 data["weapon"],
                 json.dumps(data["bag"]),
             )
+        return hero_payload(row)
+
+
+    async def upgrade(self, user_id: int, weapon_id: object) -> dict:
+        """Поднять тир оружия за монеты. Списываем из сохранённого прогресса."""
+        source = str(weapon_id or "").strip()
+        price = upgrade_price(source)
+        target = upgraded_id(source)
+        if price is None or target is None:
+            raise DungeonError("Дальше улучшать некуда")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select * from dungeon_hero where user_id = $1::bigint for update",
+                    int(user_id),
+                )
+                if row is None:
+                    raise DungeonError("Сначала зайди в подземелье")
+                bag = clean_bag(row["bag"])
+                if source not in bag:
+                    raise DungeonError("Этого оружия нет в сумке")
+                if int(row["coins"]) < price:
+                    raise DungeonError(
+                        "Не хватает монет: нужно %d, есть %d" % (price, int(row["coins"]))
+                    )
+                new_bag = [target if item == source else item for item in bag]
+                weapon = target if row["weapon"] == source else row["weapon"]
+                row = await con.fetchrow(
+                    """
+                    update dungeon_hero
+                       set coins = coins - $2::bigint,
+                           bag = $3::jsonb,
+                           weapon = $4::text,
+                           updated_at = now()
+                     where user_id = $1::bigint
+                    returning *
+                    """,
+                    int(user_id),
+                    price,
+                    json.dumps(new_bag),
+                    weapon,
+                )
         return hero_payload(row)

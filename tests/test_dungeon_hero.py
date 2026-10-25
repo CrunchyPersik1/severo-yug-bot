@@ -64,4 +64,34 @@ def test_weapon_falls_back_to_bag_head():
 
 
 def test_payload_of_missing_row():
-    assert hero.hero_payload(None) == hero.EMPTY
+    payload = hero.hero_payload(None)
+    assert payload["level"] == 1 and payload["coins"] == 0
+    assert payload["bag"] == [] and payload["weapon"] is None
+    assert payload["upgrade"] is None
+
+
+def test_upgrade_price_grows_with_tier():
+    assert hero.upgrade_price("sword_0_0") == hero.UPGRADE_BASE
+    assert hero.upgrade_price("sword_1_0") > hero.upgrade_price("sword_0_0")
+    assert hero.upgrade_price("bow_9_0") is None            # максимум
+    assert hero.upgrade_price("мусор") is None
+
+
+def test_upgrade_keeps_kind_and_variant():
+    assert hero.upgraded_id("bow_3_1") == "bow_4_1"
+    assert hero.upgraded_id("staff_0_4") == "staff_1_4"
+    assert hero.upgraded_id("sword_9_0") is None
+    assert hero.upgraded_id(None) is None
+
+
+def test_upgrade_offer_shape():
+    offer = hero.upgrade_offer("staff_3_4")
+    assert offer["next"] == "staff_4_4"
+    assert offer["price"] == hero.upgrade_price("staff_3_4")
+    assert hero.upgrade_offer("staff_9_4") is None
+
+
+def test_parse_weapon():
+    assert hero.parse_weapon("sword_2_3") == ("sword", 2, 3)
+    assert hero.parse_weapon("sword_2") is None
+    assert hero.parse_weapon("nope") is None
