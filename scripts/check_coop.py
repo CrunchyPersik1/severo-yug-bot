@@ -106,7 +106,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from app.config import settings
     from app.db import Database
-    from app.dungeon_presence import DungeonPresenceRepo
+    from app.dungeon_hub import DungeonHub
     from app.dungeon_repo import DungeonBossRepo
     from app.webapp import router as webapp_router
 
@@ -115,13 +115,13 @@ async def main(argv: list[str] | None = None) -> int:
     await db.init_schema()
 
     repo = DungeonBossRepo(db)
-    presence = DungeonPresenceRepo(db)
+    hub = DungeonHub()
     api = FastAPI()
     api.include_router(webapp_router)
     api.state.settings = settings
     api.state.db = db
     api.state.dungeon = repo
-    api.state.presence = presence
+    api.state.hub = hub
 
     config = uvicorn.Config(api, host="127.0.0.1", port=args.port, log_level="error")
     server = uvicorn.Server(config)
@@ -151,10 +151,6 @@ async def main(argv: list[str] | None = None) -> int:
             await con.execute(
                 "delete from dungeon_boss where id not in "
                 "(select boss_id from dungeon_boss_players)"
-            )
-            await con.execute(
-                "delete from dungeon_presence where user_id = any($1::bigint[])",
-                list(TEST_USERS),
             )
             await con.execute(
                 "delete from players where user_id = any($1::bigint[])", list(TEST_USERS)
@@ -288,6 +284,40 @@ async def main(argv: list[str] | None = None) -> int:
         status, far = await call("POST", "/api/dungeon/presence", first, {
             "x": 100, "y": 9000, "zone": 0})
         check("через полкарты не видно", len(far.get("players") or []), 0)
+
+        # Основной транспорт: сокет, 10 тактов в секунду, без базы.
+        import websockets
+
+        ws_url = f"ws://127.0.0.1:{args.port}/ws/dungeon"
+        hub.prune()
+        async with websockets.connect(ws_url) as sock_a, \
+                websockets.connect(ws_url) as sock_b:
+            await sock_a.send(json.dumps({
+                "init": first, "x": 500, "y": 9000, "zone": 0, "facing": 1,
+                "anim": "run", "hp": 120, "max_hp": 120, "weapon": "bow"}))
+            hello = json.loads(await asyncio.wait_for(sock_a.recv(), 10))
+            check("сокет: свой игрок принят", hello.get("ok"), True)
+
+            await sock_b.send(json.dumps({
+                "init": second, "x": 640, "y": 9050, "zone": 0, "facing": 2,
+                "anim": "attack", "hp": 80, "max_hp": 120, "weapon": "sword"}))
+            await asyncio.wait_for(sock_b.recv(), 10)
+
+            await sock_a.send(json.dumps({
+                "init": first, "x": 510, "y": 9010, "zone": 0, "facing": 1,
+                "anim": "run", "hp": 120, "max_hp": 120, "weapon": "bow"}))
+            snapshot = json.loads(await asyncio.wait_for(sock_a.recv(), 10))
+            others = snapshot.get("players") or []
+            check("сокет: видно напарника", len(others), 1)
+            check("сокет: его координаты",
+                  (others[0]["x"], others[0]["y"]) if others else None, (640.0, 9050.0))
+            check("сокет: его анимация", others[0]["anim"] if others else None, "attack")
+
+        async with websockets.connect(ws_url) as sock_x:
+            await sock_x.send(json.dumps({"init": "плохая подпись", "x": 1, "y": 1, "zone": 0}))
+            denied = json.loads(await asyncio.wait_for(sock_x.recv(), 10))
+            check("сокет: без подписи отказ", isinstance(denied.get("error"), str), True)
+        check("сокет: точки не остались в памяти", len(hub), 0)
     finally:
         if not args.keep_rows:
             await wipe()

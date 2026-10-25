@@ -19,7 +19,7 @@ from urllib.parse import parse_qsl
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import buyer
@@ -6701,12 +6701,11 @@ document.getElementById("chit").onclick = coopHit;
 document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
 /* ---------- живые игроки на карте ---------- */
-// Своего WebSocket нет: раз в 0.6 секунды отправляем свою позицию и
-// получаем чужие. Так видно, как другие ходят и дерутся.
+// Основной транспорт — WebSocket: 10 тактов в секунду, база не участвует.
+// Если сокет не поднялся (прокси, старый WebView) — тихий откат на HTTP.
 const REMOTE = {};
-const PRESENCE_MS = 600;
-let presenceBusy = false, presenceTimer = 0;
 const FACE_ANGLE = [Math.PI / 2, Math.PI, 0, -Math.PI / 2];   // вниз, влево, вправо, вверх
+let WS = null, wsTries = 0, wsOk = false, wsAuth = true, wsLastHttp = 0, presenceBusy = false;
 
 function presencePayload(){
   return {
@@ -6718,32 +6717,74 @@ function presencePayload(){
   };
 }
 
+function applyPlayers(players){
+  const now = performance.now();
+  const alive = {};
+  (players || []).forEach(function(p){
+    const key = String(p.id);
+    alive[key] = 1;
+    let r = REMOTE[key];
+    if (!r) r = REMOTE[key] = {x: p.x, y: p.y, tx: p.x, ty: p.y, seen: now};
+    r.tx = p.x; r.ty = p.y;
+    r.name = p.name; r.facing = p.facing; r.anim = p.anim;
+    r.hp = p.hp; r.max_hp = p.max_hp; r.weapon = p.weapon; r.zone = p.zone;
+    r.seen = now;
+  });
+  Object.keys(REMOTE).forEach(function(key){
+    if (!alive[key] && now - (REMOTE[key].seen || 0) > 4000) delete REMOTE[key];
+  });
+}
+
+function wsSend(){
+  if (!WS || WS.readyState !== 1 || !wsOk) return;
+  const payload = presencePayload();
+  if (wsAuth) payload.init = TG_INIT;      // подпись нужна только в первом кадре
+  try { WS.send(JSON.stringify(payload)); } catch (e){}
+}
+
+function wsStart(){
+  if (!TG_INIT || WS) return;
+  let sock;
+  try {
+    const proto = (location.protocol === "https:") ? "wss://" : "ws://";
+    sock = new WebSocket(proto + location.host + "/ws/dungeon");
+  } catch (e){ return; }
+  WS = sock;
+  sock.onopen = function(){ wsTries = 0; wsOk = true; wsAuth = true; wsSend(); };
+  sock.onmessage = function(ev){
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch (e){ return; }
+    if (!data) return;
+    if (data.error){ wsOk = false; try { sock.close(); } catch (e){} return; }
+    wsAuth = false;
+    applyPlayers(data.players);
+  };
+  sock.onclose = function(){
+    wsOk = false;
+    if (WS === sock) WS = null;
+    wsTries = Math.min(6, wsTries + 1);
+    setTimeout(wsStart, 500 * wsTries);        // 0.5, 1, 1.5 ... 3 с
+  };
+  sock.onerror = function(){ try { sock.close(); } catch (e){} };
+}
+
 async function presenceTick(){
   if (!TG_INIT || presenceBusy || COOP.open || inBattle) return;
-  if (document.hidden) return;
   presenceBusy = true;
   try {
     const data = await coopApi("/api/dungeon/presence", presencePayload());
-    if (!data || !data.ok || !data.players) return;
-    const now = performance.now();
-    const alive = {};
-    data.players.forEach(function(p){
-      const key = String(p.id);
-      alive[key] = 1;
-      let r = REMOTE[key];
-      if (!r) r = REMOTE[key] = {x: p.x, y: p.y, tx: p.x, ty: p.y, seen: now};
-      r.tx = p.x; r.ty = p.y;
-      r.name = p.name; r.facing = p.facing; r.anim = p.anim;
-      r.hp = p.hp; r.max_hp = p.max_hp; r.weapon = p.weapon; r.zone = p.zone;
-      r.seen = now;
-    });
-    Object.keys(REMOTE).forEach(function(key){
-      if (!alive[key] && now - (REMOTE[key].seen || 0) > 3000) delete REMOTE[key];
-    });
+    if (data && data.ok) applyPlayers(data.players);
   } catch (e){
   } finally {
     presenceBusy = false;
   }
+}
+
+function presenceLoop(){
+  if (!TG_INIT || COOP.open || inBattle || document.hidden) return;
+  if (WS && WS.readyState === 1 && wsOk){ wsSend(); return; }
+  const now = performance.now();
+  if (now - wsLastHttp > 600){ wsLastHttp = now; presenceTick(); }
 }
 
 function remoteTick(dt){
@@ -6798,7 +6839,10 @@ function drawRemote(r, t){
   ctx.fillText(String(r.name || "Игрок").slice(0, 12), x, y - 58);
 }
 
-if (TG_INIT) presenceTimer = setInterval(presenceTick, PRESENCE_MS);
+if (TG_INIT){
+  wsStart();
+  setInterval(presenceLoop, 100);
+}
 
 const ZONE_H = 1100;
 const ZONES = [
@@ -7845,19 +7889,71 @@ async def api_dungeon_boss_start(request: Request) -> JSONResponse:
 
 @router.post("/api/dungeon/presence")
 async def api_dungeon_presence(request: Request) -> JSONResponse:
-    """Своя позиция на карте плюс чужие — так игроки видят друг друга."""
+    """Запасной путь без сокета: своя точка на карте и чужие в ответ.
+
+    Основной транспорт — /ws/dungeon: там 10 тактов в секунду и никакой
+    базы. Здесь то же самое, но по HTTP, если сокет не поднялся.
+    """
     state = request.app.state
     try:
         user = await _player(request)
     except ShopError as error:
         return JSONResponse({"error": str(error)}, status_code=401)
 
-    repo = getattr(state, "presence", None)
-    if repo is None:
+    hub = getattr(state, "hub", None)
+    if hub is None:
         return JSONResponse({"error": "Карта ещё не включена"}, status_code=400)
-    body = await _json_body(request)
+    user_id = int(user["id"])
+    name = str(user.get("first_name") or user.get("username") or "Игрок")
+    hub.touch(user_id, name, await _json_body(request))
+    hub.prune()
+    return JSONResponse({"ok": True, "players": hub.snapshot(user_id)})
+
+
+@router.websocket("/ws/dungeon")
+async def ws_dungeon(websocket: WebSocket) -> None:
+    """Живая карта по сокету: 10 тактов в секунду, база не участвует.
+
+    Первое сообщение несёт подпись initData — по ней и пускаем. Дальше в
+    каждом сообщении своя позиция, в ответ — чужие точки рядом.
+    """
+    state = websocket.app.state
+    hub = getattr(state, "hub", None)
+    if hub is None:
+        await websocket.close(code=1011)
+        return
+    await websocket.accept()
+    user_id = 0
+    name = "Игрок"
     try:
-        players = await repo.touch(int(user["id"]), body, datetime.now(timezone.utc))
-    except DungeonError as error:
-        return JSONResponse({"error": str(error)}, status_code=400)
-    return JSONResponse({"ok": True, "players": players})
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(data, dict):
+                continue
+            if not user_id:
+                found = check_init_data(
+                    str(data.get("init") or ""), state.settings.bot_token
+                )
+                if not found or not found.get("id"):
+                    await websocket.send_json({"error": "Открой карту через бота"})
+                    await websocket.close(code=1008)
+                    return
+                user_id = int(found["id"])
+                name = str(found.get("first_name") or found.get("username") or "Игрок")
+                with contextlib.suppress(Exception):
+                    await state.db.ensure_player(
+                        user_id, found.get("username"), found.get("first_name")
+                    )
+            hub.touch(user_id, name, data)
+            await websocket.send_json({"ok": True, "players": hub.snapshot(user_id)})
+    except WebSocketDisconnect:
+        pass
+    except Exception:  # noqa: BLE001 - сокет мог отвалиться на любом шаге
+        log.debug("Сокет карты упал", exc_info=True)
+    finally:
+        if user_id:
+            hub.drop(user_id)

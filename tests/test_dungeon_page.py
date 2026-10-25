@@ -88,7 +88,9 @@ def test_hint_when_opened_outside_bot():
 
 def test_live_players_on_map():
     """Другие игроки видны в реальном времени, заглушек OFFLINE больше нет."""
-    assert "/api/dungeon/presence" in DUNGEON_PAGE
+    assert "/ws/dungeon" in DUNGEON_PAGE            # основной транспорт
+    assert "function wsStart(" in DUNGEON_PAGE
+    assert "/api/dungeon/presence" in DUNGEON_PAGE   # запасной путь
     assert "function drawRemote(" in DUNGEON_PAGE
     assert "const REMOTE = {}" in DUNGEON_PAGE
     assert "remoteTick(dt)" in DUNGEON_PAGE
