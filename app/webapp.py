@@ -5800,13 +5800,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;
 </div>
 
 <div class="cls" id="cls">
-  <h1>Выбери класс</h1>
-  <button class="c" data-cls="sword"><b>⚔ Мечник</b>
-    <span>Много HP, бьёт вблизи. Способность: рывок с уроном.</span></button>
-  <button class="c" data-cls="bow"><b>🏹 Лучник</b>
-    <span>Дальний бой, слабее в ближнем. Способность: залп.</span></button>
-  <button class="c" data-cls="mage"><b>✨ Маг</b>
-    <span>Мало HP, сильная способность бьёт по площади.</span></button>
+  <h1>Подземелье Тимура</h1>
+  <div style="font-size:12px;color:#8b93a7;max-width:360px;text-align:center;
+    line-height:1.5">Класс не выбирается. Он зависит от того, что у тебя в руках:
+    меч — мечник, лук — лучник, посох — маг.</div>
+  <div id="inv" style="width:100%;max-width:360px;max-height:46vh;overflow:auto"></div>
+  <button class="c" id="startbtn" style="text-align:center;border-color:#3b6fff">
+    <b>Войти в подземелье</b></button>
 </div>
 
 <div id="battle">
@@ -5838,8 +5838,38 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e14;
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const WORLD = {w: 1800, h: 1400};
-let P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, dmg: 14, coins: 0,
-         cls: "sword", atkCd: 0, shCd: 0, abCd: 0, shield: 0, dir: 0};
+let P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, coins: 0,
+         weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0,
+         shield: 0, dir: 0};
+const WEAPONS = (function(){
+  var kinds = [
+    {k: "sword", n: "Меч", range: 82, cls: "мечник"},
+    {k: "bow", n: "Лук", range: 150, cls: "лучник"},
+    {k: "staff", n: "Посох", range: 125, cls: "маг"}
+  ];
+  var tierName = ["Ржавый", "Простой", "Крепкий", "Стальной", "Клёпаный",
+                  "Закалённый", "Рунный", "Драконий", "Небесный", "Бездонный"];
+  var list = [];
+  kinds.forEach(function(kd){
+    for (var t = 0; t < 10; t++){
+      for (var v = 0; v < 5; v++){
+        var power = (1 + t * 0.9) * (1 + v * 0.12);
+        list.push({
+          id: kd.k + "_" + t + "_" + v,
+          name: tierName[t] + " " + kd.n + " " + (v + 1),
+          kind: kd.k,
+          cls: kd.cls,
+          range: kd.range + t * 3,
+          dmg: Math.round((kd.k === "bow" ? 8 : kd.k === "staff" ? 10 : 12) * power),
+          spd: +(1.0 - t * 0.015).toFixed(3),
+          tier: t
+        });
+      }
+    }
+  });
+  return list;
+})();
+function weaponById(id){ return WEAPONS.filter(function(w){ return w.id === id; })[0]; }
 let cam = {x: 0, y: 0};
 let mobs = [], hits = [], drop = [];
 let boss = {x: WORLD.w * 0.78, y: WORLD.h * 0.26, r: 70, t: 0, active: false};
@@ -5866,11 +5896,11 @@ function spawnNpcs(n){
     npcs.push({x: 120 + i * 46, y: 120, name: "OFFLINE"});
   }
 }
-function reset(cls){
-  P = {x: WORLD.w / 2, y: WORLD.h / 2, hp: 120, max: 120, dmg: 14, coins: P.coins,
-       cls: cls, atkCd: 0, shCd: 0, abCd: 0, shield: 0, dir: 0};
-  if (cls === "bow"){ P.max = 95; P.hp = 95; P.dmg = 11; }
-  if (cls === "mage"){ P.max = 80; P.hp = 80; P.dmg = 13; }
+function reset(){
+  P.x = WORLD.w / 2; P.y = WORLD.h / 2;
+  P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0;
+  if (!P.weapon) P.weapon = WEAPONS[2];
+  if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
   spawnMobs(9); spawnNpcs(6);
 }
 /* ---------- ввод ---------- */
@@ -5905,9 +5935,9 @@ addEventListener("pointercancel", joyEnd);
 /* ---------- бой на карте ---------- */
 function attack(){
   if (P.atkCd > 0 || inBattle) return;
-  const range = P.cls === "bow" ? 150 : P.cls === "mage" ? 120 : 78;
-  const dmg = P.cls === "mage" ? P.dmg * 1.15 : P.dmg;
-  P.atkCd = P.cls === "bow" ? 0.7 : 0.45;
+  const w = P.weapon;
+  const range = w.range, dmg = w.dmg;
+  P.atkCd = w.kind === "bow" ? 0.7 * w.spd : 0.45 * w.spd;
   let hitAny = false;
   mobs.forEach(m => {
     const d = Math.hypot(m.x - P.x, m.y - P.y);
@@ -5927,8 +5957,10 @@ function killMob(m){
   if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.dmg += 2; P.max += 8; P.hp = P.max;
     toast("Уровень " + stats.lvl + "! Урон и HP выросли"); }
   if (Math.random() < 0.22){
+    const loot = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+    if (P.bag.indexOf(loot.id) < 0) P.bag.push(loot.id);
     drop.push({x: m.x, y: m.y, kind: "weapon", t: 6});
-    toast("Выпало оружие!");
+    toast("Выпало: " + loot.name);
   }
   if (mobs.length < 4) spawnMobs(2);
   sync();
@@ -6147,11 +6179,27 @@ function render(){
   void h; void dtFix;
 }
 let dtFix = 0;
-document.querySelectorAll("#cls [data-cls]").forEach(b => b.onclick = () => {
-  reset(b.dataset.cls);
+function paintInv(){
+  const box = document.getElementById("inv");
+  box.innerHTML = P.bag.map(id => {
+    const w = weaponById(id);
+    const on = P.weapon && P.weapon.id === id;
+    return '<div class="c" data-eq="' + id + '" style="margin-bottom:8px;' +
+      'border-color:' + (on ? "#3b6fff" : "#2a3346") + '">' +
+      '<b>' + w.name + '</b><span>' + w.cls + ' · урон ' + w.dmg +
+      ' · дальность ' + w.range + (on ? ' · В РУКАХ' : '') + '</span></div>';
+  }).join("");
+  box.querySelectorAll("[data-eq]").forEach(el => el.onclick = () => {
+    P.weapon = weaponById(el.dataset.eq);
+    paintInv(); toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
+  });
+}
+paintInv();
+document.getElementById("startbtn").onclick = () => {
+  reset();
   document.getElementById("cls").style.display = "none";
-  toast("Класс выбран. Ищи работу — мобы сами не убьются");
-});
+  toast("Ты в подземелье. Фарми мобов");
+};
 document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll(".top [data-tab]").forEach(x => x.className = x === b ? "on" : "");
   if (b.dataset.tab !== "dungeon") toast("Этот раздел — заглушка прототипа");
