@@ -3368,7 +3368,73 @@ async def api_yugi(request: Request) -> JSONResponse:
         state, user_id = await _yugi_ready(request)
     except ShopError as error:
         return JSONResponse({"error": str(error)}, status_code=401)
-    return JSONResponse(_yugi_payload(await state.db.yugi_load(user_id)))
+    payload = _yugi_payload(await state.db.yugi_load(user_id))
+    payload["chips"] = int(await state.db.yugi_chips_count(user_id))
+    tree = await state.db.yugi_tree(user_id)
+    payload["tree"] = tree
+    payload["tree_pool"] = [
+        {
+            "id": t["id"],
+            "name": t["name"],
+            "emoji": t["emoji"],
+            "cost": t["cost"],
+            "pct": t.get("pct", 0),
+            "group": t.get("group", ""),
+            "owned": t["id"] in tree,
+        }
+        for t in yugi.TREE
+    ]
+    payload["upgrades_pool"] = [
+        {
+            "id": u["id"],
+            "name": u["name"],
+            "emoji": u["emoji"],
+            "cost": u["cost"],
+            "note": u.get("note", ""),
+            "owned": u["id"] in payload.get("upgrades", []),
+        }
+        for u in yugi.UPGRADES
+    ]
+    payload["golden"] = await state.db.yugi_golden_tick(user_id)
+    return JSONResponse(payload)
+
+
+@router.post("/api/yugi/ascend")
+async def api_yugi_ascend(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    res = await state.db.yugi_ascend(user_id)
+    if res is None:
+        return JSONResponse({"error": "Нужно больше Югов за всё время"}, status_code=400)
+    return JSONResponse({"ok": True, **res})
+
+
+@router.post("/api/yugi/tree")
+async def api_yugi_tree(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    body = await request.json()
+    node = str(body.get("id", ""))
+    spent = await state.db.yugi_buy_tree(user_id, node)
+    if spent is None:
+        return JSONResponse({"error": "Не хватает фишек"}, status_code=400)
+    return JSONResponse({"ok": True, "spent": spent})
+
+
+@router.post("/api/yugi/golden")
+async def api_yugi_golden(request: Request) -> JSONResponse:
+    try:
+        state, user_id = await _yugi_ready(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    res = await state.db.yugi_golden_catch(user_id)
+    if res is None:
+        return JSONResponse({"error": "Печенька уже улетела"}, status_code=400)
+    return JSONResponse({"ok": True, **res})
 
 
 @router.post("/api/yugi/tap")

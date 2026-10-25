@@ -529,6 +529,13 @@ class Database:
                 )
                 return {"kind": "lucky", "bonus": bonus}
 
+    async def yugi_chips_count(self, user_id: int) -> int:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select yugi_chips from players where user_id = $1", user_id
+            )
+        return int(value or 0)
+
     async def yugi_tree(self, user_id: int) -> list[str]:
         async with self._p().acquire() as con:
             raw = await con.fetchval("select yugi_tree from players where user_id = $1", user_id)
