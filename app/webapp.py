@@ -5814,6 +5814,8 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   </div>
 </div>
 <div class="coins">🪙 <span id="coins">0</span></div>
+<div id="zone" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);
+  z-index:9;font-size:8px;color:#d8b45a;text-shadow:0 2px 6px #000;pointer-events:none">…</div>
 <button id="bagbtn" style="position:fixed;top:92px;left:12px;z-index:25;
   background:#161020dd;border:2px solid #3a2a4a;color:#cbb9d6;border-radius:8px;
   padding:8px 12px;font-family:inherit;font-size:10px">🎒 СУМКА</button>
@@ -5873,7 +5875,22 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 <div id="toast"></div>
 <script>
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-const WORLD = {w: 900, h: 1600};          // портрет 9:16
+const ZONE_H = 1600;
+const ZONES = [
+  {n: "Опушка",         g: "#3f5c26", a: "#6a9a42", mob: 1.0,  sky: "#1a2410"},
+  {n: "Дубовая роща",   g: "#37521f", a: "#5c8a38", mob: 1.3,  sky: "#16200e"},
+  {n: "Болото",         g: "#2e4426", a: "#4a7040", mob: 1.7,  sky: "#121a12"},
+  {n: "Каменный перевал", g: "#3a3a42", a: "#5e5e6e", mob: 2.2, sky: "#15151c"},
+  {n: "Пепельный лес",  g: "#3e3128", a: "#6a5340", mob: 2.8,  sky: "#1a1410"},
+  {n: "Костяные поля",  g: "#43423a", a: "#6e6c5c", mob: 3.4,  sky: "#1b1a16"},
+  {n: "Багровые шахты", g: "#4a2424", a: "#7a3a3a", mob: 4.1,  sky: "#1e0e0e"},
+  {n: "Ледяные залы",   g: "#2a3a4a", a: "#4a6a8a", mob: 4.9,  sky: "#101820"},
+  {n: "Тёмный алтарь",  g: "#2e2238", a: "#4e3a62", mob: 5.8,  sky: "#150f1c"},
+  {n: "Бездна",         g: "#1a0f14", a: "#3a1a24", mob: 7.0,  sky: "#0a0508"}
+];
+const WORLD = {w: 900, h: ZONE_H * ZONES.length};
+function zoneAt(y){ return ZONES[Math.max(0, Math.min(ZONES.length - 1, Math.floor(y / ZONE_H)))]; }
+function zoneIndex(y){ return Math.max(0, Math.min(ZONES.length - 1, Math.floor(y / ZONE_H))); }
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -5953,7 +5970,12 @@ const WEAPONS = (function(){
 function weaponById(id){ return WEAPONS.filter(function(w){ return w.id === id; })[0]; }
 let cam = {x: 0, y: 0};
 let mobs = [], hits = [], drop = [];
-let boss = {x: WORLD.w / 2 + Math.sin(5) * 90, y: 160, r: 66, t: 0, active: false};
+let bosses = [];
+for (let i = 0; i < ZONES.length; i++){
+  bosses.push({x: WORLD.w / 2 - 180, y: i * ZONE_H + 520, r: 60, t: 0, zone: i, idx: 0});
+  bosses.push({x: WORLD.w / 2 + 180, y: i * ZONE_H + 1180, r: 60, t: 0, zone: i, idx: 1});
+}
+let boss = bosses[0];
 let npcs = [], stats = {kills: 0, lvl: 1, exp: 0};
 let inBattle = false;
 
@@ -5988,7 +6010,8 @@ function spawnOne(){
   else { x = WORLD.w - 70; y = rnd(80, WORLD.h - 80); }
   const pool = Math.min(MOB_TYPES.length, 1 + Math.floor(stats.lvl / 2));
   const type = MOB_TYPES[Math.floor(Math.random() * pool)];
-  const grow = 1 + (stats.lvl - 1) * 0.18;
+  const zy = (typeof y === "number") ? y : WORLD.h - 80;
+  const grow = (1 + (stats.lvl - 1) * 0.18) * zoneAt(zy).mob;
   mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
              sp: type.sp, dmg: type.dmg, c: type.c, sz: type.sz, nm: type.n,
              t: rnd(0, 6), hit: 0});
@@ -6114,8 +6137,10 @@ document.getElementById("ability").onclick = ability;
 let B = null;
 function startBattle(){
   inBattle = true;
-  B = {hp: 600, max: 600, name: "Тимур, страж подземелья", atk: 16,
-       cd: 0, pcd: 0};
+  const zb = boss ? ZONES[boss.zone] : ZONES[0];
+  const power = zb.mob;
+  B = {hp: Math.round(600 * power), max: Math.round(600 * power),
+       name: "Босс · " + zb.n, atk: 16 * power, cd: 0, pcd: 0};
   document.getElementById("battle").classList.add("on");
   document.getElementById("ename").textContent = B.name;
   drawFighters();
@@ -6338,18 +6363,28 @@ function loop(now){
     return d.t > 0;
   });
 
-  // зона босса
-  const db = Math.hypot(P.x - boss.x, P.y - boss.y);
-  if (db < boss.r && len < 0.08){
-    boss.t += dt;
-    if (boss.t >= 5 && !inBattle){ startBattle(); }
-  } else if (db > boss.r + 20) boss.t = 0;
+  // зоны боссов
+  bosses.forEach(function(bs){
+    if (Math.abs(bs.y - P.y) > 900) return;
+    ctx.beginPath(); ctx.arc(bs.x, bs.y, bs.r, 0, 7);
+    ctx.fillStyle = bs.t > 0 ? "rgba(226,70,70,.22)" : "rgba(226,70,70,.10)"; ctx.fill();
+    ctx.strokeStyle = "#e24646"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = "#ffb4b4"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("БОСС " + (bs.idx + 1) + " · " + ZONES[bs.zone].n, bs.x, bs.y - 8);
+    if (bs.t > 0){
+      ctx.fillStyle = "#fff"; ctx.font = "900 22px ui-monospace,monospace";
+      ctx.fillText(Math.ceil(5 - bs.t), bs.x, bs.y + 30);
+    }
+  });
 
   render(dt);
   document.getElementById("hpfill").style.width = Math.max(0, P.hp / P.max * 100) + "%";
   document.getElementById("hptxt").textContent =
     "HP " + Math.round(P.hp) + " / " + P.max + "  ·  ур. " + stats.lvl;
   document.getElementById("coins").textContent = P.coins;
+  const zi = zoneIndex(P.y);
+  const zel = document.getElementById("zone");
+  if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n;
   ["attack", "shield", "ability"].forEach(k => {
     const el = document.getElementById(k);
     const cd = k === "attack" ? P.atkCd : k === "shield" ? P.dashCd : P.abCd;
@@ -6373,7 +6408,7 @@ function render(){
   ctx.fillStyle = "#16210f"; ctx.fillRect(0, 0, WORLD.w, WORLD.h);
   for (let y = 0; y < WORLD.h; y += 64){
     for (let x = 0; x < WORLD.w; x += 64){
-      ctx.fillStyle = "#3a5a24"; ctx.fillRect(x, y, 64, 64);
+      ctx.fillStyle = zoneAt(y).g; ctx.fillRect(x, y, 64, 64);
 
     }
   }
@@ -6535,7 +6570,10 @@ document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   if (t === "board"){ toast("Лидерборд — заглушка"); return; }
   if (t === "settings"){ toast("Настройки — заглушка"); return; }
 });
-function sync(){ document.getElementById("coins").textContent = P.coins; }
+function sync(){ document.getElementById("coins").textContent = P.coins;
+  const zi = zoneIndex(P.y);
+  const zel = document.getElementById("zone");
+  if (zel) zel.textContent = "ЛОКАЦИЯ " + (zi + 1) + "/10 · " + ZONES[zi].n; }
 requestAnimationFrame(loop);
 </script>
 </body>
