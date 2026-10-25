@@ -6129,6 +6129,8 @@ function drawFighters(){
 const LPC = {};
 const HEAD = new Image();
 HEAD.src = "/static/lpc_head.png";
+const TORSO = new Image();
+TORSO.src = "/static/lpc_torso.png";
 const KENNEY = new Image();
 KENNEY.src = "/static/kenney.png";
 function drawTile(t, x, y, size, bob){
@@ -6151,12 +6153,29 @@ function faceRow(face){                    // LPC: 0 вверх, 1 влево, 2
 }
 let animT = 0;
 function drawHero(x, y, attacking){
-  const bob = attacking ? -3 : (P.moving ? Math.sin(animT * 9) * 1.5 : 0);
+  const fw = 64, fh = 64;
+  const row = faceRow(P.facing || 0);
+  const dx = x - 32, dy = y - 54;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = 0.25;
-  ctx.fillStyle = "#000"; ctx.fillRect(x - 13, y + 2, 26, 6);
+  ctx.fillStyle = "#000"; ctx.fillRect(x - 14, y + 2, 28, 6);
   ctx.globalAlpha = 1;
-  if (drawTile([1, 6], x, y, 40, bob)) return;
-  person(x, y, "#4a9eff");
+  ctx.translate(dx, dy + (P.moving ? Math.sin(animT * 9) * 1.2 : 0));
+  const base = LPC[attacking ? "slash" : (P.dashT > 0 ? "run" : "walk")];
+  const frames = attacking ? 6 : (P.dashT > 0 ? 8 : 9);
+  const col = Math.floor(animT * (attacking ? 14 : 10)) % frames;
+  if (base && base.complete && base.naturalWidth){
+    ctx.drawImage(base, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
+  }
+  const wcol = Math.floor(animT * 10) % 9;
+  if (TORSO.complete && TORSO.naturalWidth){
+    ctx.drawImage(TORSO, wcol * fw, row * fh, fw, fh, 0, 0, fw, fh);
+  }
+  if (HEAD.complete && HEAD.naturalWidth){
+    ctx.drawImage(HEAD, wcol * fw, row * fh, fw, fh, 0, 0, fw, fh);
+  }
+  ctx.restore();
 }
 function person(x, y, color, label, alpha, walk){
   ctx.globalAlpha = alpha == null ? 1 : alpha;
