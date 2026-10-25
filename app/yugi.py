@@ -139,8 +139,12 @@ def tap_power(upgrades: list[str]) -> float:
     return power
 
 
-def per_second(buildings: dict[str, Any], upgrades: list[str]) -> float:
-    """Доход в секунду: производство зданий × их апгрейды × общие."""
+def per_second(
+    buildings: dict[str, Any],
+    upgrades: list[str],
+    tree: list[str] | None = None,
+) -> float:
+    """Доход в секунду: здания × их апгрейды × общие × древо."""
     per_building: dict[str, float] = {}
     common = 1.0
     for upgrade_id in upgrades:
@@ -164,7 +168,19 @@ def per_second(buildings: dict[str, Any], upgrades: list[str]) -> float:
             * int(count or 0)
             * per_building.get(str(building_id), 1.0)
         )
-    return total * common
+    tree_b, tree_common = tree_bonus(tree or [])
+    total = 0.0
+    for building_id, count in buildings.items():
+        spec = BUILDINGS_BY_ID.get(str(building_id))
+        if spec is None:
+            continue
+        total += (
+            float(spec["prod"])
+            * int(count or 0)
+            * per_building.get(str(building_id), 1.0)
+            * tree_b.get(str(building_id), 1.0)
+        )
+    return total * common * tree_common
 
 
 def left_to_earn(total: float) -> float:
@@ -194,3 +210,81 @@ def daily_report(state: dict[str, Any]) -> str:
     return (
         f"Югов: {fmt(state['balance'])} · в секунду: {fmt(state['per_second'])}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Древо престижа: покупается за фишки, переживает вознесение
+# --------------------------------------------------------------------------- #
+
+_TREE_PCT = (10, 25, 50, 100, 200, 500)
+_TREE_COST = (1, 2, 4, 8, 16, 32)
+
+TREE: tuple[dict[str, Any], ...] = tuple(
+    {
+        "id": "t_" + b["id"] + "_" + str(i),
+        "name": b["name"] + " +" + str(_TREE_PCT[i]) + "%",
+        "emoji": b["emoji"],
+        "cost": _TREE_COST[i],
+        "building": b["id"],
+        "pct": _TREE_PCT[i],
+        "group": b["name"],
+    }
+    for b in BUILDINGS
+    for i in range(6)
+) + tuple(
+    {
+        "id": "tg" + str(i),
+        "name": g[0],
+        "emoji": g[1],
+        "cost": g[2],
+        "pct": g[3],
+        "group": "Общее",
+    }
+    for i, g in enumerate(
+        (
+            ("Клик +50%", "👆", 2, 0),
+            ("Клик +100%", "👆", 5, 0),
+            ("Клик ×2", "👆", 14, 0),
+            ("Золотые чаще", "🍪", 3, 0),
+            ("Золотые чаще II", "🍪", 9, 0),
+            ("Старт: 10 курсоров", "🎁", 6, 0),
+            ("Старт: 25 курсоров", "🎁", 20, 0),
+            ("+10% ко всему", "🌟", 4, 10),
+            ("+25% ко всему", "🌟", 12, 25),
+            ("+50% ко всему", "🌟", 30, 50),
+            ("+100% ко всему", "🌟", 70, 100),
+            ("Фишек +10%", "💠", 15, 0),
+            ("Фишек +25%", "💠", 45, 0),
+            ("Производство ×1.5", "⚡", 25, 0),
+            ("Производство ×2", "⚡", 90, 0),
+            ("Достижения ×2", "🏆", 18, 0),
+            ("Вознесение мягче", "🌀", 22, 0),
+            ("Молоко +50%", "🥛", 8, 0),
+            ("Улицы ярче", "✨", 1, 0),
+            ("Частицы гуще", "✨", 1, 0),
+        )
+    )
+)
+TREE_BY_ID: dict[str, dict[str, Any]] = {t["id"]: t for t in TREE}
+
+
+def tree_bonus(tree: list[str]) -> tuple[dict[str, float], float]:
+    """Множители древа: по зданию и общий."""
+    per_building: dict[str, float] = {}
+    common = 1.0
+    for node_id in tree:
+        spec = TREE_BY_ID.get(str(node_id))
+        if spec is None:
+            continue
+        pct = float(spec.get("pct") or 0)
+        target = spec.get("building")
+        if target:
+            per_building[target] = per_building.get(target, 1.0) * (1.0 + pct / 100.0)
+        elif pct:
+            common *= 1.0 + pct / 100.0
+    return per_building, common
+
+
+def ascend_chips(total: float, mult: float = 1.0) -> int:
+    """Сколько фишек даст вознесение: корень кубический из (всего / 1e6)."""
+    return int((max(0.0, float(total)) / 1_000_000.0) ** (1.0 / 3.0) * float(mult))

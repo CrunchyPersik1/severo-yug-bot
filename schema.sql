@@ -674,3 +674,5 @@ create table if not exists yugi_upgrades (
 
 alter table players add column if not exists yugi_chips integer not null default 0;
 alter table players add column if not exists yugi_resets integer not null default 0;
+
+alter table players add column if not exists yugi_tree jsonb not null default '[]'::jsonb;

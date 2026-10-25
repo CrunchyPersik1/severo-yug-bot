@@ -451,6 +451,82 @@ class Database:
     # Кликер: здания
     # ------------------------------------------------------------------ #
 
+    async def yugi_tree(self, user_id: int) -> list[str]:
+        async with self._p().acquire() as con:
+            raw = await con.fetchval("select yugi_tree from players where user_id = $1", user_id)
+        import json
+
+        return [str(x) for x in (json.loads(raw) if isinstance(raw, str) else list(raw or []))]
+
+    async def yugi_ascend(self, user_id: int) -> dict[str, int] | None:
+        """Вознесение: фишки за прожитое, обнуление прогресса."""
+        import json
+
+        from . import yugi as ymod
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select yugi_chips, yugi_resets from players where user_id = $1 for update",
+                    user_id,
+                )
+                total = await con.fetchval(
+                    "select coalesce(total, 0) from yugi where user_id = $1 for update",
+                    user_id,
+                )
+                gain = ymod.ascend_chips(float(total or 0))
+                if gain < 1:
+                    return None
+                chips = int(row["yugi_chips"] or 0) + gain
+                resets = int(row["yugi_resets"] or 0) + 1
+                await con.execute(
+                    "update players set yugi_chips = $2, yugi_resets = $3 where user_id = $1",
+                    user_id,
+                    chips,
+                    resets,
+                )
+                await con.execute(
+                    "update yugi set balance = 0, total = 0, taps = 0, "
+                    "buildings = '{}'::jsonb, upgrades = '[]'::jsonb where user_id = $1",
+                    user_id,
+                )
+        return {"gain": gain, "chips": chips, "resets": resets}
+
+    async def yugi_buy_tree(self, user_id: int, node_id: str) -> int | None:
+        """Покупка узла древа за фишки. None — нет фишек или уже куплен."""
+        import json
+
+        from . import yugi as ymod
+
+        spec = ymod.TREE_BY_ID.get(node_id)
+        if spec is None:
+            return None
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select yugi_chips, yugi_tree from players where user_id = $1 for update",
+                    user_id,
+                )
+                if row is None:
+                    return None
+                raw = row["yugi_tree"]
+                tree = json.loads(raw) if isinstance(raw, str) else list(raw or [])
+                if node_id in [str(x) for x in tree]:
+                    return None
+                cost = int(spec["cost"])
+                chips = int(row["yugi_chips"] or 0)
+                if chips < cost:
+                    return None
+                tree.append(node_id)
+                await con.execute(
+                    "update players set yugi_chips = yugi_chips - $2, yugi_tree = $3::jsonb "
+                    "where user_id = $1",
+                    user_id,
+                    cost,
+                    json.dumps(tree),
+                )
+        return cost
+
     async def yugi_buy_upgrade(self, user_id: int, upgrade_id: str) -> int | None:
         """Покупка апгрейда за Юги. None — нет денег, уже куплен или не дорос."""
         import json
