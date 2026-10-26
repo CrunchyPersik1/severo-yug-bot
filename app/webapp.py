@@ -6193,6 +6193,17 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   image-rendering:pixelated}
 .top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
   background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
+.top.bar{top:0;align-items:center;gap:8px;padding:7px 10px;z-index:12}
+.top2{position:fixed;top:50px;left:0;right:0;display:flex;align-items:center;
+  justify-content:space-between;gap:8px;padding:0 10px;z-index:12}
+.zlbl{flex:1;text-align:center;font-size:9px;letter-spacing:.6px;color:#d8b45a;
+  text-shadow:0 2px 6px #000;font-family:inherit;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.top2 .grp{display:flex;gap:6px;margin:0}
+.top2 .rbtn{width:38px;height:38px;font-size:15px}
+.top2 .apps{position:static;transform:none;padding:2px;gap:2px}
+.top2 .apps a{padding:5px 7px;font-size:11px;line-height:1}
+.top .coins{position:static;margin-left:auto}
 .top{justify-content:space-between;background:none}
 .top .grp{display:flex;gap:7px}
 .top button{border:0;color:#f0d79a;border-radius:50%;width:46px;height:46px;
@@ -6200,8 +6211,12 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   background:url(/static/ui/btn_yellow.png) center/100% 100% no-repeat;
   filter:drop-shadow(0 3px 6px #000a)}
 .top button:active{transform:translateY(2px)}
-#wpanel{position:fixed;left:8px;right:8px;bottom:8px;display:flex;gap:8px;
-  z-index:10}
+#wpanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);
+  width:min(360px,92vw);display:none;gap:8px;z-index:32;opacity:0;
+  transition:opacity .15s ease,transform .15s ease}
+#wpanel.on{display:flex;opacity:1;transform:translate(-50%,-50%) scale(1)}
+#wback{position:fixed;inset:0;background:#000a;z-index:31;display:none}
+#wback.on{display:block}
 .wcol{flex:1;min-width:0;background:linear-gradient(#2a1c10ee,#140d06ee);border:3px solid #6b4a22;
   border-radius:10px;padding:8px 10px;box-shadow:0 0 0 2px #120c06}
 .wttl{font-size:7px;letter-spacing:1px;color:#c9a227;margin-bottom:5px}
@@ -6408,30 +6423,27 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <canvas id="cv"></canvas>
 <canvas id="fx"></canvas>
 
-<div class="top">
+<div class="top bar">
+  <button class="rbtn" data-tab="clicker" title="В кликер">◀</button>
+  <div class="zlbl" id="zone">ЛОК 1/10 · Опушка</div>
+  <div class="coins">🪙 <span id="coins">0</span></div>
+</div>
+<div class="top2">
+  <nav class="apps">
+    <a href="/yugi" title="Кликер">🍁</a>
+    <a class="on" href="/proto_dungeon" title="Подземелье">🗡</a>
+    <a href="/quests" title="Задания">📜</a>
+  </nav>
   <div class="grp">
-    <button data-tab="clicker" title="В кликер">◀</button>
-    <button data-tab="bag" title="Сумка">🎒</button>
-    <button data-tab="quests" title="Задания">📜</button>
-  </div>
-  <div class="grp">
-    <button data-tab="board" title="Лидерборд">👤</button>
-    <button data-tab="settings" title="Настройки">⚙</button>
+    <button class="rbtn" data-tab="bag" title="Сумка">🎒</button>
+    <button class="rbtn" id="questbtn" title="Квест НПС">🎯</button>
+    <button class="rbtn" data-tab="board" title="Лидеры">👤</button>
+    <button class="rbtn" data-tab="weapon" title="Оружие">⚔</button>
+    <button class="rbtn" data-tab="settings" title="Графика">⚙</button>
   </div>
 </div>
-<nav class="apps">
-  <a href="/yugi">🍁 Кликер</a>
-  <a class="on" href="/proto_dungeon">🗡 Подземелье</a>
-  <a href="/quests">📜 Задания</a>
-</nav>
-<button class="hud" id="questbtn" title="Квест НПС">🎯</button>
-<div class="coins">🪙 <span id="coins">0</span></div>
-<div id="zone" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);
-  z-index:9;font-size:8px;color:#d8b45a;text-shadow:0 2px 6px #000;pointer-events:none">…</div>
-<button id="bagbtn" style="position:fixed;top:92px;left:12px;z-index:25;
-  background:#161020dd;border:2px solid #3a2a4a;color:#cbb9d6;border-radius:8px;
-  padding:8px 12px;font-family:inherit;font-size:10px">🎒 СУМКА</button>
 
+<div id="wback"></div>
 <div id="wpanel">
   <div class="wcol">
     <div class="wttl">ОРУЖИЕ</div>
@@ -7485,6 +7497,10 @@ function chatSend(){
   try { WS.send(JSON.stringify({type: "chat", text: text})); } catch (e){}
 }
 
+document.getElementById("wback").onclick = function(){
+  document.getElementById("wpanel").classList.remove("on");
+  document.getElementById("wback").classList.remove("on");
+};
 document.getElementById("chclose").onclick = chatClose;
 document.getElementById("chsend").onclick = chatSend;
 document.getElementById("chtext").addEventListener("keydown", function(e){
@@ -7594,7 +7610,7 @@ function applyPlayers(players){
     let r = REMOTE[key];
     if (!r) r = REMOTE[key] = {x: p.x, y: p.y, tx: p.x, ty: p.y, seen: now};
     r.tx = p.x; r.ty = p.y;
-    r.name = p.name; r.facing = p.facing; r.anim = p.anim;
+    r.id = p.id; r.name = p.name; r.facing = p.facing; r.anim = p.anim;
     r.hp = p.hp; r.max_hp = p.max_hp; r.weapon = p.weapon; r.zone = p.zone;
     r.seen = now;
   });
@@ -7720,12 +7736,26 @@ function drawRemote(r, t){
   ctx.fillText(String(r.name || "Игрок").slice(0, 12), x, y - 58);
   const bubble = BUBBLES[r.id];
   if (bubble && bubble.until > performance.now()){
-    const label = String(bubble.text || "").slice(0, 26);
-    const width = Math.min(170, ctx.measureText(label).width + 12);
-    ctx.fillStyle = "#0d1016ee";
-    ctx.fillRect(x - width / 2, y - 76, width, 14);
+    const label = String(bubble.text || "").slice(0, 32);
+    ctx.font = "8px 'Press Start 2P',monospace";
+    const width = Math.min(190, ctx.measureText(label).width + 14);
+    const bx = x - width / 2, by = y - 88;
+    ctx.fillStyle = "#0d1016f2";
+    ctx.fillRect(bx, by, width, 16);
+    ctx.strokeStyle = "#6b4a22";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, width, 16);
+    // хвостик к голове
+    ctx.fillStyle = "#0d1016f2";
+    ctx.beginPath();
+    ctx.moveTo(x - 4, by + 16);
+    ctx.lineTo(x + 4, by + 16);
+    ctx.lineTo(x, by + 22);
+    ctx.closePath();
+    ctx.fill();
     ctx.fillStyle = "#ffe9b8";
-    ctx.fillText(label, x, y - 66);
+    ctx.textAlign = "center";
+    ctx.fillText(label, x, by + 11);
   }
 }
 
@@ -7852,7 +7882,18 @@ function zoneIndex(y){
   return Math.max(0, Math.min(ZONES.length - 1, ZONES.length - 1 - raw));
 }
 function zoneAt(y){ return ZONES[zoneIndex(y)]; }
-function zoneReq(y){ return 1 + zoneIndex(y) * 10; }   // 1, 11, 21, 31, ...
+function zoneReq(y){ return 1 + zoneIndex(y) * 25; }   // 1, 26, 51, 76, ...
+function ownZone(lvl){
+  // своя локация по уровню: 1-25 -> 1, 26-50 -> 2 и так далее
+  return Math.min(9, Math.floor((Math.max(1, lvl | 0) - 1) / 25));
+}
+function zoneXpMult(mobZone, lvl){
+  const d = mobZone - ownZone(lvl);
+  if (d === 0) return 1;              // своя локация — полный опыт
+  if (d > 0) return 0.5;              // глубже своей: мобы злее, опыт режем
+  // ниже своей: чем дальше, тем меньше, пол — ровно в 10 раз
+  return Math.max(0.1, Math.pow(0.45, -d));
+}
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -8099,14 +8140,12 @@ function killMob(m){
   const tooStrong = stats.lvl < zr;
   const power = Math.max(1, Math.round(m.max / 30));
   const baseXp = Math.max(8, Math.round(m.max / 6));
-  if (tooStrong){
-    // раньше тут был ноль опыта, и 75 убийств не давали ничего: даём треть
-    P.coins += 1;
-    gainExp(Math.round(baseXp * 0.5));
-    toast("Локация выше твоего уровня: опыт x0.5, нужен ур. " + zr);
-  } else {
-    P.coins += 3 + Math.floor(Math.random() * 5);
-    gainExp(baseXp);
+  const mult = zoneXpMult(zoneIndex(m.y), stats.lvl) * (tooStrong ? 0.5 : 1);
+  P.coins += tooStrong ? 1 : 3 + Math.floor(Math.random() * 5);
+  gainExp(Math.max(1, Math.round(baseXp * mult)));
+  if (mult < 0.9){
+    toast("Опыт x" + mult.toFixed(2) + " — эта локация не твоего уровня (твоя: " +
+          (ownZone(stats.lvl) + 1) + ", нужен ур. " + zr + ")");
   }
   stats.kills += 1;
   if (QUEST && !QUEST.claimed && QUEST.kind === "hunt" &&
@@ -8143,11 +8182,12 @@ function xpPaint(){
   fill.style.width = pct.toFixed(1) + "%";
   const zi = Math.max(0, Math.min(9, zoneIndex(P.y)));
   // сколько мобов ещё нужно — по среднему опыту с моба этой локации
-  let perMob = Math.max(6, Math.round(zoneMobHp(zi) * 0.78 / 6));
-  if (stats.lvl < zoneReq(P.y)) perMob = Math.max(1, Math.round(perMob * 0.5));
+  const mult = zoneXpMult(zi, stats.lvl) * (stats.lvl < zoneReq(P.y) ? 0.5 : 1);
+  const perMob = Math.max(1, Math.round(zoneMobHp(zi) * 0.78 / 6 * mult));
   const left = Math.ceil(Math.max(0, need - stats.exp) / Math.max(1, perMob));
   txt.textContent = "УР. " + stats.lvl + " · " + Math.round(stats.exp) + " / " + need +
-    (left > 0 ? " · ~" + left + " мобов" : " · УРОВЕНЬ ГОТОВ");
+    (left > 0 ? " · ~" + left + " мобов" : " · УРОВЕНЬ ГОТОВ") +
+    (mult < 0.9 ? " · x" + mult.toFixed(2) : "");
 }
 function gainExp(amount){
   stats.exp += Math.max(0, Math.round(amount));
@@ -8833,7 +8873,12 @@ document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   const t = b.dataset.tab;
   if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
   if (t === "clicker"){ location.href = "/yugi"; return; }
-  if (t === "quests"){ toast("Задания — заглушка прототипа"); return; }
+  if (t === "quests"){ location.href = "/quests"; return; }
+  if (t === "weapon"){
+    document.getElementById("wpanel").classList.add("on");
+    document.getElementById("wback").classList.add("on");
+    return;
+  }
   if (t === "board"){ openTop(); return; }
   if (t === "settings"){ openGfx(); return; }
 });
