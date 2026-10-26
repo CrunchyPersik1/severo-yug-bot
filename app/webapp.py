@@ -6217,15 +6217,18 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .wmenu .wname{font-size:12px;color:#ffd98a;font-weight:800;margin-top:5px;
   line-height:1.15;padding-right:26px;word-break:break-word}
 .wmenu .wsub{font-size:9px;color:#c9a227;margin-top:4px}
-.wstats{display:flex;gap:9px;margin-top:6px;flex-wrap:wrap}
-.wmenu .wstat{font-size:9px;color:#c9a227;white-space:nowrap}
-.wmenu .wstat b{color:#ffe9b8;font-size:12px;margin-left:2px}
-.wacts{display:flex;gap:5px;margin-top:8px}
+.wstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:5px}
+.wmenu .wstat{text-align:center;background:#1b1208;border:1px solid #4a3418;
+  border-radius:6px;padding:3px 1px;overflow:hidden}
+.wmenu .wstat b{display:block;color:#ffe9b8;font-size:12px;line-height:1.1}
+.wmenu .wstat span{display:block;font-size:6px;color:#a37f3a;letter-spacing:.4px;
+  text-transform:uppercase;margin-top:1px}
+.wacts{display:flex;gap:5px;margin-top:6px}
 .wacts button{flex:1 1 0;min-width:0;border:2px solid #6b4a22;background:#241708;
-  color:#ffd98a;border-radius:7px;padding:9px 3px;font-family:inherit;font-size:8.5px;
-  font-weight:800;line-height:1;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis}
+  color:#ffd98a;border-radius:7px;padding:8px 2px;font-family:inherit;font-size:9px;
+  font-weight:800;line-height:1;white-space:nowrap;overflow:hidden}
 .wacts button:disabled{opacity:.45}
+.wmenu .wcol{overflow:hidden}
 #warmor{color:#9fd6ff}
 .wmore{position:absolute;right:6px;top:6px;width:20px;height:20px;border:2px solid #6b4a22;
   border-radius:5px;background:#241708;color:#ffd98a;font-size:10px;line-height:1;padding:0}
@@ -6487,14 +6490,14 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   <div class="wcol stats">
     <div class="wttl">СТАТИСТИКА ОРУЖИЯ</div>
     <div class="wstats">
-      <div class="wstat"><span>Урон</span><b id="wdmg">0</b></div>
-      <div class="wstat"><span>Дальн.</span><b id="wrange">0</b></div>
-      <div class="wstat"><span>Скор.</span><b id="wspd">0</b></div>
+      <div class="wstat"><b id="wdmg">0</b><span>урон</span></div>
+      <div class="wstat"><b id="wrange">0</b><span>дальн.</span></div>
+      <div class="wstat"><b id="wspd">0</b><span>скор.</span></div>
     </div>
     <div class="wacts">
-      <button id="warmor">БРОНЯ</button>
-      <button id="wupg">УЛУЧШИТЬ</button>
-      <button id="wchat">ЧАТ</button>
+      <button id="warmor">🛡</button>
+      <button id="wupg">⬆</button>
+      <button id="wchat">💬</button>
     </div>
   </div>
 </div>
@@ -7346,6 +7349,63 @@ function coopUiTick(dt){
   }
 }
 
+/* ---------- НПС-квестовик ---------- */
+// Стоит в первой локации рядом со спавном, здоровается и выдаёт квест.
+const NPC = {
+  name: "Тимур",
+  face: "#c98a4a",
+  met: false,
+  greet: [
+    "Здорово, странник. Слыхал про беду в Болотах?",
+    "Тут неспокойно: твари лезут из глубины, а я один не справлюсь.",
+    "Сделаешь дело — отсыплю монет. Ну что, берёшься?"
+  ],
+  bye: "Возвращайся с победой, я подожду здесь."
+};
+
+function npcSpot(){
+  // стоит в первой локации рядом со спавном: чуть правее базы
+  return {x: WORLD.w / 2 + 78, y: WORLD.h - 248};
+}
+function npcDist(){
+  const spot = npcSpot();
+  return Math.hypot(P.x - spot.x, P.y - spot.y);
+}
+function npcDraw(t){
+  const spot = npcSpot();
+  const x = spot.x, y = spot.y;
+  if (Math.abs(y - P.y) > 900) return;
+  ctx.save();
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = "#000";
+  ctx.fillRect(x - 12, y + 6, 24, 5);
+  ctx.globalAlpha = 1;
+  person(x, y, NPC.face);
+  // посох и шапка, чтобы отличать от мобов
+  ctx.fillStyle = "#8a6a2a";
+  ctx.fillRect(x + 12, y - 26, 3, 30);
+  const bob = Math.sin(t * 2.2) * 2;
+  ctx.font = "bold 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffd98a";
+  ctx.fillText("!", x, y - 40 + bob);
+  ctx.font = "7px 'Press Start 2P',monospace";
+  ctx.fillStyle = "#ffe9b8";
+  ctx.fillText(NPC.name, x, y - 52 + bob);
+  // подсказка, когда рядом
+  if (npcDist() < 110){
+    ctx.fillStyle = "#0d1016ee";
+    ctx.fillRect(x - 34, y - 74, 68, 14);
+    ctx.strokeStyle = "#6b4a22";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 34, y - 74, 68, 14);
+    ctx.fillStyle = "#9df0bd";
+    ctx.font = "7px 'Press Start 2P',monospace";
+    ctx.fillText("ГОВОРИТЬ", x, y - 64);
+  }
+  ctx.restore();
+}
+
 function nearBoss(x, y, pad){
   for (var i = 0; i < bosses.length; i++){
     var bs = bosses[i];
@@ -7374,14 +7434,23 @@ function questProgress(){
 function questPaint(){
   const body = document.getElementById("qbody");
   if (!body) return;
-  if (!QUEST){ body.innerHTML = "<div>НПС отдыхает. Загляни позже.</div>"; return; }
+  const near = npcDist() < 110;
+  if (!QUEST){
+    body.innerHTML = '<div class="qrow"><div class="qface">🧙</div>' +
+      '<div class="qwhat">' + NPC.name + ' молчит.<div class="qzone">' +
+      (near ? "Подойди ближе и окликни его" : "Найди его у спавна в Опушке") +
+      '</div></div></div>';
+    return;
+  }
   const need = QUEST.need || 1;
   const done = Math.min(need, questProgress());
   const left = Math.floor((QUEST.expires_in || 0) / 60);
+  const line = (NPC.greet[(QUEST.hour || 0) % NPC.greet.length]);
   body.innerHTML =
-    '<div class="qrow"><div class="qface">' + (QUEST.kind === "boss" ? "👹" : "🎯") + '</div>' +
-    '<div class="qwhat">' + esc(QUEST.text || "Квест") +
-    '<div class="qzone">локация ' + ((QUEST.zone || 0) + 1) + ' · до смены ' + left + ' мин</div></div></div>' +
+    '<div class="qrow"><div class="qface">🧙</div>' +
+    '<div class="qwhat">' + NPC.name + ': «' + esc(line) + '»' +
+    '<div class="qzone">' + (QUEST.text || "Квест") + ' · до смены ' + left + ' мин</div>' +
+    '</div></div>' +
     '<div class="qbar"><i style="width:' + (done / need * 100) + '%"></i></div>' +
     '<div class="qrew">Сделано ' + done + " / " + need + ' · награда ' + money(QUEST.coins) +
     ' монет и ' + money(QUEST.xp) + ' опыта</div>' +
@@ -7393,11 +7462,13 @@ function questPaint(){
   const take = document.getElementById("qtake");
   if (take) take.onclick = questTake;
 }
+
 async function questLoad(){
   try{
     const r = await coopApi("/api/dungeon/quest");
     if (r && r.quest){ QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0; }
-  }catch(e){}
+    else if (r && r.error){ toast("Квест: " + r.error); }
+  }catch(e){ toast("Квест: нет связи с сервером"); }
   questPaint();
 }
 async function questTake(){
@@ -7416,9 +7487,19 @@ async function questTake(){
 }
 function questOpen(){
   document.getElementById("questpanel").classList.add("on");
-  if (!QUEST) questLoad(); else questPaint();
+  questPaint();
+  if (!QUEST) questLoad();
 }
 document.getElementById("questbtn").onclick = questOpen;
+cv.addEventListener("pointerdown", function(ev){
+  if (npcDist() > 150) return;
+  const rect = cv.getBoundingClientRect();
+  const kx = WORLD.w / rect.width, ky = WORLD.h / rect.height;
+  const wx = cam.x + (ev.clientX - rect.left) * kx;
+  const wy = cam.y + (ev.clientY - rect.top) * ky;
+  const spot = npcSpot();
+  if (Math.hypot(wx - spot.x, wy - spot.y) < 60) questOpen();
+});
 document.getElementById("qclose").onclick = function(){
   document.getElementById("questpanel").classList.remove("on");
 };
@@ -8628,6 +8709,12 @@ function loop(now){
     return d.t > 0;
   });
 
+  // НПС: подошёл впервые — окликает и открывает квест
+  if (!NPC.met && npcDist() < 110){
+    NPC.met = true;
+    toast(NPC.name + ": «" + NPC.greet[0] + "»");
+    questOpen();
+  }
   // сейф-зона: показываем, что тут можно стоять и не отбиваться
   const safeBadge = document.getElementById("safebadge");
   if (safeBadge) safeBadge.classList.toggle("on", inSafeZone(P.x, P.y));
@@ -8844,6 +8931,7 @@ function render(dt){
   });
   // те, кто вышел: спят в углу своей локации
   drawOfflineAll(animT);
+  npcDraw(animT);
   drop.forEach(d => {
     FX.glowAt(d.x, d.y - 4, 60 + Math.sin(animT * 5) * 10, "#f6c94a", 0.8);
     ctx.fillStyle = "#f6c94a"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
@@ -9027,13 +9115,11 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
   xpPaint();
   const armorBtn = document.getElementById("warmor");
   if (armorBtn){
-    armorBtn.textContent = HERO_ARMOR
-      ? ("🛡 " + HERO_ARMOR.price + " Ю")
-      : ("🛡 " + (P.armor || 0) + " МАКС");
+    armorBtn.textContent = HERO_ARMOR ? ("🛡" + HERO_ARMOR.price) : ("🛡" + (P.armor || 0));
   }
   const up = document.getElementById("wupg");
   if (up){
-    up.textContent = HERO_OFFER ? ("⬆ " + HERO_OFFER.price) : "⬆ МАКС";
+    up.textContent = HERO_OFFER ? ("⬆" + HERO_OFFER.price) : "⬆макс";
     up.disabled = !HERO_OFFER || P.coins < HERO_OFFER.price;
   }
   const zi = zoneIndex(P.y);

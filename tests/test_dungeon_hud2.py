@@ -17,8 +17,8 @@ def test_bottom_menu_is_bigger():
     assert ".wmenu .wname{font-size:12px" in DUNGEON_PAGE
     assert ".wacts button{flex:1 1 0;min-width:0" in DUNGEON_PAGE
     # подписи короткие, чтобы влезали в три кнопки
-    assert '("🛡 " + HERO_ARMOR.price + " Ю")' in DUNGEON_PAGE
-    assert '("⬆ " + HERO_OFFER.price)' in DUNGEON_PAGE
+    assert '("🛡" + HERO_ARMOR.price)' in DUNGEON_PAGE
+    assert '("⬆" + HERO_OFFER.price)' in DUNGEON_PAGE
 
 
 def test_weapon_market_is_internal():
