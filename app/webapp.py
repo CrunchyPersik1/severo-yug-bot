@@ -6370,22 +6370,32 @@ body.fxon #fx{opacity:1}
 .tprow span{font-size:7px;color:#8a7a5a;font-family:ui-monospace,monospace;
   white-space:nowrap}
 .tprow i{font-style:normal;color:#c9a227;font-size:8px;width:18px}
-#questpanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.92);
-  width:min(360px,92vw);background:#120d0a;border:3px solid #6b4a22;border-radius:14px;
-  z-index:20;opacity:0;pointer-events:none;transition:.16s;box-shadow:0 12px 40px #000a}
-#questpanel.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
-#qbody{padding:10px 12px 14px;font:11px/1.6 inherit;color:#f0e6d2}
-#qbody .qrow{display:flex;gap:10px;align-items:center;margin-bottom:10px}
-#qbody .qface{width:44px;height:44px;border-radius:10px;border:2px solid #8a6a2a;
-  background:#241a12;display:flex;align-items:center;justify-content:center;font-size:22px}
-#qbody .qwhat{flex:1;font-size:11px;color:#ffd98a;font-weight:700}
-#qbody .qzone{font-size:10px;color:#c9a227;margin-top:2px}
-#qbody .qbar{height:8px;background:#2a1e14;border-radius:99px;overflow:hidden;margin:8px 0}
+#questpanel{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;
+  background:radial-gradient(600px 400px at 50% 0%,#1a1208f8,#070504fb 70%);
+  border:0;border-radius:0;padding:16px 16px 20px;opacity:0;pointer-events:none;
+  transition:opacity .16s;overflow-y:auto}
+#questpanel.on{opacity:1;pointer-events:auto}
+#qbody{padding:6px 2px 14px;font:12px/1.6 inherit;color:#f0e6d2;max-width:520px;
+  margin:0 auto;width:100%}
+#qbody .qrow{display:flex;gap:14px;align-items:center;margin-bottom:16px}
+#qbody .qface{width:68px;height:68px;border-radius:14px;border:3px solid #8a6a2a;
+  background:radial-gradient(circle at 40% 30%,#3a2a18,#1a1108);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:34px;
+  box-shadow:0 0 0 3px #120c06,0 6px 20px #000a}
+#qbody .qwhat{flex:1;font-size:13px;color:#ffd98a;font-weight:700;line-height:1.5}
+#qbody .qzone{font-size:11px;color:#c9a227;margin-top:6px;font-weight:600}
+#qbody .qbar{height:14px;background:#2a1e14;border:2px solid #4a3418;
+  border-radius:99px;overflow:hidden;margin:12px 0}
 #qbody .qbar i{display:block;height:100%;background:linear-gradient(90deg,#dc8a3f,#ffd98a);
   width:0;transition:width .3s}
-#qbody .qrew{font-size:10.5px;color:#c9a227;margin-bottom:10px}
-#qbody button{width:100%;border:2px solid #6b4a22;background:#2a1c10;color:#ffd98a;
-  border-radius:10px;padding:11px;font:800 11px/1 inherit;cursor:pointer}
+#qbody .qrew{font-size:11.5px;color:#c9a227;margin-bottom:14px}
+#qbody button{width:100%;border:3px solid #6b4a22;background:#2a1c10;color:#ffd98a;
+  border-radius:12px;padding:15px;font:800 12px/1 inherit;cursor:pointer;
+  letter-spacing:.5px}
+#qbody .qtop{display:flex;justify-content:space-between;align-items:center;
+  font-size:10px;letter-spacing:2px;color:#a37f3a;font-weight:800;
+  padding:2px 2px 16px;max-width:520px;margin:0 auto;width:100%}
+#qbody .qtop button{width:auto;padding:8px 14px;font-size:11px;border-radius:9px}
 #qbody button.done{background:#3f6a2a;border-color:#6fa04a;color:#e9ffd6}
 #qbody button:disabled{opacity:.5}
 /* чат подземелья */
@@ -6599,7 +6609,8 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   </div>
 </div>
 <div id="questpanel">
-  <div class="chhead"><span>🎯 КВЕСТ НПС</span><button id="qclose">✕</button></div>
+  <div class="chhead" style="max-width:520px;margin:0 auto;width:100%">
+    <span>🧙 ТИМУР · КВЕСТОВИК</span><button id="qclose">✕ ЗАКРЫТЬ</button></div>
   <div id="qbody"></div>
 </div>
 <div id="chat">
@@ -7476,14 +7487,33 @@ function questPaint(){
   if (take) take.onclick = questTake;
 }
 
+function questCacheKey(){ return "dq:" + Math.floor(Date.now() / 3600000); }
+function questFromCache(){
+  try{
+    const raw = sessionStorage.getItem(questCacheKey());
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return (data && data.text) ? data : null;
+  }catch(e){ return null; }
+}
+function questToCache(){
+  try{
+    if (QUEST) sessionStorage.setItem(questCacheKey(), JSON.stringify(QUEST));
+  }catch(e){}
+}
 async function questLoad(){
   QUEST_ERR = "";
+  if (!QUEST){
+    const cached = questFromCache();
+    if (cached){ QUEST = cached; QUEST.done = QUEST.done || 0; QUEST.bossDone = QUEST.bossDone || 0; }
+  }
   questPaint();
   let r = null;
   try{ r = await coopApi("/api/dungeon/quest"); }
   catch(e){ r = {error: "нет связи с сервером"}; }
   if (r && r.quest){
     QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0;
+    questToCache();
   } else {
     QUEST_ERR = (r && r.error) || "сервер не ответил";
     toast("Квест: " + QUEST_ERR);
@@ -7498,7 +7528,7 @@ async function questTake(){
       P.coins += Number(r.coins || 0);
       gainExp(Number(r.xp || 0));
       toast("Квест сдан: +" + money(r.coins) + " монет, +" + money(r.xp) + " опыта");
-      if (QUEST) QUEST.claimed = true;
+      if (QUEST){ QUEST.claimed = true; questToCache(); }
       questPaint();
       heroSave(true);
     }
@@ -9486,18 +9516,25 @@ async def api_dungeon_quest(request: Request) -> JSONResponse:
     if repo is None:
         return JSONResponse({"error": "Квесты ещё не включены"}, status_code=400)
     user_id = int(user["id"])
-    hero = await repo.load(user_id)
-    quest = dungeon.quest_for(user_id, int(hero.get("level") or 1), datetime.now(timezone.utc))
-    quest["text"] = dungeon.quest_text(quest)
-    quest["claimed"] = False
+    # Один поход в базу вместо трёх: уровень героя и отметка о награде
     async with state.db._p().acquire() as con:
-        quest["claimed"] = bool(
-            await con.fetchval(
-                "select 1 from dungeon_quest where user_id = $1 and hour_key = $2",
-                user_id,
-                int(quest["hour"]),
-            )
+        row = await con.fetchrow(
+            """
+            select coalesce(h.level, 1) as level,
+                   exists(
+                       select 1 from dungeon_quest q
+                        where q.user_id = $1::bigint
+                          and q.hour_key = floor(extract(epoch from now()) / 3600)::bigint
+                   ) as claimed
+              from (select 1) one
+              left join dungeon_hero h on h.user_id = $1::bigint
+            """,
+            user_id,
         )
+    level = int((row or {}).get("level") or 1)
+    quest = dungeon.quest_for(user_id, level, datetime.now(timezone.utc))
+    quest["text"] = dungeon.quest_text(quest)
+    quest["claimed"] = bool((row or {}).get("claimed"))
     return JSONResponse(
         {"ok": True, "quest": quest},
         headers={"Cache-Control": "no-store"},
