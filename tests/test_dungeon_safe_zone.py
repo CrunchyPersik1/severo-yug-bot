@@ -4,7 +4,7 @@ from app.webapp import DUNGEON_PAGE
 
 
 def test_safe_zone_exists_and_is_bigger_than_boss():
-    assert "const SAFE_R = 210;" in DUNGEON_PAGE
+    assert "const SAFE_R = 105;" in DUNGEON_PAGE
     assert "function inSafeZone(x, y){" in DUNGEON_PAGE
     assert "function nearBoss(x, y, pad){" in DUNGEON_PAGE
     # круг босса (r=60) целиком внутри сейф-зоны

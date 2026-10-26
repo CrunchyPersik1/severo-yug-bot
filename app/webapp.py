@@ -6271,6 +6271,11 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .statbar span{position:absolute;inset:0;display:flex;align-items:center;
   justify-content:center;font:900 7.5px/1 ui-monospace,monospace;color:#fff;
   text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden}
+.talkbtn{position:fixed;left:50%;transform:translateX(-50%);bottom:274px;z-index:12;
+  display:none;background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
+  border-radius:999px;padding:9px 16px;color:#ffd98a;font-family:inherit;
+  font-size:9px;font-weight:800;letter-spacing:.4px;box-shadow:0 3px 12px #000a}
+.talkbtn.on{display:block}
 .safebadge{position:fixed;left:50%;transform:translateX(-50%);top:80px;z-index:11;
   background:#0f2a1bee;border:2px solid #2f7a52;border-radius:999px;padding:4px 12px;
   font-size:8px;font-weight:900;letter-spacing:.4px;color:#9df0bd;
@@ -6520,6 +6525,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   <div class="statbar xp"><i id="xpfill"></i><span id="xptxt">УР. 1 · 0 / 60</span></div>
 </div>
 <div class="safebadge" id="safebadge">🛡 СЕЙФ-ЗОНА · тут не бьют</div>
+<button class="talkbtn" id="talkbtn">💬 ГОВОРИТЬ · Тимур</button>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
 <div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:150px">
@@ -7140,7 +7146,7 @@ const TG_INIT = readInitData();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
 // Сейф-зона вокруг босса: внутри неё мобы не бьют и не подходят.
 // Круг босса (r=60) целиком внутри, поэтому заходить в бой можно.
-const SAFE_R = 210;
+const SAFE_R = 105;
 const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false, rewarded: 0};
 
 async function coopApi(path, body){
@@ -7491,14 +7497,15 @@ function questOpen(){
   if (!QUEST) questLoad();
 }
 document.getElementById("questbtn").onclick = questOpen;
+document.getElementById("talkbtn").onclick = questOpen;
 cv.addEventListener("pointerdown", function(ev){
-  if (npcDist() > 150) return;
+  if (npcDist() > 200) return;
+  // камера — обычный translate, мир 1:1 с пикселями холста
   const rect = cv.getBoundingClientRect();
-  const kx = WORLD.w / rect.width, ky = WORLD.h / rect.height;
-  const wx = cam.x + (ev.clientX - rect.left) * kx;
-  const wy = cam.y + (ev.clientY - rect.top) * ky;
+  const wx = cam.x + (ev.clientX - rect.left);
+  const wy = cam.y + (ev.clientY - rect.top);
   const spot = npcSpot();
-  if (Math.hypot(wx - spot.x, wy - spot.y) < 60) questOpen();
+  if (Math.hypot(wx - spot.x, wy - spot.y) < 70) questOpen();
 });
 document.getElementById("qclose").onclick = function(){
   document.getElementById("questpanel").classList.remove("on");
@@ -8709,6 +8716,9 @@ function loop(now){
     return d.t > 0;
   });
 
+  // кнопка «говорить» появляется рядом с НПС
+  const talkBtn = document.getElementById("talkbtn");
+  if (talkBtn) talkBtn.classList.toggle("on", npcDist() < 150 && !document.getElementById("questpanel").classList.contains("on"));
   // НПС: подошёл впервые — окликает и открывает квест
   if (!NPC.met && npcDist() < 110){
     NPC.met = true;

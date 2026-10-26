@@ -24,7 +24,11 @@ def test_npc_talks():
 
 def test_npc_can_be_tapped():
     assert 'cv.addEventListener("pointerdown"' in DUNGEON_PAGE
-    assert "if (Math.hypot(wx - spot.x, wy - spot.y) < 60) questOpen();" in DUNGEON_PAGE
+    assert "if (Math.hypot(wx - spot.x, wy - spot.y) < 70) questOpen();" in DUNGEON_PAGE
+    # и надёжная кнопка рядом с ним
+    assert 'id="talkbtn"' in DUNGEON_PAGE
+    assert 'document.getElementById("talkbtn").onclick = questOpen;' in DUNGEON_PAGE
+    assert 'npcDist() < 150' in DUNGEON_PAGE
 
 
 def test_quest_panel_reports_errors():
