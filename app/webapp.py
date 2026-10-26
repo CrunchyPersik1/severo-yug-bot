@@ -6302,6 +6302,24 @@ body.fxon #fx{opacity:1}
 .tprow span{font-size:7px;color:#8a7a5a;font-family:ui-monospace,monospace;
   white-space:nowrap}
 .tprow i{font-style:normal;color:#c9a227;font-size:8px;width:18px}
+#questpanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.92);
+  width:min(360px,92vw);background:#120d0a;border:3px solid #6b4a22;border-radius:14px;
+  z-index:20;opacity:0;pointer-events:none;transition:.16s;box-shadow:0 12px 40px #000a}
+#questpanel.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+#qbody{padding:10px 12px 14px;font:11px/1.6 inherit;color:#f0e6d2}
+#qbody .qrow{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+#qbody .qface{width:44px;height:44px;border-radius:10px;border:2px solid #8a6a2a;
+  background:#241a12;display:flex;align-items:center;justify-content:center;font-size:22px}
+#qbody .qwhat{flex:1;font-size:11px;color:#ffd98a;font-weight:700}
+#qbody .qzone{font-size:10px;color:#c9a227;margin-top:2px}
+#qbody .qbar{height:8px;background:#2a1e14;border-radius:99px;overflow:hidden;margin:8px 0}
+#qbody .qbar i{display:block;height:100%;background:linear-gradient(90deg,#dc8a3f,#ffd98a);
+  width:0;transition:width .3s}
+#qbody .qrew{font-size:10.5px;color:#c9a227;margin-bottom:10px}
+#qbody button{width:100%;border:2px solid #6b4a22;background:#2a1c10;color:#ffd98a;
+  border-radius:10px;padding:11px;font:800 11px/1 inherit;cursor:pointer}
+#qbody button.done{background:#3f6a2a;border-color:#6fa04a;color:#e9ffd6}
+#qbody button:disabled{opacity:.5}
 /* чат подземелья */
 #chat{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;
   align-items:center;justify-content:flex-end;padding:14px;background:#07060ad8}
@@ -6399,6 +6417,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   <a class="on" href="/proto_dungeon">🗡 Подземелье</a>
   <a href="/quests">📜 Задания</a>
 </nav>
+<button class="hud" id="questbtn" title="Квест НПС">🎯</button>
 <div class="coins">🪙 <span id="coins">0</span></div>
 <div id="zone" style="position:fixed;top:8px;left:50%;transform:translateX(-50%);
   z-index:9;font-size:8px;color:#d8b45a;text-shadow:0 2px 6px #000;pointer-events:none">…</div>
@@ -6501,6 +6520,10 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <div class="tphead"><span>ЛИДЕРЫ ПОДЗЕМЕЛЬЯ</span><button id="tpclose">✕</button></div>
     <div class="tplist" id="tplist"></div>
   </div>
+</div>
+<div id="questpanel">
+  <div class="chhead"><span>🎯 КВЕСТ НПС</span><button id="qclose">✕</button></div>
+  <div id="qbody"></div>
 </div>
 <div id="chat">
   <div class="chwrap">
@@ -7142,7 +7165,9 @@ function coopApply(room){
     P.coins += coins;
     stats.kills += Math.max(0, room.reward.kills | 0);
     coopLog("<b>Победа!</b> +" + coins + " монет и +" + (room.reward.yugi | 0) + " Югов");
-    const bossLoot = room.reward.weapon ? weaponById(room.reward.weapon) : null;
+    const bossLoot = room.reward.weapon
+      ? (weaponById(room.reward.weapon) || rollWeapon(zoneIndex(P.y), true))
+      : null;
     if (bossLoot){
       if (P.bag.indexOf(bossLoot.id) < 0) P.bag.push(bossLoot.id);
       coopLog("Дроп с босса: <b>" + bossLoot.name + "</b> · урон " + bossLoot.dmg);
@@ -7260,6 +7285,63 @@ document.getElementById("chit").onclick = coopHit;
 document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
 
+/* ---------- НПС-квестовик ---------- */
+let QUEST = null;
+
+function questProgress(){
+  return QUEST ? (QUEST.kind === "boss" ? (QUEST.bossDone || 0) : (QUEST.done || 0)) : 0;
+}
+function questPaint(){
+  const body = document.getElementById("qbody");
+  if (!body) return;
+  if (!QUEST){ body.innerHTML = "<div>НПС отдыхает. Загляни позже.</div>"; return; }
+  const need = QUEST.need || 1;
+  const done = Math.min(need, questProgress());
+  const left = Math.floor((QUEST.expires_in || 0) / 60);
+  body.innerHTML =
+    '<div class="qrow"><div class="qface">' + (QUEST.kind === "boss" ? "👹" : "🎯") + '</div>' +
+    '<div class="qwhat">' + esc(QUEST.text || "Квест") +
+    '<div class="qzone">локация ' + ((QUEST.zone || 0) + 1) + ' · до смены ' + left + ' мин</div></div></div>' +
+    '<div class="qbar"><i style="width:' + (done / need * 100) + '%"></i></div>' +
+    '<div class="qrew">Сделано ' + done + " / " + need + ' · награда ' + money(QUEST.coins) +
+    ' монет и ' + money(QUEST.xp) + ' опыта</div>' +
+    (QUEST.claimed
+      ? '<button class="done" disabled>УЖЕ ЗАБРАНО</button>'
+      : (done >= need
+          ? '<button id="qtake">ЗАБРАТЬ НАГРАДУ</button>'
+          : '<button disabled>ЕЩЁ НЕ ГОТОВО</button>'));
+  const take = document.getElementById("qtake");
+  if (take) take.onclick = questTake;
+}
+async function questLoad(){
+  try{
+    const r = await coopApi("/api/dungeon/quest");
+    if (r && r.quest){ QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0; }
+  }catch(e){}
+  questPaint();
+}
+async function questTake(){
+  try{
+    const r = await coopApi("/api/dungeon/quest", {});
+    if (r && r.error){ toast(r.error); return; }
+    if (r && r.ok){
+      P.coins += Number(r.coins || 0);
+      gainExp(Number(r.xp || 0));
+      toast("Квест сдан: +" + money(r.coins) + " монет, +" + money(r.xp) + " опыта");
+      if (QUEST) QUEST.claimed = true;
+      questPaint();
+      heroSave(true);
+    }
+  }catch(e){ toast("Связь потерялась"); }
+}
+function questOpen(){
+  document.getElementById("questpanel").classList.add("on");
+  if (!QUEST) questLoad(); else questPaint();
+}
+document.getElementById("questbtn").onclick = questOpen;
+document.getElementById("qclose").onclick = function(){
+  document.getElementById("questpanel").classList.remove("on");
+};
 /* ---------- таблица лидеров ---------- */
 async function openTop(){
   const box = document.getElementById("top");
@@ -7400,23 +7482,17 @@ document.getElementById("chtext").addEventListener("keydown", function(e){
   if (e.key === "Enter") chatSend();
 });
 
-/* ---------- редкость оружия ---------- */
-// У мобов шанс дропа 5% и почти всегда низкий тир. Хорошее оружие —
-// с боссов. Веса целочисленные, нормализуются суммой.
+/* ---------- дроп оружия ---------- */
+// С моба падает 5% и только то, что влезает в кап локации.
+// С босса — лучшее, что в этой локации бывает (от 80% капа).
 const MOB_DROP_CHANCE = 0.05;
-const MOB_TIER_WEIGHTS = [46000, 26000, 14000, 8000, 4000, 1500, 400, 100, 30, 10];
-const BOSS_TIER_WEIGHTS = [0, 0, 500, 3000, 12000, 26000, 30000, 20000, 6400, 10];
 
-function rollWeapon(weights){
-  const total = weights.reduce(function(a, b){ return a + b; }, 0);
-  let point = Math.random() * total, tier = 0, acc = 0;
-  for (let i = 0; i < weights.length; i++){
-    acc += weights[i];
-    if (point < acc){ tier = i; break; }
-  }
-  const kinds = ["sword", "bow", "staff"];
-  return kinds[Math.floor(Math.random() * 3)] + "_" + tier + "_" +
-    Math.floor(Math.random() * 5);
+function rollWeapon(zi, fromBoss){
+  const cap = zoneCap(zi);
+  const floor = fromBoss ? cap * 0.8 : cap * 0.45;
+  const pool = WEAPONS.filter(function(w){ return w.dmg <= cap && w.dmg >= floor; });
+  if (!pool.length) return WEAPONS[0];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /* ---------- оффлайн-игроки в углу локации ---------- */
@@ -7810,28 +7886,44 @@ const PATH = (function(){
 let P = {x: WORLD.w / 2, y: WORLD.h - 260, hp: 120, max: 120, coins: 0,
          weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0, dashCd: 0, dashT: 0,
          shield: 0, dir: 0};
+const ZONE_DMG_CAP = [40, 55, 75, 100, 130, 170, 215, 265, 320, 400];
+const ZONE_MOB_HP = [250, 500, 1000, 1350, 2000, 2500, 3000, 3500, 4500, 10000];
+const WEAPON_RANK_DMG = [10, 22, 36, 52, 72, 96, 128, 168, 220, 300];
+const WEAPON_RANK_STEP = [2, 3, 4, 5, 6, 8, 10, 12, 15, 25];
+
+function zoneCap(zi){
+  return ZONE_DMG_CAP[Math.max(0, Math.min(9, zi | 0))];
+}
+function zoneMobHp(zi){
+  return ZONE_MOB_HP[Math.max(0, Math.min(9, zi | 0))];
+}
+
+/* Оружие без тиров: 3 вида x 10 рангов x 5 имён = 150 стволов.
+   Урон зависит от ранга, а локация решает, что вообще может выпасть. */
 const WEAPONS = (function(){
   var kinds = [
-    {k: "sword", n: "Меч", range: 82, cls: "мечник"},
-    {k: "bow", n: "Лук", range: 150, cls: "лучник"},
-    {k: "staff", n: "Посох", range: 125, cls: "маг"}
+    {k: "sword", n: ["Клинок", "Меч", "Палаш", "Тесак", "Ятаган"],
+     range: 82, cls: "мечник"},
+    {k: "bow", n: ["Лук", "Арбалет", "Лонгбоу", "Самострел", "Тяжёлый лук"],
+     range: 150, cls: "лучник"},
+    {k: "staff", n: ["Посох", "Жезл", "Скипетр", "Тотем", "Жезл-клинок"],
+     range: 125, cls: "маг"}
   ];
-  var tierName = ["Ржавый", "Простой", "Крепкий", "Стальной", "Клёпаный",
-                  "Закалённый", "Рунный", "Драконий", "Небесный", "Бездонный"];
+  var adj = ["Ржавый", "Кованый", "Стальной", "Закалённый", "Рунный",
+             "Серебряный", "Золотой", "Пламенный", "Драконий", "Бездонный"];
   var list = [];
   kinds.forEach(function(kd){
-    for (var t = 0; t < 10; t++){
+    for (var rank = 0; rank < 10; rank++){
       for (var v = 0; v < 5; v++){
-        var power = (1 + t * 0.9) * (1 + v * 0.12);
         list.push({
-          id: kd.k + "_" + t + "_" + v,
-          name: tierName[t] + " " + kd.n + " " + (v + 1),
+          id: kd.k + "_" + rank + "_" + v,
+          name: adj[rank] + " " + kd.n[v],
           kind: kd.k,
           cls: kd.cls,
-          range: kd.range + t * 3,
-          dmg: Math.round((kd.k === "bow" ? 8 : kd.k === "staff" ? 10 : 12) * power),
-          spd: +(1.0 - t * 0.015).toFixed(3),
-          tier: t
+          range: kd.range + rank * 3,
+          dmg: WEAPON_RANK_DMG[rank] + v * WEAPON_RANK_STEP[rank],
+          spd: +(1.0 - rank * 0.015).toFixed(3),
+          rank: rank
         });
       }
     }
@@ -7918,10 +8010,13 @@ function spawnOne(zi){
   const type = MOB_TYPES[Math.floor(Math.random() * Math.max(2, pool))];
   // сила зависит от локации, в которой моб стоит, а не от игрока:
   // в глубину слабый игрок просто не пройдёт
-  const zoneMul = Math.pow(2.4, zi);
-  const grow = (1 + (stats.lvl - 1) * 0.12) * zoneMul;
-  mobs.push({x: x, y: y, hp: Math.round(type.hp * grow), max: Math.round(type.hp * grow),
-             sp: type.sp, dmg: type.dmg * (1 + zi * 0.9), c: type.c, sz: type.sz, nm: type.n,
+  // HP по таблице локаций: в Опушке до 250, в Бездне до 10 000.
+  // Тип моба даёт разброс, но кап локации не пробивает.
+  const capHp = zoneMobHp(zi);
+  const hp = Math.max(18, Math.round(capHp * (0.55 + Math.random() * 0.45)));
+  mobs.push({x: x, y: y, hp: hp, max: hp,
+             sp: type.sp, dmg: Math.max(2, Math.round(type.dmg * (0.6 + zi * 0.28))),
+             c: type.c, sz: type.sz, nm: type.n,
              tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
 }
 function reset(){
@@ -7995,13 +8090,17 @@ function killMob(m){
     toast("Слабо для этой локации: нужен ур. " + zr + " — опыта нет");
   } else {
     P.coins += 3 + Math.floor(Math.random() * 5);
-    stats.exp += 12 + power * 4;
+    gainExp(Math.max(4, Math.round(m.max / 18)));
   }
   stats.kills += 1;
-  if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.max += 8; P.hp = P.max;
-    toast("Уровень " + stats.lvl + "! HP вырос"); heroSave(true); }
+  if (QUEST && !QUEST.claimed && QUEST.kind === "hunt" &&
+      zoneIndex(m.y) === QUEST.zone){
+    QUEST.done = (QUEST.done || 0) + 1;
+    if (QUEST.done >= QUEST.need) toast("Квест НПС готов — забери награду");
+    questPaint();
+  }
   if (Math.random() < MOB_DROP_CHANCE){
-    const loot = weaponById(rollWeapon(MOB_TIER_WEIGHTS)) || WEAPONS[0];
+    const loot = rollWeapon(zoneIndex(m.y), false) || WEAPONS[0];
     const isNew = P.bag.indexOf(loot.id) < 0;
     if (isNew) P.bag.push(loot.id);
     drop.push({x: m.x, y: m.y, kind: "weapon", t: 8, name: loot.name});
@@ -8011,6 +8110,26 @@ function killMob(m){
   }
   if (mobs.length < 10) fillMobs();
   sync();
+}
+function expNeed(lvl){
+  // поздние уровни требуют намного больше опыта
+  return Math.round(80 * Math.pow(Math.max(1, lvl), 1.55));
+}
+function gainExp(amount){
+  stats.exp += Math.max(1, Math.round(amount));
+  let leveled = 0;
+  while (stats.exp >= expNeed(stats.lvl)){
+    stats.exp -= expNeed(stats.lvl);
+    stats.lvl += 1;
+    P.max += 8 + Math.floor(stats.lvl / 4);
+    leveled += 1;
+  }
+  if (leveled){
+    P.hp = P.max;
+    toast("Уровень " + stats.lvl + "! HP " + P.max + " · до след. " + expNeed(stats.lvl));
+    heroSave(true);
+  }
+  return leveled;
 }
 function shieldUp(){
   if (P.dashCd > 0 || inBattle) return;
@@ -8058,9 +8177,11 @@ let B = null;
 function startBattle(){
   inBattle = true;
   const zb = boss ? ZONES[boss.zone] : ZONES[0];
-  const power = zb.mob;
-  B = {hp: Math.round(600 * power), max: Math.round(600 * power),
-       name: "Босс · " + zb.n, atk: 16 * power, cd: 0, pcd: 0};
+  const zidx = boss ? boss.zone : 0;
+  // босс в глубине — десятки тысяч HP, но и опыт с него жирный
+  const bossHp = Math.round(zoneMobHp(zidx) * 3.2);
+  B = {hp: bossHp, max: bossHp,
+       name: "Босс · " + zb.n, atk: Math.round(8 + zidx * 6), cd: 0, pcd: 0};
   document.getElementById("battle").classList.add("on");
   document.getElementById("ename").textContent = B.name;
   drawFighters();
@@ -8073,8 +8194,15 @@ function endBattle(win){
     P.coins += 120;
     FX.burst(boss.x, boss.y, 40, "#ffd98a", 320, 22);
     FX.shake(9);
-    const loot = weaponById(rollWeapon(BOSS_TIER_WEIGHTS));
+    const loot = rollWeapon(boss ? boss.zone : zoneIndex(P.y), true);
     if (loot && P.bag.indexOf(loot.id) < 0){ P.bag.push(loot.id); paintInv(); }
+    gainExp(Math.round(zoneMobHp(boss ? boss.zone : zoneIndex(P.y)) / 5));
+    if (QUEST && !QUEST.claimed && QUEST.kind === "boss" &&
+        (boss ? boss.zone : zoneIndex(P.y)) === QUEST.zone){
+      QUEST.bossDone = 1;
+      toast("Квест НПС готов — забери награду");
+      questPaint();
+    }
     toast(loot ? ("Босс повержен! +120 монет · " + loot.name) : "Босс повержен! +120 монет");
   } else {
     toast("Ты проиграл. Возвращайся сильнее");
@@ -9019,6 +9147,60 @@ async def api_dungeon_top(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Лидеры ещё не включены"}, status_code=400)
     players = await repo.top(10)
     return JSONResponse({"ok": True, "players": players, "me": int(user["id"])})
+
+
+@router.get("/api/dungeon/quest")
+async def api_dungeon_quest(request: Request) -> JSONResponse:
+    """Квест НПС на текущий час — под уровень героя."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Квесты ещё не включены"}, status_code=400)
+    user_id = int(user["id"])
+    hero = await repo.load(user_id)
+    quest = dungeon.quest_for(user_id, int(hero.get("level") or 1), datetime.now(timezone.utc))
+    quest["text"] = dungeon.quest_text(quest)
+    quest["claimed"] = False
+    async with state.db._p().acquire() as con:
+        quest["claimed"] = bool(
+            await con.fetchval(
+                "select 1 from dungeon_quest where user_id = $1 and hour_key = $2",
+                user_id,
+                int(quest["hour"]),
+            )
+        )
+    return JSONResponse({"ok": True, "quest": quest})
+
+
+@router.post("/api/dungeon/quest")
+async def api_dungeon_quest_claim(request: Request) -> JSONResponse:
+    """Забрать награду. Повторно в тот же час — отказ."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    repo = getattr(state, "hero", None)
+    if repo is None:
+        return JSONResponse({"error": "Квесты ещё не включены"}, status_code=400)
+    user_id = int(user["id"])
+    hero = await repo.load(user_id)
+    quest = dungeon.quest_for(user_id, int(hero.get("level") or 1), datetime.now(timezone.utc))
+    fresh = await repo.claim_quest(user_id, int(quest["hour"]), dungeon.quest_text(quest))
+    if not fresh:
+        return JSONResponse({"error": "За этот час награда уже получена"}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "coins": quest["coins"],
+            "xp": quest["xp"],
+            "text": dungeon.quest_text(quest),
+        }
+    )
 
 
 @router.post("/api/dungeon/armor")

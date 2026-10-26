@@ -548,7 +548,9 @@ class DungeonBossRepo:
         reward = None
         if status == "dead":
             reward = dungeon.boss_reward(boss["zone"], alive)
-            reward["weapon"] = dungeon.boss_weapon(int(boss["id"]) * 100_003 + int(user_id))
+            reward["weapon"] = dungeon.boss_weapon(
+                int(boss["id"]) * 100_003 + int(user_id), int(boss["zone"])
+            )
         return {
             "id": int(boss["id"]),
             "zone": int(boss["zone"]),

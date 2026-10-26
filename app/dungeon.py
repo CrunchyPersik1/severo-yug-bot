@@ -34,23 +34,41 @@ PLAYER_HP = 120             # столько же, сколько у героя 
 BOSS_HIT_EVERY = 2.0        # босс бьёт раз в две секунды
 HIT_COOLDOWN = 0.55         # игрок не чаще двух ударов в секунду
 COOP_HP_FACTOR = 1.8        # на двоих боссу больше HP
-BASE_HP = 300               # HP босса в первой локации для одного
+BASE_HP = 600               # HP босса в первой локации для одного
 IDLE_SECONDS = 20.0         # столько комната живёт без заглядываний
 MAX_DAMAGE = 400            # защита от абсурда из запроса
 MIN_DAMAGE = 1
 
-# --- оружие: редкость по тирам --------------------------------------
-# Страница генерирует 3 вида x 10 тиров x 5 вариантов = 150 стволов.
-# У мобов шанс дропа 5%, и почти всегда это низкий тир; хорошее оружие —
-# с боссов. Веса целочисленные, нормализуются суммой.
+# --- оружие: без тиров, урон по рангу и капу локации -----------------
+# Страница генерирует 3 вида x 10 рангов x 5 вариантов = 150 стволов,
+# у каждого своё имя ("Пламенный Ятаган"). Урон считается от ранга, а
+# локация ограничивает, что вообще может выпасть: в Опушке — до 40,
+# в Бездне — до 400. Поэтому имбовый ствол в начале не выпадет физически.
 WEAPON_KINDS = ("sword", "bow", "staff")
 MOB_DROP_CHANCE = 0.05
-MOB_TIER_WEIGHTS = (46_000, 26_000, 14_000, 8_000, 4_000, 1_500, 400, 100, 30, 10)
-# тир:      0      1      2     3     4     5      6    7    8   9
-# шанс:   46%    26%    14%    8%    4%   1.5%  0.4% 0.1% 0.03% 0.01%
-BOSS_TIER_WEIGHTS = (0, 0, 500, 3_000, 12_000, 26_000, 30_000, 20_000, 6_400, 10)
-# тир:      2     3     4     5      6      7      8     9
-# шанс:  0.5%   3%   12%   26%    30%    20%   6.5%  0.01%
+
+# сколько урона даёт ранг (0..9) и его варианты (0..4)
+WEAPON_RANK_DMG = (10, 22, 36, 52, 72, 96, 128, 168, 220, 300)
+WEAPON_RANK_STEP = (2, 3, 4, 5, 6, 8, 10, 12, 15, 25)
+
+# потолок урона по локациям 1..10 и HP мобов там же
+ZONE_DMG_CAP = (40, 55, 75, 100, 130, 170, 215, 265, 320, 400)
+ZONE_MOB_HP = (250, 500, 1_000, 1_350, 2_000, 2_500, 3_000, 3_500, 4_500, 10_000)
+
+
+def weapon_dmg(rank: int, variant: int) -> int:
+    """Урон ствола по рангу и варианту — та же формула, что на странице."""
+    rank = max(0, min(9, int(rank)))
+    variant = max(0, min(4, int(variant)))
+    return WEAPON_RANK_DMG[rank] + variant * WEAPON_RANK_STEP[rank]
+
+
+def zone_cap(zone: int) -> int:
+    return ZONE_DMG_CAP[max(0, min(9, int(zone)))]
+
+
+def zone_mob_hp(zone: int) -> int:
+    return ZONE_MOB_HP[max(0, min(9, int(zone)))]
 
 BOSS_COINS = 120            # награда за босса в первой локации
 COOP_COIN_BONUS = 1.5       # вдвоём — больше
@@ -91,9 +109,54 @@ def hp_factor(players: int) -> float:
     return COOP_HP_FACTOR if int(players) > 1 else 1.0
 
 
+QUEST_HOUR = 3600
+
+
+def quest_for(user_id: int, level: int, moment: datetime) -> dict:
+    """Квест НПС на текущий час: детерминирован по (игрок, час).
+
+    Час назад был один квест, сейчас другой — и он не меняется, сколько
+    бы раз игрок ни обновил страницу.
+    """
+    hour_key = int(moment.timestamp()) // QUEST_HOUR
+    digest = hashlib.sha256(("quest:%d:%d" % (int(user_id), hour_key)).encode()).digest()
+    level = max(1, int(level or 1))
+    zone = max(0, min(9, level // 3))
+    kind = "boss" if digest[0] % 4 == 0 else "hunt"
+    if kind == "hunt":
+        need = min(12, 3 + level // 4)
+    else:
+        need = 1
+    coins = 60 + zone * 80 + (needed_bonus(kind, need))
+    xp = 100 + zone * 120
+    return {
+        "hour": hour_key,
+        "kind": kind,
+        "zone": zone,
+        "zone_name": ZONES[zone][0],
+        "need": need,
+        "coins": int(coins),
+        "xp": int(xp),
+        "expires_in": int(QUEST_HOUR - (int(moment.timestamp()) % QUEST_HOUR)),
+    }
+
+
+def needed_bonus(kind: str, need: int) -> int:
+    return 120 if kind == "boss" else need * 15
+
+
+def quest_text(quest: dict) -> str:
+    """Что НПС просит словами."""
+    if quest.get("kind") == "boss":
+        return "убить босса в «%s»" % quest.get("zone_name", "?")
+    return "убить %d мобов в «%s»" % (int(quest.get("need", 1)),
+                                      quest.get("zone_name", "?"))
+
+
 def base_hp(zone: int, players: int = 1) -> int:
-    """HP босса: растёт по локациям и ещё раз — если бьются двое."""
-    return int(round(BASE_HP * zone_factor(zone) * hp_factor(players)))
+    """HP босса: в глубине больше пяти тысяч, вдвоём — ещё выше."""
+    hp = BASE_HP + 900 * max(0, int(zone))
+    return int(round(hp * hp_factor(players)))
 
 
 def boss_damage(zone: int) -> int:
@@ -149,28 +212,26 @@ def boss_yugi(zone: int) -> int:
     return max(5, int(round(BOSS_COINS * zone_factor(zone) / 12)))
 
 
-def pick_tier(weights: tuple[int, ...], roll: int) -> int:
-    """Тир по целочисленным весам: roll меньше суммы весов."""
-    total = sum(weights)
-    if total <= 0 or roll < 0:
-        return 0
-    point = roll % total
-    acc = 0
-    for index, weight in enumerate(weights):
-        acc += weight
-        if point < acc:
-            return index
-    return len(weights) - 1
+def boss_weapon(seed: int, zone: int = 0) -> str:
+    """Оружие с босса: из лучших стволов, доступных в этой локации.
 
-
-def boss_weapon(seed: int) -> str:
-    """Оружие с босса: детерминировано по seed, чтобы не менялось при опросе."""
+    Детерминировано по seed (комната + игрок), чтобы не менялось при
+    повторных запросах статуса боя.
+    """
+    cap = zone_cap(zone)
+    floor = cap * 0.8
+    pool = [
+        (rank, variant)
+        for rank in range(10)
+        for variant in range(5)
+        if floor <= weapon_dmg(rank, variant) <= cap
+    ]
+    if not pool:
+        pool = [(0, 0)]
     digest = hashlib.sha256(str(int(seed)).encode()).digest()
-    roll = int.from_bytes(digest[:4], "big")
-    tier = pick_tier(BOSS_TIER_WEIGHTS, roll)
+    rank, variant = pool[int.from_bytes(digest[:4], "big") % len(pool)]
     kind = WEAPON_KINDS[int.from_bytes(digest[4:6], "big") % len(WEAPON_KINDS)]
-    variant = int.from_bytes(digest[6:8], "big") % 5
-    return "%s_%d_%d" % (kind, tier, variant)
+    return "%s_%d_%d" % (kind, rank, variant)
 
 
 def boss_reward(zone: int, players: int = 1) -> dict:

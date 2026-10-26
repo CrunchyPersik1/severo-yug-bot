@@ -385,3 +385,20 @@ class DungeonHeroRepo:
             }
             for row in rows
         ]
+
+
+    async def claim_quest(self, user_id: int, hour_key: int, quest_key: str) -> bool:
+        """Отметить награду за квест НПС. False — уже забирал в этот час."""
+        async with self.pool.acquire() as con:
+            row = await con.fetchrow(
+                """
+                insert into dungeon_quest (user_id, hour_key, quest_key)
+                values ($1::bigint, $2::bigint, $3::text)
+                on conflict (user_id, hour_key) do nothing
+                returning hour_key
+                """,
+                int(user_id),
+                int(hour_key),
+                str(quest_key),
+            )
+        return row is not None

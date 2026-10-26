@@ -758,3 +758,12 @@ alter table dungeon_hero add column if not exists y real;
 alter table dungeon_hero add column if not exists seen_at timestamptz;
 
 alter table players add column if not exists pvp_ban_until timestamptz;
+
+-- Квест НПС в подземелье: одна награда за час на игрока.
+create table if not exists dungeon_quest (
+    user_id bigint not null references players(user_id) on delete cascade,
+    hour_key bigint not null,
+    quest_key text not null,
+    claimed_at timestamptz not null default now(),
+    primary key (user_id, hour_key)
+);

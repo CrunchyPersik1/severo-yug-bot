@@ -1,21 +1,7 @@
-"""Ребаланс: редкость оружия, дроп 5%, античит PvP."""
+"""Дроп оружия, античит PvP и текст правил на странице заданий."""
 
-from app import dungeon, db
+from app import db, dungeon
 from app.webapp import DUNGEON_PAGE, QUESTS_PAGE
-
-
-def test_tier_tables_are_sane():
-    assert len(dungeon.MOB_TIER_WEIGHTS) == 10
-    assert len(dungeon.BOSS_TIER_WEIGHTS) == 10
-    # у мобов почти всё — низкие тиры
-    assert dungeon.MOB_TIER_WEIGHTS[0] > dungeon.MOB_TIER_WEIGHTS[5]
-    # у боссов высокие тиры идут чаще низких
-    assert dungeon.BOSS_TIER_WEIGHTS[6] > dungeon.BOSS_TIER_WEIGHTS[3]
-    # топ-тир есть, но он исчезающе редкий (0.01%)
-    total = sum(dungeon.BOSS_TIER_WEIGHTS)
-    assert dungeon.BOSS_TIER_WEIGHTS[9] / total * 100 < 0.02
-    mob_total = sum(dungeon.MOB_TIER_WEIGHTS)
-    assert dungeon.MOB_TIER_WEIGHTS[9] / mob_total * 100 < 0.02
 
 
 def test_mob_drop_is_five_percent():
@@ -25,26 +11,23 @@ def test_mob_drop_is_five_percent():
 
 
 def test_boss_weapon_is_deterministic_and_valid():
-    first = dungeon.boss_weapon(777)
-    assert first == dungeon.boss_weapon(777)
-    assert first.split("_")[0] in dungeon.WEAPON_KINDS
-    assert 0 <= int(first.split("_")[1]) <= 9
-    assert 0 <= int(first.split("_")[2]) <= 4
-    # разные seed дают разные стволы (разнообразие есть, но верхние тиры редки)
-    assert len({dungeon.boss_weapon(seed) for seed in range(200)}) > 50
-
-
-def test_boss_tiers_are_high_mostly():
-    tiers = [int(dungeon.boss_weapon(seed).split("_")[1]) for seed in range(400)]
-    assert min(tiers) >= 2
-    assert sum(1 for tier in tiers if tier >= 5) > len(tiers) * 0.5
+    first = dungeon.boss_weapon(777, 3)
+    assert first == dungeon.boss_weapon(777, 3)
+    kind, rank, variant = first.split("_")
+    assert kind in dungeon.WEAPON_KINDS
+    assert 0 <= int(rank) <= 9
+    assert 0 <= int(variant) <= 4
+    # разные seed дают разные стволы (в одной зоне выбор узкий — смотрим все)
+    variety = {dungeon.boss_weapon(seed, zone) for zone in range(10) for seed in range(50)}
+    assert len(variety) > 60
 
 
 def test_pvp_threshold_and_ban():
     assert db.PVP_PAIR_LIMIT == 5
     assert db.PVP_BAN_DAYS == 7
-    assert "if fights > PVP_PAIR_LIMIT:" in open("app/db.py", encoding="utf-8").read()
-    assert "pvp_ban_until" in open("app/db.py", encoding="utf-8").read()
+    source = open("app/db.py", encoding="utf-8").read()
+    assert "if fights > PVP_PAIR_LIMIT:" in source
+    assert "pvp_ban_until" in source
     assert "pvp_ban_until" in open("schema.sql", encoding="utf-8").read()
 
 
@@ -60,6 +43,5 @@ def test_quests_page_mentions_new_rules():
 
 
 def test_client_rolls_boss_loot():
-    assert "function rollWeapon(" in DUNGEON_PAGE
-    assert "BOSS_TIER_WEIGHTS" in DUNGEON_PAGE
+    assert "function rollWeapon(zi, fromBoss)" in DUNGEON_PAGE
     assert "room.reward.weapon" in DUNGEON_PAGE

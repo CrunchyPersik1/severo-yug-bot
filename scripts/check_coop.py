@@ -206,7 +206,7 @@ async def main(argv: list[str] | None = None) -> int:
         check("join отвечает 200", status, 200)
         room = joined.get("boss") or {}
         check("комната в ожидании", room.get("status"), "waiting")
-        check("HP одиночного босса", room.get("max_hp"), 300)
+        check("HP одиночного босса", room.get("max_hp"), dungeon_rules.base_hp(0, 1))
         boss_id = room.get("id")
         # Один запрос через пулер идёт около двух секунд, а окно ожидания — 10.
         # Растягиваем окно, иначе тест проверяет сеть, а не логику.
@@ -216,7 +216,8 @@ async def main(argv: list[str] | None = None) -> int:
         partner_room = partner.get("boss") or {}
         check("второй попал в ту же комнату", partner_room.get("id"), boss_id)
         check("бой начался", partner_room.get("status"), "fight")
-        check("кооп-множитель HP", partner_room.get("max_hp"), 540)
+        check("кооп-множитель HP", partner_room.get("max_hp"),
+              dungeon_rules.base_hp(0, 2))
         check("флаг коопа", partner_room.get("coop"), True)
 
         status, polled = await call("GET", "/api/dungeon/boss/state", first)
@@ -225,7 +226,8 @@ async def main(argv: list[str] | None = None) -> int:
 
         status, punch = await call("POST", "/api/dungeon/boss/hit", first, {"damage": 120})
         hit_room = punch.get("boss") or {}
-        check("удар снял HP", hit_room.get("hp"), 420)
+        check("удар снял HP", hit_room.get("hp"),
+              dungeon_rules.base_hp(0, 2) - 120)
         check("урон записан", hit_room.get("hit"), 120)
         check("кулдаун включился", (hit_room.get("cooldown") or 0) > 0, True)
 
@@ -296,7 +298,14 @@ async def main(argv: list[str] | None = None) -> int:
         await start_room(db, kill_room["id"])
         await call("GET", "/api/dungeon/boss/state", first)
         last = None
-        for _ in range(10):
+        for _ in range(80):
+            # каждый удар тут идёт через пулер (около секунды), и босс успевает
+            # добить героя чисто из-за задержки сети — подлечиваем для теста
+            async with db._p().acquire() as con:
+                await con.execute(
+                    "update dungeon_boss_players set hp = 120 where boss_id = $1",
+                    int(kill_room["id"]),
+                )
             await ready_cooldown(db, kill_room["id"])
             last = await repo.hit(TEST_USERS[0], 400, datetime.now(timezone.utc))
             if last["status"] != "fight":
@@ -573,6 +582,21 @@ async def main(argv: list[str] | None = None) -> int:
             )
         status, poor = await call("POST", "/api/case/ultra", first, {})
         check("ультра-кейс: без очков отказ", status, 400)
+
+        # Квест НПС: выдается по часу и награда одна на час
+        status, quest_state = await call("GET", "/api/dungeon/quest", first)
+        quest = (quest_state or {}).get("quest") or {}
+        check("квест НПС: выдан", status, 200)
+        check("квест НПС: текст есть", bool(quest.get("text")), True)
+        check("квест НПС: вид известен",
+              quest.get("kind") in ("hunt", "boss"), True)
+        amt = int(quest.get("coins") or 0)
+        check("квест НПС: награда положительная", amt > 0, True)
+        status, took = await call("POST", "/api/dungeon/quest", first, {})
+        check("квест НПС: награда выдана", status, 200)
+        check("квест НПС: монеты в ответе", int((took or {}).get("coins") or 0), amt)
+        status, again_quest = await call("POST", "/api/dungeon/quest", first, {})
+        check("квест НПС: второй раз отказ", status, 400)
 
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:

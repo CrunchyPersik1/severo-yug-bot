@@ -24,7 +24,7 @@ def test_page_zones_are_the_same_as_server():
 def test_coop_boss_has_more_hp():
     solo = dungeon.base_hp(0, 1)
     coop = dungeon.base_hp(0, 2)
-    assert solo == 300
+    assert solo == 600
     assert coop > solo
     assert abs(coop / solo - dungeon.COOP_HP_FACTOR) < 0.02
     assert dungeon.base_hp(9, 2) > dungeon.base_hp(9, 1)
@@ -33,7 +33,7 @@ def test_coop_boss_has_more_hp():
 def test_hp_grows_with_zone():
     hp = [dungeon.base_hp(zone, 1) for zone in range(dungeon.zone_count())]
     assert hp == sorted(hp)
-    assert hp[0] == 300
+    assert hp[0] == 600
 
 
 def test_boss_hits_harder_deeper():
