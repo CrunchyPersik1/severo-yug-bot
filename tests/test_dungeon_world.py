@@ -16,7 +16,7 @@ def test_armor_button_is_wired():
     assert "/api/dungeon/armor" in DUNGEON_PAGE
     assert "function heroArmor(" in DUNGEON_PAGE
     assert "HERO_ARMOR" in DUNGEON_PAGE
-    assert "ЮГОВ" in DUNGEON_PAGE
+    assert "HERO_ARMOR.price" in DUNGEON_PAGE
 
 
 def test_houses_have_hitboxes():

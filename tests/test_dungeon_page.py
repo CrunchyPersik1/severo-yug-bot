@@ -90,7 +90,7 @@ def test_weapon_upgrade_is_wired():
     assert "function heroUpgrade(" in DUNGEON_PAGE
     assert "/api/dungeon/upgrade" in DUNGEON_PAGE
     assert "HERO_OFFER" in DUNGEON_PAGE
-    assert "УЛУЧШИТЬ · " in DUNGEON_PAGE
+    assert "HERO_OFFER.price" in DUNGEON_PAGE
     assert "Улучшение оружия — за монеты" not in DUNGEON_PAGE
 
 

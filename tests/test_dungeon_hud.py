@@ -33,7 +33,7 @@ def test_full_menu_opens():
     assert 'id="wexpand"' in DUNGEON_PAGE
     assert 'id="wclose"' in DUNGEON_PAGE
     # в полном меню — переходы в другие разделы
-    for path in ('/stocks', '/market', '/upgrader', '/case_app', '/profile', '/hub'):
+    for path in ('/stocks', '/upgrader', '/case_app', '/profile', '/hub'):
         assert 'href="%s"' % path in DUNGEON_PAGE, path
 
 
@@ -46,5 +46,5 @@ def test_controls_do_not_overlap_menu():
     # джойстик и кнопки подняты над меню, полосы — выше них
     assert "left:14px;bottom:150px" in DUNGEON_PAGE
     assert "right:14px;bottom:150px" in DUNGEON_PAGE
-    assert "bottom:282px" in DUNGEON_PAGE   # hpbar
-    assert "bottom:306px" in DUNGEON_PAGE   # xpbar
+    # полосы теперь компактной строкой сверху, а не поверх игры
+    assert "top:54px" in DUNGEON_PAGE

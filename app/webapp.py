@@ -6211,19 +6211,21 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   font-weight:900;color:#f6c94a;font-family:ui-monospace,monospace}
 .wmenu{position:fixed;left:6px;right:6px;bottom:6px;display:flex;gap:6px;z-index:10}
 .wmenu .wcol{flex:1;min-width:0;position:relative;
-  background:linear-gradient(#2a1c10f2,#140d06f7);border:2px solid #6b4a22;
-  border-radius:10px;padding:7px 9px;box-shadow:inset 0 0 0 2px #120c06}
-.wmenu .wttl{font-size:6.5px;letter-spacing:1px;color:#8a6a2a;font-weight:800}
-.wmenu .wname{font-size:9px;color:#ffd98a;font-weight:800;margin-top:3px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:22px}
-.wmenu .wsub{font-size:7px;color:#c9a227;margin-top:2px}
-.wstats{display:flex;gap:8px;margin-top:4px}
-.wmenu .wstat{font-size:7px;color:#c9a227;white-space:nowrap}
-.wmenu .wstat b{color:#ffe9b8;font-size:9px}
-.wacts{display:flex;gap:4px;margin-top:5px}
-.wacts button{flex:1;border:2px solid #6b4a22;background:#241708;color:#ffd98a;
-  border-radius:6px;padding:5px 2px;font-family:inherit;font-size:6.5px;
-  font-weight:800;line-height:1.1;white-space:nowrap}
+  background:linear-gradient(#2a1c10f2,#140d06f7);border:3px solid #6b4a22;
+  border-radius:12px;padding:9px 11px;box-shadow:inset 0 0 0 2px #120c06}
+.wmenu .wttl{font-size:8px;letter-spacing:1.2px;color:#a37f3a;font-weight:800}
+.wmenu .wname{font-size:12px;color:#ffd98a;font-weight:800;margin-top:5px;
+  line-height:1.15;padding-right:26px;word-break:break-word}
+.wmenu .wsub{font-size:9px;color:#c9a227;margin-top:4px}
+.wstats{display:flex;gap:9px;margin-top:6px;flex-wrap:wrap}
+.wmenu .wstat{font-size:9px;color:#c9a227;white-space:nowrap}
+.wmenu .wstat b{color:#ffe9b8;font-size:12px;margin-left:2px}
+.wacts{display:flex;gap:5px;margin-top:8px}
+.wacts button{flex:1 1 0;min-width:0;border:2px solid #6b4a22;background:#241708;
+  color:#ffd98a;border-radius:7px;padding:9px 3px;font-family:inherit;font-size:8.5px;
+  font-weight:800;line-height:1;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.wacts button:disabled{opacity:.45}
 #warmor{color:#9fd6ff}
 .wmore{position:absolute;right:6px;top:6px;width:20px;height:20px;border:2px solid #6b4a22;
   border-radius:5px;background:#241708;color:#ffd98a;font-size:10px;line-height:1;padding:0}
@@ -6234,6 +6236,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   font-size:12px;letter-spacing:2px;color:#ffd98a;padding:2px 4px 12px}
 .wfhead button{width:30px;height:30px;border:2px solid #6b4a22;border-radius:7px;
   background:#241708;color:#ffd98a;font-size:14px;line-height:1;padding:0}
+.wfhint{font-size:9px;color:#a37f3a;padding:0 4px 10px;line-height:1.5}
 .wfbody{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .wfitem{display:flex;align-items:center;gap:10px;text-decoration:none;
   background:linear-gradient(#2a1c10,#160e07);border:2px solid #6b4a22;border-radius:10px;
@@ -6255,25 +6258,22 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .wstat{display:flex;justify-content:space-between;font-size:7px;color:#b8a888;
   padding:2px 0}
 .wstat b{color:#8bd65a}
-.hpbar{position:fixed;left:14px;right:14px;bottom:282px;height:15px;z-index:13;
-  background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
-.hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
-  transition:width .2s;width:100%}
-.hptxt{position:fixed;left:0;right:0;bottom:300px;text-align:center;font-size:11px;
-  font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
-  font-family:ui-monospace,monospace}
-.safebadge{position:fixed;left:50%;transform:translateX(-50%);bottom:332px;z-index:11;
+.statbars{position:fixed;top:54px;left:6px;right:6px;display:flex;gap:6px;z-index:11}
+.statbar{position:relative;flex:1;height:19px;background:#000b;border:2px solid #2a3346;
+  border-radius:99px;overflow:hidden;min-width:0}
+.statbar i{position:absolute;left:0;top:0;bottom:0;display:block;width:0;
+  transition:width .2s}
+.statbar.hp i{background:linear-gradient(90deg,#4ade80,#16a34a)}
+.statbar.xp i{background:linear-gradient(90deg,#8b5cf6,#c4b5fd)}
+.statbar span{position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;font:900 7.5px/1 ui-monospace,monospace;color:#fff;
+  text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden}
+.safebadge{position:fixed;left:50%;transform:translateX(-50%);top:80px;z-index:11;
   background:#0f2a1bee;border:2px solid #2f7a52;border-radius:999px;padding:4px 12px;
   font-size:8px;font-weight:900;letter-spacing:.4px;color:#9df0bd;
   display:none;pointer-events:none;white-space:nowrap}
 .safebadge.on{display:block}
-.xpbar{position:fixed;left:14px;right:14px;bottom:306px;height:9px;z-index:10;
-  background:#000a;border:2px solid #3b2b62;border-radius:99px;overflow:hidden}
-.xpbar i{display:block;height:100%;width:0;border-radius:99px;
-  background:linear-gradient(90deg,#8b5cf6,#c4b5fd);transition:width .25s}
-.xptxt{position:fixed;left:0;right:0;bottom:318px;text-align:center;font-size:9.5px;
-  font-weight:900;color:#d8ccff;text-shadow:0 1px 4px #000;z-index:10;
-  font-family:ui-monospace,monospace;letter-spacing:.3px}
+
 .joy{position:fixed;left:14px;bottom:150px;width:118px;height:118px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
   border:3px solid #6b4a22;z-index:11;touch-action:none;
@@ -6303,6 +6303,9 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .cls h1{margin:0 0 6px;font-size:20px}
 .cls .c{width:100%;max-width:360px;border:2px solid #2a3346;background:#151a25;
   border-radius:14px;padding:14px;text-align:left;color:#e8ebf2;font-family:inherit}
+.sellw{width:100%;margin-top:6px;border:2px solid #6b4a22;background:#2a1c10;
+  color:#ffd98a;border-radius:7px;padding:7px;font-family:inherit;font-size:9px;
+  font-weight:800}
 .cls .c b{font-size:15px}
 .cls .c span{display:block;font-size:11.5px;color:#8b93a7;margin-top:3px}
 #bag{position:fixed;inset:0;background:#0b0e14f8;z-index:80;display:none;
@@ -6497,9 +6500,10 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </div>
 <div class="wfull" id="wfull">
   <div class="wfhead"><b>МЕНЮ</b><button id="wclose">✕</button></div>
+  <div class="wfhint">Оружие из сумки можно продать: кнопка «ПРОДАТЬ» в карточке</div>
   <div class="wfbody">
     <a class="wfitem" href="/stocks">📈<span>Биржа</span></a>
-    <a class="wfitem" href="/market">🛒<span>Рынок</span></a>
+    <button class="wfitem" id="wfsell">🛒<span>Скупка оружия</span></button>
     <a class="wfitem" href="/upgrader">⚗️<span>Апгрейдер</span></a>
     <a class="wfitem" href="/case_app">📦<span>Кейсы</span></a>
     <a class="wfitem" href="/quests">📜<span>Задания</span></a>
@@ -6508,11 +6512,11 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <a class="wfitem" href="/hub">🏠<span>Хаб</span></a>
   </div>
 </div>
-<div class="hpbar"><i id="hpfill"></i></div>
-<div class="hptxt" id="hptxt">HP 120 / 120</div>
+<div class="statbars">
+  <div class="statbar hp"><i id="hpfill"></i><span id="hptxt">HP 120 / 120</span></div>
+  <div class="statbar xp"><i id="xpfill"></i><span id="xptxt">УР. 1 · 0 / 60</span></div>
+</div>
 <div class="safebadge" id="safebadge">🛡 СЕЙФ-ЗОНА · тут не бьют</div>
-<div class="xpbar"><i id="xpfill"></i></div>
-<div class="xptxt" id="xptxt">УР. 1 · 0 / 60</div>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
 <div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:150px">
@@ -7557,6 +7561,11 @@ document.getElementById("wexpand").onclick = function(){
 };
 document.getElementById("wclose").onclick = function(){
   document.getElementById("wfull").classList.remove("on");
+};
+document.getElementById("wfsell").onclick = function(){
+  document.getElementById("wfull").classList.remove("on");
+  document.getElementById("bag").classList.add("on");
+  paintInv();
 };
 document.getElementById("offbtn").onclick = function(){
   if (!OFFLINE.length){ toast("Все на месте — оффлайн никого"); return; }
@@ -8892,6 +8901,20 @@ let dtFix = 0;
 function refreshInv(){
   if (document.getElementById("cls").style.display !== "none") paintInv();
 }
+function sellPrice(w){ return Math.max(5, Math.round(w.dmg * 4)); }
+function sellWeapon(id, ev){
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  const w = weaponById(id);
+  if (!w) return;
+  const price = sellPrice(w);
+  P.bag = P.bag.filter(function(x){ return x !== id; });
+  if (P.weapon && P.weapon.id === id){
+    P.weapon = P.bag.length ? weaponById(P.bag[0]) : null;
+  }
+  P.coins += price;
+  toast("Продан " + w.name + " · +" + price + " монет");
+  paintInv(); sync(); heroSave(true);
+}
 function paintInv(){
   const html = P.bag.map(id => {
     const w = weaponById(id);
@@ -8899,7 +8922,9 @@ function paintInv(){
     return '<div class="c" data-eq="' + id + '" style="margin-bottom:8px;' +
       'border-color:' + (on ? "#3b6fff" : "#2a3346") + '">' +
       '<b>' + w.name + '</b><span>' + w.cls + ' · урон ' + w.dmg +
-      ' · дальность ' + w.range + (on ? ' · В РУКАХ' : '') + '</span></div>';
+      ' · дальность ' + w.range + (on ? ' · В РУКАХ' : '') + '</span>' +
+      '<button class="sellw" data-sell="' + id + '">ПРОДАТЬ · ' +
+        sellPrice(w) + ' 🪙</button></div>';
   }).join("");
   ["inv", "inv2"].forEach(function(idd){
     const box = document.getElementById(idd);
@@ -8909,6 +8934,9 @@ function paintInv(){
     box.querySelectorAll("[data-eq]").forEach(el => el.onclick = () => {
       P.weapon = weaponById(el.dataset.eq);
       paintInv(); toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
+    });
+    box.querySelectorAll("[data-sell]").forEach(el => el.onclick = (ev) => {
+      sellWeapon(el.dataset.sell, ev);
     });
   });
 }
@@ -9000,12 +9028,12 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
   const armorBtn = document.getElementById("warmor");
   if (armorBtn){
     armorBtn.textContent = HERO_ARMOR
-      ? ("БРОНЯ · " + HERO_ARMOR.price + " ЮГОВ · −" + Math.round((HERO_ARMOR.discount || 0) * 100) + "%")
-      : ("БРОНЯ " + (P.armor || 0) + " · МАКС");
+      ? ("🛡 " + HERO_ARMOR.price + " Ю")
+      : ("🛡 " + (P.armor || 0) + " МАКС");
   }
   const up = document.getElementById("wupg");
   if (up){
-    up.textContent = HERO_OFFER ? ("УЛУЧШИТЬ · " + HERO_OFFER.price) : "УЛУЧШИТЬ";
+    up.textContent = HERO_OFFER ? ("⬆ " + HERO_OFFER.price) : "⬆ МАКС";
     up.disabled = !HERO_OFFER || P.coins < HERO_OFFER.price;
   }
   const zi = zoneIndex(P.y);
