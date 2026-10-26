@@ -6217,6 +6217,13 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .hptxt{position:fixed;left:0;right:0;bottom:262px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
+.xpbar{position:fixed;left:14px;right:14px;bottom:268px;height:9px;z-index:10;
+  background:#000a;border:2px solid #3b2b62;border-radius:99px;overflow:hidden}
+.xpbar i{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,#8b5cf6,#c4b5fd);transition:width .25s}
+.xptxt{position:fixed;left:0;right:0;bottom:280px;text-align:center;font-size:9.5px;
+  font-weight:900;color:#d8ccff;text-shadow:0 1px 4px #000;z-index:10;
+  font-family:ui-monospace,monospace;letter-spacing:.3px}
 .joy{position:fixed;left:14px;bottom:112px;width:118px;height:118px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
   border:3px solid #6b4a22;z-index:11;touch-action:none;
@@ -6449,6 +6456,8 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </div>
 <div class="hpbar"><i id="hpfill"></i></div>
 <div class="hptxt" id="hptxt">HP 120 / 120</div>
+<div class="xpbar"><i id="xpfill"></i></div>
+<div class="xptxt" id="xptxt">УР. 1 · 0 / 60</div>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
 <div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:150px">
@@ -7744,6 +7753,10 @@ function heroApply(hero, heal){
   const level = Math.max(1, hero.level | 0);
   stats.lvl = level;
   stats.exp = Math.max(0, hero.exp | 0);
+  while (stats.exp >= expNeed(stats.lvl) && stats.lvl < 999){
+    stats.exp -= expNeed(stats.lvl);
+    stats.lvl += 1;
+  }
   stats.kills = Math.max(0, hero.kills | 0);
   P.coins = Math.max(0, hero.coins | 0);
   const bag = (hero.bag || []).filter(function(id){ return !!weaponById(id); });
@@ -7758,7 +7771,7 @@ function heroApply(hero, heal){
     P.x = Math.max(60, Math.min(WORLD.w - 60, hero.x));
     P.y = Math.max(60, Math.min(WORLD.h - 60, hero.y));
   }
-  P.max = 120 + (level - 1) * 8;        // ровно как даёт повышение уровня
+  P.max = heroMax(level);
   if (heal !== false) P.hp = P.max;
 }
 
@@ -7839,7 +7852,7 @@ function zoneIndex(y){
   return Math.max(0, Math.min(ZONES.length - 1, ZONES.length - 1 - raw));
 }
 function zoneAt(y){ return ZONES[zoneIndex(y)]; }
-function zoneReq(y){ return 1 + zoneIndex(y) * 25; }   // 1, 26, 51, 76, ...
+function zoneReq(y){ return 1 + zoneIndex(y) * 5; }   // 1, 6, 11, 16, 21, ...
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -8085,12 +8098,15 @@ function killMob(m){
   const zr = zoneReq(m.y);
   const tooStrong = stats.lvl < zr;
   const power = Math.max(1, Math.round(m.max / 30));
+  const baseXp = Math.max(8, Math.round(m.max / 5));
   if (tooStrong){
+    // раньше тут был ноль опыта, и 75 убийств не давали ничего: даём треть
     P.coins += 1;
-    toast("Слабо для этой локации: нужен ур. " + zr + " — опыта нет");
+    gainExp(Math.round(baseXp * 0.3));
+    toast("Локация выше твоего уровня: опыт x0.3, нужен ур. " + zr);
   } else {
     P.coins += 3 + Math.floor(Math.random() * 5);
-    gainExp(Math.max(4, Math.round(m.max / 18)));
+    gainExp(baseXp);
   }
   stats.kills += 1;
   if (QUEST && !QUEST.claimed && QUEST.kind === "hunt" &&
@@ -8112,16 +8128,34 @@ function killMob(m){
   sync();
 }
 function expNeed(lvl){
-  // поздние уровни требуют намного больше опыта
-  return Math.round(80 * Math.pow(Math.max(1, lvl), 1.55));
+  // поздние уровни требуют больше, но не в разы: 60 * lvl^1.5
+  return Math.round(60 * Math.pow(Math.max(1, lvl), 1.5));
+}
+function heroMax(lvl){
+  return 120 + (Math.max(1, lvl) - 1) * 10;
+}
+function xpPaint(){
+  const fill = document.getElementById("xpfill");
+  const txt = document.getElementById("xptxt");
+  if (!fill || !txt) return;
+  const need = expNeed(stats.lvl);
+  const pct = Math.max(0, Math.min(100, stats.exp / need * 100));
+  fill.style.width = pct.toFixed(1) + "%";
+  const zi = Math.max(0, Math.min(9, zoneIndex(P.y)));
+  // сколько мобов ещё нужно — по среднему опыту с моба этой локации
+  let perMob = Math.max(6, Math.round(zoneMobHp(zi) * 0.78 / 6));
+  if (stats.lvl < zoneReq(P.y)) perMob = Math.max(1, Math.round(perMob * 0.3));
+  const left = Math.ceil(Math.max(0, need - stats.exp) / Math.max(1, perMob));
+  txt.textContent = "УР. " + stats.lvl + " · " + Math.round(stats.exp) + " / " + need +
+    (left > 0 ? " · ~" + left + " мобов" : " · УРОВЕНЬ ГОТОВ");
 }
 function gainExp(amount){
-  stats.exp += Math.max(1, Math.round(amount));
+  stats.exp += Math.max(0, Math.round(amount));
   let leveled = 0;
   while (stats.exp >= expNeed(stats.lvl)){
     stats.exp -= expNeed(stats.lvl);
     stats.lvl += 1;
-    P.max += 8 + Math.floor(stats.lvl / 4);
+    P.max = heroMax(stats.lvl);
     leveled += 1;
   }
   if (leveled){
@@ -8129,6 +8163,7 @@ function gainExp(amount){
     toast("Уровень " + stats.lvl + "! HP " + P.max + " · до след. " + expNeed(stats.lvl));
     heroSave(true);
   }
+  xpPaint();
   return leveled;
 }
 function shieldUp(){
@@ -8815,6 +8850,7 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
     const e5 = document.getElementById("wspd");
     if (e5) e5.textContent = P.weapon.spd || 1;
   }
+  xpPaint();
   const armorBtn = document.getElementById("warmor");
   if (armorBtn){
     armorBtn.textContent = HERO_ARMOR
