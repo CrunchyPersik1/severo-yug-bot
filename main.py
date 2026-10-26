@@ -13,6 +13,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import ErrorEvent, Update
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, Request, Response
 
@@ -245,6 +246,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="severo-yug-bot", lifespan=lifespan)
+
+# JSON мини-аппок сжимается в 4-6 раз: трафик Supabase падает,
+# а клиенту всё равно, он распаковывает прозрачно.
+app.add_middleware(GZipMiddleware, minimum_size=800)
 
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")

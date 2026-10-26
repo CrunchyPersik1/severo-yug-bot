@@ -7263,7 +7263,7 @@ function coopApply(room){
       ? (weaponById(room.reward.weapon) || rollWeapon(zoneIndex(P.y), true))
       : null;
     if (bossLoot){
-      if (P.bag.indexOf(bossLoot.id) < 0) P.bag.push(bossLoot.id);
+      if (P.bag.indexOf(bossLoot.id) < 0){ P.bag.push(bossLoot.id); heroBagDirty = true; }
       coopLog("Дроп с босса: <b>" + bossLoot.name + "</b> · урон " + bossLoot.dmg);
       paintInv();
     }
@@ -7969,15 +7969,20 @@ if (TG_INIT){
 /* ---------- прогресс героя: живёт в базе, а не во вкладке ---------- */
 let heroLoaded = false, heroBusy = false, heroStamp = "", HERO_OFFER = null;
 
-function heroSnapshot(){
-  return {
+let heroBagDirty = true;   // сумку отправляем только когда она менялась
+function heroSnapshot(withBag){
+  const snap = {
     level: stats.lvl,
     exp: Math.round(stats.exp),
     coins: Math.max(0, Math.round(P.coins)),
     kills: stats.kills,
-    weapon: P.weapon ? P.weapon.id : null,
-    bag: (P.bag || []).slice(0, 200)
+    weapon: P.weapon ? P.weapon.id : null
   };
+  if (withBag || heroBagDirty){
+    snap.bag = (P.bag || []).slice(0, 200);
+    heroBagDirty = false;
+  }
+  return snap;
 }
 
 function heroApply(hero, heal){
@@ -8025,7 +8030,7 @@ async function heroLoad(){
 
 async function heroSave(force){
   if (!TG_INIT || !heroLoaded || heroBusy) return;
-  const snapshot = heroSnapshot();
+  const snapshot = heroSnapshot(force);
   const stamp = JSON.stringify(snapshot);
   if (!force && stamp === heroStamp) return;
   heroBusy = true;
@@ -8375,7 +8380,7 @@ function killMob(m){
   if (Math.random() < MOB_DROP_CHANCE){
     const loot = rollWeapon(zoneIndex(m.y), false) || WEAPONS[0];
     const isNew = P.bag.indexOf(loot.id) < 0;
-    if (isNew) P.bag.push(loot.id);
+    if (isNew){ P.bag.push(loot.id); heroBagDirty = true; heroSave(true); }
     drop.push({x: m.x, y: m.y, kind: "weapon", t: 8, name: loot.name});
     toast((isNew ? "НОВОЕ! " : "") + loot.name +
           " · " + loot.cls + " · урон " + loot.dmg + " · дальн. " + loot.range +
@@ -8488,7 +8493,9 @@ function endBattle(win){
     FX.burst(boss.x, boss.y, 40, "#ffd98a", 320, 22);
     FX.shake(9);
     const loot = rollWeapon(boss ? boss.zone : zoneIndex(P.y), true);
-    if (loot && P.bag.indexOf(loot.id) < 0){ P.bag.push(loot.id); paintInv(); }
+    if (loot && P.bag.indexOf(loot.id) < 0){
+      P.bag.push(loot.id); heroBagDirty = true; paintInv(); heroSave(true);
+    }
     gainExp(Math.round(zoneMobHp(boss ? boss.zone : zoneIndex(P.y)) / 5));
     if (QUEST && !QUEST.claimed && QUEST.kind === "boss" &&
         (boss ? boss.zone : zoneIndex(P.y)) === QUEST.zone){
@@ -9055,6 +9062,7 @@ function sellWeapon(id, ev){
   if (!w) return;
   const price = sellPrice(w);
   P.bag = P.bag.filter(function(x){ return x !== id; });
+  heroBagDirty = true;
   if (P.weapon && P.weapon.id === id){
     P.weapon = P.bag.length ? weaponById(P.bag[0]) : null;
   }

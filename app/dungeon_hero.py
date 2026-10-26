@@ -194,6 +194,9 @@ class DungeonHeroRepo:
         return hero_payload(row)
 
     async def save(self, user_id: int, payload: dict) -> dict:
+        # Сумку шлём только когда она менялась: это 90% веса запроса.
+        # Если ключа нет — старую сумку не трогаем.
+        has_bag = "bag" in payload and payload.get("bag") is not None
         data = sanitize(payload)
         async with self.pool.acquire() as con:
             row = await con.fetchrow(
@@ -208,7 +211,8 @@ class DungeonHeroRepo:
                        coins = excluded.coins,
                        kills = excluded.kills,
                        weapon = excluded.weapon,
-                       bag = excluded.bag,
+                       bag = case when $8::boolean then excluded.bag
+                                  else dungeon_hero.bag end,
                        updated_at = now()
                 returning *
                 """,
@@ -219,6 +223,7 @@ class DungeonHeroRepo:
                 data["kills"],
                 data["weapon"],
                 json.dumps(data["bag"]),
+                has_bag,
             )
         return hero_payload(row)
 

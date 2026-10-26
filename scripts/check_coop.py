@@ -583,6 +583,17 @@ async def main(argv: list[str] | None = None) -> int:
         status, poor = await call("POST", "/api/case/ultra", first, {})
         check("ультра-кейс: без очков отказ", status, 400)
 
+        # Лёгкий автосейв: без ключа bag сумка на сервере остаётся прежней
+        await call("POST", "/api/dungeon/hero", first, {
+            "level": 12, "coins": 500, "weapon": "bow_3_1", "bag": ["bow_3_1", "sword_1_0"]})
+        await call("POST", "/api/dungeon/hero", first, {
+            "level": 12, "coins": 600, "weapon": "bow_3_1"})
+        status, light = await call("GET", "/api/dungeon/hero", first)
+        hero_light = (light or {}).get("hero") or {}
+        check("герой: сумка не стёрлась",
+              sorted(hero_light.get("bag") or []), ["bow_3_1", "sword_1_0"])
+        check("герой: монеты обновились", hero_light.get("coins"), 600)
+
         # Квест НПС: выдается по часу и награда одна на час
         status, quest_state = await call("GET", "/api/dungeon/quest", first)
         quest = (quest_state or {}).get("quest") or {}
