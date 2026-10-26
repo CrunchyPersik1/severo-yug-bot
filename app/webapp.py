@@ -2552,6 +2552,46 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
   transform:translateY(200%);transition:.25s;z-index:30}
 #toast.on{transform:translateY(0)}
+
+/* профиль в приложении: та же карточка, что в мини-апп */
+.line.tap{cursor:pointer}
+.line.tap:active{background:var(--panel2)}
+.line .go{color:var(--muted);font-weight:900;font-size:16px;margin-left:6px}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  overflow:hidden;margin-bottom:12px}
+.pbn{height:84px}
+.pav{position:relative;margin:-26px 0 0 14px;width:62px;height:62px;border-radius:18px;
+  display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;
+  border:3px solid var(--panel);box-shadow:0 4px 14px #0006;overflow:hidden}
+.pav img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pbody{padding:10px 14px 14px}
+.pnm{font-size:17px;font-weight:900}
+.pst{font-size:12px;color:var(--acc2);margin-top:3px;font-weight:700}
+.pbio{font-size:12px;margin-top:8px;line-height:1.5;opacity:.85}
+.ptags{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+.ptags span{font-size:10px;font-weight:800;padding:3px 8px;border-radius:99px;
+  background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc2)}
+.prew{font-size:12px;margin-top:9px;line-height:1.6;color:var(--muted)}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.pgrid>div{background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+  padding:9px 6px;text-align:center}
+.pgrid b{display:block;font-size:17px;font-weight:900}
+.pgrid span{font-size:9px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);
+  font-weight:800}
+.prow{display:flex;gap:8px;margin-top:12px}
+.prow button{flex:1;border-radius:12px;padding:11px;font-size:12.5px;font-weight:800}
+.psearch{display:flex;gap:8px;margin:4px 0 2px}
+.psearch input{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+  color:var(--ink);padding:11px 13px;font-size:13px}
+.psearch button{border:0;border-radius:12px;padding:0 16px;font-size:12.5px;font-weight:800}
+.pres{display:flex;align-items:center;gap:10px;background:var(--panel);
+  border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-top:8px;cursor:pointer}
+.pres:active{background:var(--panel2)}
+.pres .a{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;font-weight:900;font-size:14px;flex:0 0 auto}
+.pres .n{flex:1;min-width:0;font-size:13px;font-weight:800;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.pres .l{font-size:11px;color:var(--muted);font-weight:700}
 </style>
 </head>
 <body>
@@ -2717,21 +2757,93 @@ function open(id){
       const value = id === "top"
         ? money(r.points) + " очк."
         : "ур. " + r.level + " · " + r.xp + " xp";
-      return '<div class="line"><div class="pos">' + (i + 1) + '</div><div class="nm">' + name +
-        '</div><div class="vl">' + value + '</div></div>';
+      // тап по строке открывает профиль этого игрока, не выходя из приложения
+      return '<div class="line tap" data-u="' + (r.user_id || r.id) + '">' +
+        '<div class="pos">' + (i + 1) + '</div><div class="nm">' + name +
+        '</div><div class="vl">' + value + '</div><div class="go">›</div></div>';
     }).join("") : '<div class="empty">Пока пусто</div>';
+    box.querySelectorAll("[data-u]").forEach(el => el.onclick = () => {
+      loadProfile(+el.dataset.u);
+      show("p-profile");
+    });
     show(id === "top" ? "p-top" : "p-levels");
   } else if (id === "profile"){
-    const m = S.data.me;
-    document.getElementById("profList").innerHTML =
-      [["Имя", esc(m.name)], ["Баланс", money(m.balance) + " очк."], ["Уровень", m.level],
-       ["Опыт", m.xp + " xp"], ["Побед", m.wins], ["Карт", m.cards]]
-      .map(([k, v]) => '<div class="line"><div class="nm">' + k + '</div><div class="vl">' + v + '</div></div>').join("");
+    loadProfile(0);
     show("p-profile");
   } else if (id === "style"){
     renderThemes();
     show("p-style");
   }
+}
+async function loadProfile(userId){
+  const box = document.getElementById("profList");
+  box.innerHTML = '<div class="empty">Загружаю…</div>';
+  try{
+    const r = await fetch("/api/profile" + (userId ? "?u=" + userId : ""), {headers});
+    const d = await r.json();
+    if (d.error){ box.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
+    const tags = (d.tags || []).map(t => '<span>' + esc(t.label) + '</span>').join("");
+    const rewards = (d.rewards || []).length
+      ? '<div class="prew">' + d.rewards.map(rw => esc(rw.icon) + " " + esc(rw.text)).join("<br>") + '</div>'
+      : "";
+    box.innerHTML =
+      '<div class="pcard">' +
+        '<div class="pbn" style="background:' + d.banner_css + '"></div>' +
+        '<div class="pav" style="background:' + d.avatar_color + '">' +
+          esc(d.initial) +
+          (d.avatar ? '<img src="' + esc(d.avatar) + '" alt="" onerror="this.remove()">' : '') +
+        '</div>' +
+        '<div class="pbody">' +
+          '<div class="pnm">' + esc(d.name) + (d.vip ? ' 👑' : "") + '</div>' +
+          (d.status ? '<div class="pst">' + esc(d.status) + '</div>' : '') +
+          (d.bio ? '<div class="pbio">' + esc(d.bio) + '</div>' : '') +
+          (tags ? '<div class="ptags">' + tags + '</div>' : '') +
+          rewards +
+          '<div class="pgrid">' +
+            '<div><b>' + d.level + '</b><span>уровень</span></div>' +
+            '<div><b>' + d.wins + '</b><span>побед</span></div>' +
+            '<div><b>' + d.cards + '</b><span>карт</span></div>' +
+          '</div>' +
+          '<div class="prow">' +
+            (d.is_me ? '<button id="profEdit">Настроить</button>'
+                     : '<button id="profSelf">Мой профиль</button>') +
+            '<button id="profFull">Открыть страницу</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="psearch"><input id="profQ" placeholder="Найти игрока" maxlength="40">' +
+      '<button id="profGo">Найти</button></div>' +
+      '<div id="profRes"></div>';
+    const edit = document.getElementById("profEdit");
+    if (edit) edit.onclick = () => { location.href = "/profile"; };
+    const self = document.getElementById("profSelf");
+    if (self) self.onclick = () => loadProfile(0);
+    document.getElementById("profFull").onclick = () => {
+      location.href = d.is_me ? "/profile" : "/profile?u=" + d.id;
+    };
+    document.getElementById("profGo").onclick = profSearch;
+    document.getElementById("profQ").addEventListener("keydown", e => {
+      if (e.key === "Enter") profSearch();
+    });
+    S.profId = d.id;
+  }catch(e){ box.innerHTML = '<div class="empty">Не смог загрузить</div>'; }
+}
+async function profSearch(){
+  const q = (document.getElementById("profQ").value || "").trim();
+  const box = document.getElementById("profRes");
+  if (q.length < 2){ box.innerHTML = '<div class="empty">Хотя бы две буквы</div>'; return; }
+  try{
+    const r = await fetch("/api/profile/search?q=" + encodeURIComponent(q), {headers});
+    const d = await r.json();
+    if (d.error){ box.innerHTML = '<div class="empty">' + esc(d.error) + '</div>'; return; }
+    if (!d.results.length){ box.innerHTML = '<div class="empty">Никого не нашёл</div>'; return; }
+    box.innerHTML = d.results.map(u =>
+      '<div class="pres" data-u="' + u.id + '">' +
+      '<div class="a" style="background:' + u.color + '">' + esc(u.initial) + '</div>' +
+      '<div class="n">' + esc(u.name) + '</div>' +
+      '<div class="l">ур. ' + u.level + '</div></div>').join("");
+    box.querySelectorAll("[data-u]").forEach(el => el.onclick = () => loadProfile(+el.dataset.u));
+  }catch(e){ box.innerHTML = '<div class="empty">Связь потерялась</div>'; }
 }
 function renderThemes(){
   const t = S.data.themes;
@@ -4730,7 +4842,9 @@ async function search(){
 document.getElementById("goBtn").onclick = search;
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
 if(tg){ tg.ready(); tg.expand(); }
-open(0);
+// ?u=123 — чужой профиль: ссылки из лидерборда и поиска ведут сюда
+const startUser = new URLSearchParams(location.search).get("u");
+open(startUser ? +startUser : 0);
 </script>
 </body>
 </html>

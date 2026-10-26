@@ -656,6 +656,37 @@ async def cmd_top(message: Message, db: Database) -> None:
     await message.answer("\n".join(lines))
 
 
+@router.message(Command("topall", "топвся"))
+@router.message(NormalizedText("топ вся", "топвся", "топ все"))
+async def cmd_top_all(message: Message, db: Database) -> None:
+    """Полный список всех участников и их очков — по слову «топ вся»."""
+    rows = await db.top_players(500)
+    if not rows:
+        await message.answer("🏆 Пока никто не собрал ни одной карты.")
+        return
+    medals = ["🥇", "🥈", "🥉"]
+    header = "🏆 <b>Топ всех участников</b> ({} чел.)".format(len(rows))
+    lines: list[str] = [header, ""]
+    for index, row in enumerate(rows):
+        name = row["first_name"] or row["username"] or "id" + str(row["user_id"])
+        place = medals[index] if index < 3 else str(index + 1) + "."
+        lines.append(
+            place + " " + render.esc(name) + " — <b>" + str(row["points"]) +
+            "</b> очк. · " + str(row["unique_cards"]) + " карт"
+        )
+    # Telegram не примет сообщение длиннее 4096 символов — режем на части
+    chunk: list[str] = []
+    size = 0
+    for line in lines:
+        if size + len(line) > 3500 and chunk:
+            await message.answer("\n".join(chunk), disable_web_page_preview=True)
+            chunk, size = [], 0
+        chunk.append(line)
+        size += len(line) + 1
+    if chunk:
+        await message.answer("\n".join(chunk), disable_web_page_preview=True)
+
+
 @router.message(Command("pvp", "бой"))
 @router.message(NormalizedText("пвп", "pvp"))
 async def cmd_pvp(message: Message, db: Database, service: BattleService) -> None:

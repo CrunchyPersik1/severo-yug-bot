@@ -106,7 +106,19 @@ const sandbox = {
   Image: ImageStub,
   addEventListener(){}, removeEventListener(){},
   requestAnimationFrame(cb){ rafQueue.push(cb); return rafQueue.length; },
-  innerWidth: 400, innerHeight: 800, devicePixelRatio: 2
+  innerWidth: 400, innerHeight: 800, devicePixelRatio: 2,
+  // Мини-аппки читают ?u= и другие параметры — в браузере это стандарт.
+  location: {search: "", hash: "", pathname: "/", href: "http://localhost/"},
+  URLSearchParams: class {
+    constructor(search){ this.map = {}; String(search || "").replace(/^\?/, "")
+      .split("&").filter(Boolean).forEach(pair => {
+        const [key, value] = pair.split("=");
+        this.map[decodeURIComponent(key)] = decodeURIComponent(value || "");
+      }); }
+    get(key){ return Object.prototype.hasOwnProperty.call(this.map, key) ? this.map[key] : null; }
+    has(key){ return Object.prototype.hasOwnProperty.call(this.map, key); }
+    toString(){ return Object.keys(this.map).map(k => k + "=" + this.map[k]).join("&"); }
+  }
 };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;

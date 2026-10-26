@@ -540,6 +540,16 @@ async def main(argv: list[str] | None = None) -> int:
               len(tapped.get("tree_pool") or []), 110)
         check("кликер: тап отдаёт фишки", int(tapped.get("chips") or -1), 9)
 
+        # Профили: поиск по имени и чужой профиль по ?u=
+        status, found = await call("GET", "/api/profile/search?q=", first)
+        check("профиль: запрос без букв", status, 200)
+        status, fresh = await call("GET", "/api/profile?u=" + str(TEST_USERS[1]), first)
+        check("профиль: чужой по u=", status, 200)
+        check("профиль: is_me false", (fresh or {}).get("is_me"), False)
+        check("профиль: имя есть", bool((fresh or {}).get("name")), True)
+        check("профиль: баннер и аватар",
+              bool((fresh or {}).get("banner_css")) and bool((fresh or {}).get("initial")), True)
+
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:
             await con.execute(

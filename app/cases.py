@@ -14,13 +14,14 @@ OPEN_COOLDOWN_SECONDS = 60   # не чаще одного кейса в мину
 OPEN_PER_DAY = 15            # и не больше 15 за сутки
 
 # Ниже эпической из кейса не выпадает ничего.
+# По ТЗ ульта в 7Г — 0.25%: разницу забирает эпик, сумма остаётся 1.
 CASE_RARITY_WEIGHTS: dict[str, float] = {
-    "epic": 0.60,
+    "epic": 0.6075,
     "mythic": 0.28,
     "legendary": 0.08,
     "secret": 0.015,
     "ultimate": 0.015,
-    "ultra": 0.01,
+    "ultra": 0.0025,
 }
 
 CASE_RARITY_ORDER: tuple[str, ...] = (
