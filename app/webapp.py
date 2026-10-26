@@ -6193,17 +6193,52 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   image-rendering:pixelated}
 .top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
   background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
-.top.bar{top:0;align-items:center;gap:8px;padding:7px 10px;z-index:12}
-.top2{position:fixed;top:50px;left:0;right:0;display:flex;align-items:center;
-  justify-content:space-between;gap:8px;padding:0 10px;z-index:12}
+.hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
+  justify-content:space-between;gap:6px;z-index:12}
+.frame{background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
+  border-radius:9px;padding:3px;display:flex;gap:3px;
+  box-shadow:inset 0 0 0 2px #120c06,0 3px 10px #000a}
+.ic{width:36px;height:36px;border:0;border-radius:7px;font-size:15px;line-height:1;
+  background:radial-gradient(circle at 40% 30%,#4a3520,#241708);
+  color:#f0d79a;font-family:inherit;padding:0;
+  box-shadow:inset 0 0 0 1px #00000055}
+.ic:active{transform:scale(.92)}
 .zlbl{flex:1;text-align:center;font-size:9px;letter-spacing:.6px;color:#d8b45a;
-  text-shadow:0 2px 6px #000;font-family:inherit;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
-.top2 .grp{display:flex;gap:6px;margin:0}
-.top2 .rbtn{width:38px;height:38px;font-size:15px}
-.top2 .apps{position:static;transform:none;padding:2px;gap:2px}
-.top2 .apps a{padding:5px 7px;font-size:11px;line-height:1}
-.top .coins{position:static;margin-left:auto}
+  text-shadow:0 2px 6px #000;font-family:inherit;padding-top:2px;min-width:0}
+.zlbl #zone{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zlbl .coins{display:inline-block;margin-top:4px;background:#151a25dd;
+  border:1px solid #2a3346;border-radius:8px;padding:3px 9px;font-size:10px;
+  font-weight:900;color:#f6c94a;font-family:ui-monospace,monospace}
+.wmenu{position:fixed;left:6px;right:6px;bottom:6px;display:flex;gap:6px;z-index:10}
+.wmenu .wcol{flex:1;min-width:0;position:relative;
+  background:linear-gradient(#2a1c10f2,#140d06f7);border:2px solid #6b4a22;
+  border-radius:10px;padding:7px 9px;box-shadow:inset 0 0 0 2px #120c06}
+.wmenu .wttl{font-size:6.5px;letter-spacing:1px;color:#8a6a2a;font-weight:800}
+.wmenu .wname{font-size:9px;color:#ffd98a;font-weight:800;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:22px}
+.wmenu .wsub{font-size:7px;color:#c9a227;margin-top:2px}
+.wstats{display:flex;gap:8px;margin-top:4px}
+.wmenu .wstat{font-size:7px;color:#c9a227;white-space:nowrap}
+.wmenu .wstat b{color:#ffe9b8;font-size:9px}
+.wacts{display:flex;gap:4px;margin-top:5px}
+.wacts button{flex:1;border:2px solid #6b4a22;background:#241708;color:#ffd98a;
+  border-radius:6px;padding:5px 2px;font-family:inherit;font-size:6.5px;
+  font-weight:800;line-height:1.1;white-space:nowrap}
+#warmor{color:#9fd6ff}
+.wmore{position:absolute;right:6px;top:6px;width:20px;height:20px;border:2px solid #6b4a22;
+  border-radius:5px;background:#241708;color:#ffd98a;font-size:10px;line-height:1;padding:0}
+.wfull{position:fixed;inset:0;background:#0a0704f7;z-index:40;display:none;
+  flex-direction:column;padding:14px}
+.wfull.on{display:flex}
+.wfhead{display:flex;justify-content:space-between;align-items:center;
+  font-size:12px;letter-spacing:2px;color:#ffd98a;padding:2px 4px 12px}
+.wfhead button{width:30px;height:30px;border:2px solid #6b4a22;border-radius:7px;
+  background:#241708;color:#ffd98a;font-size:14px;line-height:1;padding:0}
+.wfbody{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wfitem{display:flex;align-items:center;gap:10px;text-decoration:none;
+  background:linear-gradient(#2a1c10,#160e07);border:2px solid #6b4a22;border-radius:10px;
+  padding:14px 12px;color:#ffd98a;font-size:11px;font-weight:800}
+.wfitem span{color:#e8d7b0}
 .top{justify-content:space-between;background:none}
 .top .grp{display:flex;gap:7px}
 .top button{border:0;color:#f0d79a;border-radius:50%;width:46px;height:46px;
@@ -6211,12 +6246,7 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   background:url(/static/ui/btn_yellow.png) center/100% 100% no-repeat;
   filter:drop-shadow(0 3px 6px #000a)}
 .top button:active{transform:translateY(2px)}
-#wpanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);
-  width:min(360px,92vw);display:none;gap:8px;z-index:32;opacity:0;
-  transition:opacity .15s ease,transform .15s ease}
-#wpanel.on{display:flex;opacity:1;transform:translate(-50%,-50%) scale(1)}
-#wback{position:fixed;inset:0;background:#000a;z-index:31;display:none}
-#wback.on{display:block}
+
 .wcol{flex:1;min-width:0;background:linear-gradient(#2a1c10ee,#140d06ee);border:3px solid #6b4a22;
   border-radius:10px;padding:8px 10px;box-shadow:0 0 0 2px #120c06}
 .wttl{font-size:7px;letter-spacing:1px;color:#c9a227;margin-bottom:5px}
@@ -6225,21 +6255,21 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .wstat{display:flex;justify-content:space-between;font-size:7px;color:#b8a888;
   padding:2px 0}
 .wstat b{color:#8bd65a}
-.hpbar{position:fixed;left:14px;right:14px;bottom:244px;height:15px;z-index:13;
+.hpbar{position:fixed;left:14px;right:14px;bottom:282px;height:15px;z-index:13;
   background:#000a;border:2px solid #2a3346;border-radius:99px;overflow:hidden;z-index:10}
 .hpbar i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);
   transition:width .2s;width:100%}
-.hptxt{position:fixed;left:0;right:0;bottom:262px;text-align:center;font-size:11px;
+.hptxt{position:fixed;left:0;right:0;bottom:300px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
-.xpbar{position:fixed;left:14px;right:14px;bottom:268px;height:9px;z-index:10;
+.xpbar{position:fixed;left:14px;right:14px;bottom:306px;height:9px;z-index:10;
   background:#000a;border:2px solid #3b2b62;border-radius:99px;overflow:hidden}
 .xpbar i{display:block;height:100%;width:0;border-radius:99px;
   background:linear-gradient(90deg,#8b5cf6,#c4b5fd);transition:width .25s}
-.xptxt{position:fixed;left:0;right:0;bottom:280px;text-align:center;font-size:9.5px;
+.xptxt{position:fixed;left:0;right:0;bottom:318px;text-align:center;font-size:9.5px;
   font-weight:900;color:#d8ccff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace;letter-spacing:.3px}
-.joy{position:fixed;left:14px;bottom:112px;width:118px;height:118px;border-radius:50%;
+.joy{position:fixed;left:14px;bottom:150px;width:118px;height:118px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
   border:3px solid #6b4a22;z-index:11;touch-action:none;
   box-shadow:0 0 0 3px #120c06,inset 0 0 22px #000000cc,0 0 18px #00000088}
@@ -6248,8 +6278,8 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .joy i{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;
   border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a4020,#241608);
   border:3px solid #c9a227;box-shadow:0 0 12px #000000aa,inset 0 0 8px #00000088}
-.btns{position:fixed;right:14px;bottom:112px;display:flex;align-items:flex-end;gap:10px;z-index:11}
-.ab{width:62px;height:62px;border:0;border-radius:50%;color:#f0d79a;
+.btns{position:fixed;right:14px;bottom:150px;display:flex;align-items:flex-end;gap:10px;z-index:11}
+.ab{width:58px;height:58px;border:0;border-radius:50%;color:#f0d79a;
   font-size:24px;font-family:inherit;position:relative;
   display:flex;align-items:center;justify-content:center;
   background:url(/static/ui/btn_grey.png) center/100% 100% no-repeat;
@@ -6404,7 +6434,7 @@ body.fxon #fx{opacity:1}
 .cact button:disabled{opacity:.45;box-shadow:0 4px 0 #000a}
 /* перебиваем общий стиль темы: он тянет тост на всю ширину */
 body #toast{position:fixed!important;left:50%!important;right:auto!important;
-  width:auto!important;max-width:76vw;bottom:304px;
+  width:auto!important;max-width:76vw;bottom:342px;
   background:#1a1410f5;color:#ffe9b8;border:2px solid #6b4a22;
   border-radius:8px;padding:7px 12px;font-size:7px;line-height:1.5;
   text-align:center;transform:translate(-50%,320%);transition:.22s;z-index:60;
@@ -6423,47 +6453,54 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <canvas id="cv"></canvas>
 <canvas id="fx"></canvas>
 
-<div class="top bar">
-  <button class="rbtn" data-tab="clicker" title="В кликер">◀</button>
-  <div class="zlbl" id="zone">ЛОК 1/10 · Опушка</div>
-  <div class="coins">🪙 <span id="coins">0</span></div>
-</div>
-<div class="top2">
-  <nav class="apps">
-    <a href="/yugi" title="Кликер">🍁</a>
-    <a class="on" href="/proto_dungeon" title="Подземелье">🗡</a>
-    <a href="/quests" title="Задания">📜</a>
-  </nav>
-  <div class="grp">
-    <button class="rbtn" data-tab="bag" title="Сумка">🎒</button>
-    <button class="rbtn" id="questbtn" title="Квест НПС">🎯</button>
-    <button class="rbtn" data-tab="board" title="Лидеры">👤</button>
-    <button class="rbtn" data-tab="weapon" title="Оружие">⚔</button>
-    <button class="rbtn" data-tab="settings" title="Графика">⚙</button>
+<div class="hudtop">
+  <div class="frame grp">
+    <button class="ic" data-tab="clicker" title="Назад в кликер">◀</button>
+    <button class="ic" data-tab="bag" title="Сумка">🎒</button>
+    <button class="ic" data-tab="quests" title="Задания">📜</button>
+    <button class="ic" id="questbtn" title="Квест НПС">🎯</button>
+  </div>
+  <div class="zlbl"><span id="zone">ЛОК 1/10 · Опушка</span>
+    <div class="coins">🪙 <span id="coins">0</span></div></div>
+  <div class="frame grp">
+    <button class="ic" data-tab="board" title="Лидерборд">👤</button>
+    <button class="ic" id="offbtn" title="Кто оффлайн">😴</button>
+    <button class="ic" data-tab="settings" title="Настройки">⚙</button>
   </div>
 </div>
 
-<div id="wback"></div>
-<div id="wpanel">
+<div class="wmenu" id="wpanel">
   <div class="wcol">
     <div class="wttl">ОРУЖИЕ</div>
     <div class="wname" id="wname">—</div>
     <div class="wsub" id="wcls">—</div>
+    <button class="wmore" id="wexpand" title="Развернуть">⤢</button>
   </div>
-  <div class="wcol">
+  <div class="wcol stats">
     <div class="wttl">СТАТИСТИКА ОРУЖИЯ</div>
-    <div class="wstat"><span>Урон</span><b id="wdmg">0</b></div>
-    <div class="wstat"><span>Дальность</span><b id="wrange">0</b></div>
-    <div class="wstat"><span>Скорость</span><b id="wspd">0</b></div>
-    <div style="display:flex;gap:6px;margin-top:6px">
-      <button id="warmor" style="width:100%;border:2px solid #6b4a22;background:#2a1c10;
-        color:#9fd6ff;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px;
-        margin-bottom:6px">БРОНЯ</button>
-      <button id="wupg" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
-        color:#c9a227;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px">УЛУЧШИТЬ</button>
-      <button id="wchat" style="flex:1;border:2px solid #6b4a22;background:#2a1c10;
-        color:#c9a227;border-radius:6px;padding:6px 0;font-family:inherit;font-size:7px">ЧАТ</button>
+    <div class="wstats">
+      <div class="wstat"><span>Урон</span><b id="wdmg">0</b></div>
+      <div class="wstat"><span>Дальн.</span><b id="wrange">0</b></div>
+      <div class="wstat"><span>Скор.</span><b id="wspd">0</b></div>
     </div>
+    <div class="wacts">
+      <button id="warmor">БРОНЯ</button>
+      <button id="wupg">УЛУЧШИТЬ</button>
+      <button id="wchat">ЧАТ</button>
+    </div>
+  </div>
+</div>
+<div class="wfull" id="wfull">
+  <div class="wfhead"><b>МЕНЮ</b><button id="wclose">✕</button></div>
+  <div class="wfbody">
+    <a class="wfitem" href="/stocks">📈<span>Биржа</span></a>
+    <a class="wfitem" href="/market">🛒<span>Рынок</span></a>
+    <a class="wfitem" href="/upgrader">⚗️<span>Апгрейдер</span></a>
+    <a class="wfitem" href="/case_app">📦<span>Кейсы</span></a>
+    <a class="wfitem" href="/quests">📜<span>Задания</span></a>
+    <a class="wfitem" href="/profile">👤<span>Профиль</span></a>
+    <a class="wfitem" href="/yugi">🍁<span>Кликер</span></a>
+    <a class="wfitem" href="/hub">🏠<span>Хаб</span></a>
   </div>
 </div>
 <div class="hpbar"><i id="hpfill"></i></div>
@@ -7497,9 +7534,16 @@ function chatSend(){
   try { WS.send(JSON.stringify({type: "chat", text: text})); } catch (e){}
 }
 
-document.getElementById("wback").onclick = function(){
-  document.getElementById("wpanel").classList.remove("on");
-  document.getElementById("wback").classList.remove("on");
+document.getElementById("wexpand").onclick = function(){
+  document.getElementById("wfull").classList.add("on");
+};
+document.getElementById("wclose").onclick = function(){
+  document.getElementById("wfull").classList.remove("on");
+};
+document.getElementById("offbtn").onclick = function(){
+  if (!OFFLINE.length){ toast("Все на месте — оффлайн никого"); return; }
+  const names = OFFLINE.slice(0, 6).map(function(s){ return s.name; }).join(", ");
+  toast("Спят в углу: " + names + (OFFLINE.length > 6 ? " и ещё " + (OFFLINE.length - 6) : ""));
 };
 document.getElementById("chclose").onclick = chatClose;
 document.getElementById("chsend").onclick = chatSend;
@@ -8875,8 +8919,7 @@ document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
   if (t === "clicker"){ location.href = "/yugi"; return; }
   if (t === "quests"){ location.href = "/quests"; return; }
   if (t === "weapon"){
-    document.getElementById("wpanel").classList.add("on");
-    document.getElementById("wback").classList.add("on");
+    document.getElementById("wfull").classList.add("on");
     return;
   }
   if (t === "board"){ openTop(); return; }

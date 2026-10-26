@@ -1,17 +1,25 @@
-"""Мини-аппка: кликер, подземелье и задания под одним переключателем."""
+"""Мини-аппка: кликер, подземелье и задания связаны между собой."""
 
 from app.webapp import DUNGEON_PAGE, QUESTS_PAGE, YUGI_PAGE
 
 
-def test_switcher_on_all_three_pages():
-    for page, name in ((YUGI_PAGE, "кликер"), (DUNGEON_PAGE, "подземелье"),
-                       (QUESTS_PAGE, "задания")):
+def test_switcher_on_clicker_and_quests():
+    for page, name in ((YUGI_PAGE, "кликер"), (QUESTS_PAGE, "задания")):
         assert 'class="apps"' in page, name
         assert 'href="/yugi"' in page, name
         assert 'href="/proto_dungeon"' in page, name
         assert 'href="/quests"' in page, name
-        # ровно одна активная вкладка
-        assert page.count('class="on" href') == 1 or page.count(' class="on"') >= 1, name
+        assert page.count('class="on" href') == 1, name
+
+
+def test_dungeon_links_to_other_sections():
+    # в подземелье нет пилюли-переключателя: сверху группы кнопок,
+    # а переходы в разделы живут в полном меню (кнопка ⤢)
+    assert 'class="apps"' not in DUNGEON_PAGE
+    assert 'href="/yugi"' in DUNGEON_PAGE
+    assert 'href="/quests"' in DUNGEON_PAGE
+    assert 'data-tab="clicker" title="Назад в кликер"' in DUNGEON_PAGE
+    assert 'id="wfull"' in DUNGEON_PAGE
 
 
 def test_dungeon_back_button_goes_to_clicker():

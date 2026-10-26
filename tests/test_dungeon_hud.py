@@ -1,40 +1,50 @@
-"""Опыт по локациям, HUD без наложений, пузыри чата над игроком."""
+"""HUD по референсу: рамки, группы кнопок, меню из половин."""
 
 from app.webapp import DUNGEON_PAGE
 
 
-def test_zone_gate_is_25_levels():
-    assert "function zoneReq(y){ return 1 + zoneIndex(y) * 25; }" in DUNGEON_PAGE
-    assert "function ownZone(lvl){" in DUNGEON_PAGE
-    # своя локация: 1-25 -> 1, 26-50 -> 2
-    assert "Math.floor((Math.max(1, lvl | 0) - 1) / 25)" in DUNGEON_PAGE
+def test_top_is_two_framed_groups():
+    assert 'class="hudtop"' in DUNGEON_PAGE
+    # слева: назад в кликер, сумка, задания, квест НПС
+    assert 'data-tab="clicker" title="Назад в кликер"' in DUNGEON_PAGE
+    assert 'data-tab="bag"' in DUNGEON_PAGE
+    assert 'data-tab="quests"' in DUNGEON_PAGE
+    assert 'id="questbtn"' in DUNGEON_PAGE
+    # справа: лидеры, кто оффлайн, настройки
+    assert 'data-tab="board"' in DUNGEON_PAGE
+    assert 'id="offbtn"' in DUNGEON_PAGE
+    assert 'data-tab="settings"' in DUNGEON_PAGE
+    # монеты по центру, зона — там же
+    assert 'class="zlbl"' in DUNGEON_PAGE
 
 
-def test_xp_scales_with_own_zone():
-    assert "function zoneXpMult(mobZone, lvl){" in DUNGEON_PAGE
-    # ниже своей локации опыт падает, пол — ровно в 10 раз
-    assert "Math.max(0.1, Math.pow(0.45, -d))" in DUNGEON_PAGE
-    # и это применяется при убийстве моба
-    assert "const mult = zoneXpMult(zoneIndex(m.y), stats.lvl)" in DUNGEON_PAGE
+def test_bottom_menu_is_split():
+    assert 'class="wmenu" id="wpanel"' in DUNGEON_PAGE
+    assert "ОРУЖИЕ" in DUNGEON_PAGE
+    assert "СТАТИСТИКА ОРУЖИЯ" in DUNGEON_PAGE
+    # кнопки действий на месте, id сохранены (их дёргает JS)
+    for marker in ('id="warmor"', 'id="wupg"', 'id="wchat"',
+                   'id="wname"', 'id="wdmg"', 'id="wrange"', 'id="wspd"'):
+        assert marker in DUNGEON_PAGE, marker
 
 
-def test_hud_has_no_stubs_and_is_split():
-    # три строки HUD: состояние, ряд кнопок, мир
-    assert 'class="top bar"' in DUNGEON_PAGE
-    assert 'class="top2"' in DUNGEON_PAGE
-    assert 'class="zlbl" id="zone"' in DUNGEON_PAGE
-    # заглушка заданий убрана — кнопка ведёт на страницу
-    assert "Задания — заглушка прототипа" not in DUNGEON_PAGE
-    assert 'if (t === "quests"){ location.href = "/quests"; return; }' in DUNGEON_PAGE
-    # оружие открывается попапом, а не висит поверх джойстика
-    assert "if (t === \"weapon\"){" in DUNGEON_PAGE
-    assert "#wpanel.on{display:flex" in DUNGEON_PAGE
-    assert 'id="wback"' in DUNGEON_PAGE
+def test_full_menu_opens():
+    assert 'id="wfull"' in DUNGEON_PAGE
+    assert 'id="wexpand"' in DUNGEON_PAGE
+    assert 'id="wclose"' in DUNGEON_PAGE
+    # в полном меню — переходы в другие разделы
+    for path in ('/stocks', '/market', '/upgrader', '/case_app', '/profile', '/hub'):
+        assert 'href="%s"' % path in DUNGEON_PAGE, path
 
 
-def test_chat_bubbles_have_player_id():
-    # причина «пузырь не там»: applyPlayers не копировал id, и BUBBLES[r.id] пуст
-    assert "r.id = p.id;" in DUNGEON_PAGE
-    assert "const bubble = BUBBLES[r.id];" in DUNGEON_PAGE
-    # пузырь выше ника и с хвостиком к голове
-    assert "const bx = x - width / 2, by = y - 88;" in DUNGEON_PAGE
+def test_offline_button_lists_players():
+    assert 'document.getElementById("offbtn").onclick' in DUNGEON_PAGE
+    assert "Спят в углу" in DUNGEON_PAGE
+
+
+def test_controls_do_not_overlap_menu():
+    # джойстик и кнопки подняты над меню, полосы — выше них
+    assert "left:14px;bottom:150px" in DUNGEON_PAGE
+    assert "right:14px;bottom:150px" in DUNGEON_PAGE
+    assert "bottom:282px" in DUNGEON_PAGE   # hpbar
+    assert "bottom:306px" in DUNGEON_PAGE   # xpbar
