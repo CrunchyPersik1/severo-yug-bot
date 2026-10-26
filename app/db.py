@@ -85,6 +85,12 @@ def prepare_dsn(database_url: str) -> tuple[str, Any, int]:
     return dsn, ssl_arg, 0 if pooler else 100
 
 
+# PvP: после стольких боёв с одним и тем же соперником — бан на неделю.
+# Считаем с запасом на одну лишнюю игру (проверка «больше N» в SQL).
+PVP_PAIR_LIMIT = 5
+PVP_BAN_DAYS = 7
+
+
 class Database:
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
@@ -1281,15 +1287,17 @@ class Database:
                     )
                     or 0
                 )
-                if fights > 10:
+                if fights > PVP_PAIR_LIMIT:
                     # Обоим: стрик аннулируется, минус 250 000 очков (можно
                     # в минус) и сгорают ВСЕ кейсы, а не только заработанные.
                     for cheater in (winner_id, loser_id):
                         await con.execute(
                             "update players set pvp_streak = 0, "
-                            "bonus_points = bonus_points - 250000 "
+                            "bonus_points = bonus_points - 250000, "
+                            "pvp_ban_until = now() + ($2 || ' days')::interval "
                             "where user_id = $1",
                             cheater,
+                            str(PVP_BAN_DAYS),
                         )
                         await con.execute(
                             "delete from cases where user_id = $1 and opened = false",
@@ -1334,6 +1342,15 @@ class Database:
     # ------------------------------------------------------------------ #
     # Бои
     # ------------------------------------------------------------------ #
+
+    async def pvp_ban_until(self, user_id: int):
+        """До какого времени закрыт PvP; None — можно драться."""
+        async with self._p().acquire() as con:
+            return await con.fetchval(
+                "select pvp_ban_until from players where user_id = $1 "
+                "and pvp_ban_until is not null and pvp_ban_until > now()",
+                int(user_id),
+            )
 
     async def create_battle(self, battle_id: str, chat_id: int, challenger_id: int, opponent_id: int, state: dict[str, Any]) -> None:
         async with self._p().acquire() as con:

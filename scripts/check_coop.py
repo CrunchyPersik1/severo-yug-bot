@@ -306,6 +306,11 @@ async def main(argv: list[str] | None = None) -> int:
         check("убийство зачтено", ((last or {}).get("reward") or {}).get("kills"), 1)
         check("награда в Югах",
               ((last or {}).get("reward") or {}).get("yugi"), dungeon_rules.boss_yugi(3))
+        boss_loot = ((last or {}).get("reward") or {}).get("weapon") or ""
+        check("оружие с босса: формат",
+              bool(__import__("re").match(r"^(sword|bow|staff)_[0-9]_[0-4]$", boss_loot)), True)
+        check("оружие с босса: не низкий тир", int(boss_loot.split("_")[1]) >= 2
+              if boss_loot else False, True)
         async with db._p().acquire() as con:
             yugi_after = float(
                 await con.fetchval(

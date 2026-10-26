@@ -5373,7 +5373,7 @@ async function load(){
         '<span>' + s.need + ' побед подряд</span>' +
         '<b>' + (s.reached ? "✓ " : "") + '+' + s.cases + ' кейсов</b></div>').join("") +
       '<div class="sub" style="margin-top:10px">Кейсы за стрик приходят автоматически. ' +
-      'Больше 10 боёв с одним игроком — стрик сгорает и минус 250 000.</div>';
+      'Больше 5 боёв с одним и тем же игроком — стрик сгорает, \n       минус 250 000 очков, все кейсы и бан PvP на неделю.</div>';
   }catch(e){ toast("Не смог загрузить"); }
 }
 document.getElementById("list").addEventListener("click", async function(e){
@@ -6940,8 +6940,15 @@ function coopApply(room){
     const coins = Math.max(0, room.reward.coins | 0);
     P.coins += coins;
     stats.kills += Math.max(0, room.reward.kills | 0);
-    coopLog("<b>Победа!</b> +" + coins + " монет");
-    toast("Босс повержен: +" + coins + " монет");
+    coopLog("<b>Победа!</b> +" + coins + " монет и +" + (room.reward.yugi | 0) + " Югов");
+    const bossLoot = room.reward.weapon ? weaponById(room.reward.weapon) : null;
+    if (bossLoot){
+      if (P.bag.indexOf(bossLoot.id) < 0) P.bag.push(bossLoot.id);
+      coopLog("Дроп с босса: <b>" + bossLoot.name + "</b> · урон " + bossLoot.dmg);
+      paintInv();
+    }
+    toast("Босс повержен: +" + coins + " монет" +
+          (bossLoot ? " · " + bossLoot.name : ""));
     heroSave(true);
   }
   if (room.status === "dead" && before !== "dead") toast("Босс повержен!");
@@ -7191,6 +7198,25 @@ document.getElementById("chsend").onclick = chatSend;
 document.getElementById("chtext").addEventListener("keydown", function(e){
   if (e.key === "Enter") chatSend();
 });
+
+/* ---------- редкость оружия ---------- */
+// У мобов шанс дропа 5% и почти всегда низкий тир. Хорошее оружие —
+// с боссов. Веса целочисленные, нормализуются суммой.
+const MOB_DROP_CHANCE = 0.05;
+const MOB_TIER_WEIGHTS = [46000, 26000, 14000, 8000, 4000, 1500, 400, 100, 30, 10];
+const BOSS_TIER_WEIGHTS = [0, 0, 500, 3000, 12000, 26000, 30000, 20000, 6400, 10];
+
+function rollWeapon(weights){
+  const total = weights.reduce(function(a, b){ return a + b; }, 0);
+  let point = Math.random() * total, tier = 0, acc = 0;
+  for (let i = 0; i < weights.length; i++){
+    acc += weights[i];
+    if (point < acc){ tier = i; break; }
+  }
+  const kinds = ["sword", "bow", "staff"];
+  return kinds[Math.floor(Math.random() * 3)] + "_" + tier + "_" +
+    Math.floor(Math.random() * 5);
+}
 
 /* ---------- оффлайн-игроки в углу локации ---------- */
 const OFFLINE = [];
@@ -7776,8 +7802,8 @@ function killMob(m){
   stats.kills += 1;
   if (stats.exp >= stats.lvl * 100){ stats.lvl += 1; stats.exp = 0; P.max += 8; P.hp = P.max;
     toast("Уровень " + stats.lvl + "! HP вырос"); heroSave(true); }
-  if (Math.random() < 0.22){
-    const loot = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+  if (Math.random() < MOB_DROP_CHANCE){
+    const loot = weaponById(rollWeapon(MOB_TIER_WEIGHTS)) || WEAPONS[0];
     const isNew = P.bag.indexOf(loot.id) < 0;
     if (isNew) P.bag.push(loot.id);
     drop.push({x: m.x, y: m.y, kind: "weapon", t: 8, name: loot.name});
@@ -7849,7 +7875,9 @@ function endBattle(win){
     P.coins += 120;
     FX.burst(boss.x, boss.y, 40, "#ffd98a", 320, 22);
     FX.shake(9);
-    toast("Босс повержен! +120 монет и оружие");
+    const loot = weaponById(rollWeapon(BOSS_TIER_WEIGHTS));
+    if (loot && P.bag.indexOf(loot.id) < 0){ P.bag.push(loot.id); paintInv(); }
+    toast(loot ? ("Босс повержен! +120 монет · " + loot.name) : "Босс повержен! +120 монет");
   } else {
     toast("Ты проиграл. Возвращайся сильнее");
     P.hp = P.max;

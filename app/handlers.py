@@ -669,6 +669,16 @@ async def cmd_pvp(message: Message, db: Database, service: BattleService) -> Non
         )
         return
     await db.ensure_player(user.id, user.username, user.first_name)
+    # Античит по паре: больше PVP_PAIR_LIMIT боёв с одним игроком — неделя бана.
+    for who in (user, reply.from_user):
+        until = await db.pvp_ban_until(who.id)
+        if until is not None:
+            when = until.strftime("%d.%m.%Y %H:%M")
+            await message.reply(
+                f"🚫 PvP закрыт до {when}: слишком много боёв с одним и тем же "
+                "игроком. Это античит, а не наказание за скилл."
+            )
+            return
     try:
         await service.create(message, user, reply.from_user)
     except BattleError as error:

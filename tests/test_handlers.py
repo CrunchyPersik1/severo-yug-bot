@@ -89,6 +89,10 @@ class FakeDB:
     async def ensure_player(self, *args: Any, **kwargs: Any) -> None:
         return None
 
+    async def pvp_ban_until(self, user_id: int):
+        """Античит PvP: в тестах банов нет, но метод должен отвечать."""
+        return None
+
     async def get_battle(self, battle_id: str):
         return self.battles.get(battle_id)
 

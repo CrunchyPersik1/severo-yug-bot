@@ -756,3 +756,5 @@ alter table dungeon_hero add column if not exists zone integer;
 alter table dungeon_hero add column if not exists x real;
 alter table dungeon_hero add column if not exists y real;
 alter table dungeon_hero add column if not exists seen_at timestamptz;
+
+alter table players add column if not exists pvp_ban_until timestamptz;

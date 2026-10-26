@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta
 
 # Названия и множители совпадают с ZONES на странице /proto_dungeon.
@@ -37,6 +38,19 @@ BASE_HP = 300               # HP босса в первой локации дл�
 IDLE_SECONDS = 20.0         # столько комната живёт без заглядываний
 MAX_DAMAGE = 400            # защита от абсурда из запроса
 MIN_DAMAGE = 1
+
+# --- оружие: редкость по тирам --------------------------------------
+# Страница генерирует 3 вида x 10 тиров x 5 вариантов = 150 стволов.
+# У мобов шанс дропа 5%, и почти всегда это низкий тир; хорошее оружие —
+# с боссов. Веса целочисленные, нормализуются суммой.
+WEAPON_KINDS = ("sword", "bow", "staff")
+MOB_DROP_CHANCE = 0.05
+MOB_TIER_WEIGHTS = (46_000, 26_000, 14_000, 8_000, 4_000, 1_500, 400, 100, 30, 10)
+# тир:      0      1      2     3     4     5      6    7    8   9
+# шанс:   46%    26%    14%    8%    4%   1.5%  0.4% 0.1% 0.03% 0.01%
+BOSS_TIER_WEIGHTS = (0, 0, 500, 3_000, 12_000, 26_000, 30_000, 20_000, 6_400, 10)
+# тир:      2     3     4     5      6      7      8     9
+# шанс:  0.5%   3%   12%   26%    30%    20%   6.5%  0.01%
 
 BOSS_COINS = 120            # награда за босса в первой локации
 COOP_COIN_BONUS = 1.5       # вдвоём — больше
@@ -133,6 +147,30 @@ def armor_offer(armor: object, resets: object = 0) -> dict | None:
 def boss_yugi(zone: int) -> int:
     """Сколько Югов падает за босса: связка кликера и подземелья."""
     return max(5, int(round(BOSS_COINS * zone_factor(zone) / 12)))
+
+
+def pick_tier(weights: tuple[int, ...], roll: int) -> int:
+    """Тир по целочисленным весам: roll меньше суммы весов."""
+    total = sum(weights)
+    if total <= 0 or roll < 0:
+        return 0
+    point = roll % total
+    acc = 0
+    for index, weight in enumerate(weights):
+        acc += weight
+        if point < acc:
+            return index
+    return len(weights) - 1
+
+
+def boss_weapon(seed: int) -> str:
+    """Оружие с босса: детерминировано по seed, чтобы не менялось при опросе."""
+    digest = hashlib.sha256(str(int(seed)).encode()).digest()
+    roll = int.from_bytes(digest[:4], "big")
+    tier = pick_tier(BOSS_TIER_WEIGHTS, roll)
+    kind = WEAPON_KINDS[int.from_bytes(digest[4:6], "big") % len(WEAPON_KINDS)]
+    variant = int.from_bytes(digest[6:8], "big") % 5
+    return "%s_%d_%d" % (kind, tier, variant)
 
 
 def boss_reward(zone: int, players: int = 1) -> dict:

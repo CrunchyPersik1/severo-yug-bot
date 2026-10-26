@@ -545,7 +545,10 @@ class DungeonBossRepo:
         if me_row is not None:
             cooldown = round(dungeon.cooldown_left(me_row["last_hit_at"], now), 2)
         alive = len([p for p in players if not p["left"]]) or 1
-        reward = dungeon.boss_reward(boss["zone"], alive) if status == "dead" else None
+        reward = None
+        if status == "dead":
+            reward = dungeon.boss_reward(boss["zone"], alive)
+            reward["weapon"] = dungeon.boss_weapon(int(boss["id"]) * 100_003 + int(user_id))
         return {
             "id": int(boss["id"]),
             "zone": int(boss["zone"]),

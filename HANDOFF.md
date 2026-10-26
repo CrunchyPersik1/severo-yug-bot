@@ -34,7 +34,7 @@ DSN для локальных скриптов:
 ## 3. Как деплоить
 
     $py = ".venv\Scripts\python.exe"
-    & $py -m pytest -q tests                 # 328 passed, 29 skipped
+    & $py -m pytest -q tests                 # 336 passed, 29 skipped
     & $py scripts\check_pages.py --smoke     # все страницы: теги, id, node --check, стенд
     & $py scripts\check_coop.py              # живой прогон кооп-босса по HTTP
     git add -A ; git commit -m "..." ; git push
@@ -157,6 +157,14 @@ Free-план засыпает через 15 минут простоя, перв
   вставляет скрипт сразу после telegram-web-app.js, копия лежит в
   sessionStorage, подземелье делает то же в readInitData. Без этого после
   любого перехода ручки отвечали 401 и кооп молча отваливался
+- Античит PvP: больше 5 боёв с одним и тем же соперником (PVP_PAIR_LIMIT)
+  → обоим стрик в ноль, −250 000 очков, удаляются неоткрытые кейсы и
+  вешается бан PvP на неделю (players.pvp_ban_until, PVP_BAN_DAYS=7).
+  Забаненных не пускает cmd_pvp в bot-обработчике
+- Ребаланс оружия в подземелье: с мобов 5% (было 22%) и почти всегда низкий
+  тир; таблицы весов в dungeon.py (MOB_TIER_WEIGHTS / BOSS_TIER_WEIGHTS).
+  Хорошие стволы — с боссов: тиры 2..9, топ 0.01%. Сервер отдаёт id в
+  reward.weapon, детерминированно по паре (комната, игрок)
 - Оффлайн-игроки: точка героя (zone/x/y/seen_at) пишется в dungeon_hero
   при выходе из сокета и раз в 20 секунд, а на карте те, кто вышел, стоят
   аватаром в углу своей локации с подписью OFFLINE и zZz. Вернулся —
@@ -277,7 +285,7 @@ Free-план засыпает через 15 минут простоя, перв
 ## 9. Тесты
 
     & .venv\Scripts\python.exe -m pytest -q tests
-    # 328 passed, 29 skipped
+    # 336 passed, 29 skipped
 
 Любая правка экономики должна оставлять их зелёными.
 
