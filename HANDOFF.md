@@ -34,7 +34,7 @@ DSN для локальных скриптов:
 ## 3. Как деплоить
 
     $py = ".venv\Scripts\python.exe"
-    & $py -m pytest -q tests                 # 336 passed, 29 skipped
+    & $py -m pytest -q tests                 # 338 passed, 29 skipped
     & $py scripts\check_pages.py --smoke     # все страницы: теги, id, node --check, стенд
     & $py scripts\check_coop.py              # живой прогон кооп-босса по HTTP
     git add -A ; git commit -m "..." ; git push
@@ -165,6 +165,11 @@ Free-план засыпает через 15 минут простоя, перв
   тир; таблицы весов в dungeon.py (MOB_TIER_WEIGHTS / BOSS_TIER_WEIGHTS).
   Хорошие стволы — с боссов: тиры 2..9, топ 0.01%. Сервер отдаёт id в
   reward.weapon, детерминированно по паре (комната, игрок)
+- Оффлайн-точка перенесена на стык 1-й и 2-й локаций слева (выше HUD):
+  там же zZz и таблички OFFLINE
+- Кликер: tap/buy/case раньше отдавали урезанный payload без tree_pool и
+  chips, и после первого действия древо с фишками пропадали. Теперь все
+  ручки возвращают полное состояние через _yugi_state()
 - Оффлайн-игроки: точка героя (zone/x/y/seen_at) пишется в dungeon_hero
   при выходе из сокета и раз в 20 секунд, а на карте те, кто вышел, стоят
   аватаром в углу своей локации с подписью OFFLINE и zZz. Вернулся —
@@ -285,7 +290,7 @@ Free-план засыпает через 15 минут простоя, перв
 ## 9. Тесты
 
     & .venv\Scripts\python.exe -m pytest -q tests
-    # 336 passed, 29 skipped
+    # 338 passed, 29 skipped
 
 Любая правка экономики должна оставлять их зелёными.
 

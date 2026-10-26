@@ -3521,7 +3521,13 @@ async def api_yugi(request: Request) -> JSONResponse:
     return await _yugi_extended(state, user_id)
 
 
-async def _yugi_extended(state: Any, user_id: int) -> JSONResponse:
+async def _yugi_state(state: Any, user_id: int) -> dict:
+    """Полное состояние кликера: тапы, фишки, древо, апгрейды, печенька.
+
+    Раньше его собирал только GET /api/yugi, а tap/buy/case отдавали
+    урезанный payload — страница подменяла им состояние, и древо с фишками
+    пропадали после первого же действия.
+    """
     payload = _yugi_payload(await state.db.yugi_load(user_id))
     payload["chips"] = int(await state.db.yugi_chips_count(user_id))
     tree = await state.db.yugi_tree(user_id)
@@ -3550,7 +3556,11 @@ async def _yugi_extended(state: Any, user_id: int) -> JSONResponse:
         for u in yugi.UPGRADES
     ]
     payload["golden"] = await state.db.yugi_golden_tick(user_id)
-    return JSONResponse(payload)
+    return payload
+
+
+async def _yugi_extended(state: Any, user_id: int) -> JSONResponse:
+    return JSONResponse(await _yugi_state(state, user_id))
 
 
 @router.post("/api/yugi/ascend")
@@ -3576,7 +3586,9 @@ async def api_yugi_tree(request: Request) -> JSONResponse:
     spent = await state.db.yugi_buy_tree(user_id, node)
     if spent is None:
         return JSONResponse({"error": "Не хватает фишек"}, status_code=400)
-    return JSONResponse({"ok": True, "spent": spent})
+    payload = await _yugi_state(state, user_id)
+    payload["spent"] = spent
+    return JSONResponse(payload)
 
 
 @router.post("/api/yugi/golden")
@@ -3610,7 +3622,7 @@ async def api_yugi_tap(request: Request) -> JSONResponse:
     if int(data.get("dropped", 0)) >= yugi.FLAG_FROM:
         with contextlib.suppress(Exception):
             await state.db.yugi_flag(user_id, count, int(data.get("accepted", 0)))
-    payload = _yugi_payload(data)
+    payload = await _yugi_state(state, user_id)
     payload["accepted"] = int(data.get("accepted", 0))
     payload["dropped"] = int(data.get("dropped", 0))
     return JSONResponse(payload)
@@ -3643,7 +3655,7 @@ async def api_yugi_buy(request: Request) -> JSONResponse:
     )
     if bought is None:
         return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
-    return JSONResponse(_yugi_payload(bought))
+    return JSONResponse(await _yugi_state(state, user_id))
 
 
 @router.post("/api/yugi/case")
@@ -3664,7 +3676,7 @@ async def api_yugi_case(request: Request) -> JSONResponse:
     data = await state.db.yugi_buy_cases(user_id, count, cost)
     if data is None:
         return JSONResponse({"error": "Не хватает Югов"}, status_code=400)
-    payload = _yugi_payload(data)
+    payload = await _yugi_state(state, user_id)
     payload["bought"] = count
     return JSONResponse(payload)
 
@@ -3863,7 +3875,8 @@ function drawList(){
     box.querySelectorAll("[data-tree]").forEach(el => el.onclick = async () => {
       const r = await post("/api/yugi/tree", {id: el.dataset.tree});
       if (r && r.error) { toast(r.error); return; }
-      toast("Узел куплен"); await load();
+      if (r && r.tree_pool){ S.data = r; render(); }
+      toast("Узел куплен · фишек " + (S.data.chips || 0));
     });
     return;
   }
@@ -7229,11 +7242,11 @@ function applyOffline(rows){
 }
 
 function offlineSpot(spot, index){
-  // угол локации: слева, у нижнего края её полосы
-  const base = (ZONES.length - 1 - spot.zone) * ZONE_H;
+  // стык 1-й и 2-й локаций, левый верхний угол стартовой: там не мешает HUD
+  const junction = WORLD.h - ZONE_H;
   return {
-    x: 46 + (index % 2) * 26,
-    y: base + ZONE_H - 52 - Math.floor(index / 2) * 46
+    x: 56 + (index % 2) * 32,
+    y: junction - 46 - Math.floor(index / 2) * 40
   };
 }
 
@@ -7275,12 +7288,9 @@ function drawOffline(spot, index, t){
 }
 
 function drawOfflineAll(t){
-  const here = zoneIndex(P.y);
   let shown = 0;
   for (let i = 0; i < OFFLINE.length && shown < 12; i++){
-    const spot = OFFLINE[i];
-    if (Math.abs(spot.zone - here) > 1) continue;
-    drawOffline(spot, shown, t);
+    drawOffline(OFFLINE[i], shown, t);
     shown++;
   }
 }

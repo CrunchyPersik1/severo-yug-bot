@@ -517,6 +517,29 @@ async def main(argv: list[str] | None = None) -> int:
         check("пробуждение: локация помнится", hero_woke.get("zone"), 2)
         check("пробуждение: точка помнится", round(hero_woke.get("x") or 0), 300)
 
+        # Древо кликера: список узлов и покупка за фишки
+        status, yugi_state = await call("GET", "/api/yugi", first)
+        check("древо: узлов в пуле", len(yugi_state.get("tree_pool") or []), 110)
+        async with db._p().acquire() as con:
+            await con.execute(
+                "update players set yugi_chips = 10, yugi_tree = '[]'::jsonb "
+                "where user_id = $1::bigint",
+                TEST_USERS[0],
+            )
+        status, bought = await call("POST", "/api/yugi/tree", first, {"id": "t_cur_0"})
+        check("древо: покупка", status, 200)
+        check("древо: списано фишек", bought.get("spent"), 1)
+        status, again = await call("POST", "/api/yugi/tree", first, {"id": "t_cur_0"})
+        check("древо: повторно нельзя", status, 400)
+        status, after = await call("GET", "/api/yugi", first)
+        check("древо: узел засчитан", "t_cur_0" in (after.get("tree") or []), True)
+        check("древо: фишки убавились", int(after.get("chips") or 0), 9)
+
+        status, tapped = await call("POST", "/api/yugi/tap", first, {"count": 5})
+        check("кликер: тап не теряет древо",
+              len(tapped.get("tree_pool") or []), 110)
+        check("кликер: тап отдаёт фишки", int(tapped.get("chips") or -1), 9)
+
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:
             await con.execute(
