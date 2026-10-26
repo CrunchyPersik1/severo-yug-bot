@@ -7852,7 +7852,7 @@ function zoneIndex(y){
   return Math.max(0, Math.min(ZONES.length - 1, ZONES.length - 1 - raw));
 }
 function zoneAt(y){ return ZONES[zoneIndex(y)]; }
-function zoneReq(y){ return 1 + zoneIndex(y) * 5; }   // 1, 6, 11, 16, 21, ...
+function zoneReq(y){ return 1 + zoneIndex(y) * 10; }   // 1, 11, 21, 31, ...
 const DECOR = (function(){
   const list = [];
   // лес по краям
@@ -8098,12 +8098,12 @@ function killMob(m){
   const zr = zoneReq(m.y);
   const tooStrong = stats.lvl < zr;
   const power = Math.max(1, Math.round(m.max / 30));
-  const baseXp = Math.max(8, Math.round(m.max / 5));
+  const baseXp = Math.max(8, Math.round(m.max / 6));
   if (tooStrong){
     // раньше тут был ноль опыта, и 75 убийств не давали ничего: даём треть
     P.coins += 1;
-    gainExp(Math.round(baseXp * 0.3));
-    toast("Локация выше твоего уровня: опыт x0.3, нужен ур. " + zr);
+    gainExp(Math.round(baseXp * 0.5));
+    toast("Локация выше твоего уровня: опыт x0.5, нужен ур. " + zr);
   } else {
     P.coins += 3 + Math.floor(Math.random() * 5);
     gainExp(baseXp);
@@ -8129,7 +8129,7 @@ function killMob(m){
 }
 function expNeed(lvl){
   // поздние уровни требуют больше, но не в разы: 60 * lvl^1.5
-  return Math.round(60 * Math.pow(Math.max(1, lvl), 1.5));
+  return Math.round(40 * Math.pow(Math.max(1, lvl), 1.5));
 }
 function heroMax(lvl){
   return 120 + (Math.max(1, lvl) - 1) * 10;
@@ -8144,7 +8144,7 @@ function xpPaint(){
   const zi = Math.max(0, Math.min(9, zoneIndex(P.y)));
   // сколько мобов ещё нужно — по среднему опыту с моба этой локации
   let perMob = Math.max(6, Math.round(zoneMobHp(zi) * 0.78 / 6));
-  if (stats.lvl < zoneReq(P.y)) perMob = Math.max(1, Math.round(perMob * 0.3));
+  if (stats.lvl < zoneReq(P.y)) perMob = Math.max(1, Math.round(perMob * 0.5));
   const left = Math.ceil(Math.max(0, need - stats.exp) / Math.max(1, perMob));
   txt.textContent = "УР. " + stats.lvl + " · " + Math.round(stats.exp) + " / " + need +
     (left > 0 ? " · ~" + left + " мобов" : " · УРОВЕНЬ ГОТОВ");
