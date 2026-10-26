@@ -1,6 +1,4 @@
 CASE_PAGE = r"""<!doctype html>
-"""
-CASE_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
@@ -65,6 +63,20 @@ main{padding:16px 0 0}
   transition:.26s;z-index:9}
 #toast.on{transform:translateY(0)}
 #toast.bad{background:#b91c1c}
+
+.ultra{margin:16px;background:#161b28;border:1px solid #2a3350;border-radius:16px;
+  padding:14px;position:relative;overflow:hidden}
+.ultra::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(240px 120px at 85% -20%,#22d3ee33,transparent 70%)}
+.uhead{display:flex;justify-content:space-between;align-items:center;font-size:12px;
+  letter-spacing:1.2px;font-weight:800;color:#22d3ee}
+.uhead span{font-family:'JetBrains Mono',ui-monospace,monospace;color:#f2ece5;font-size:13px}
+.ucards{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.uc{font-size:11px;font-weight:800;padding:4px 9px;border-radius:99px;
+  background:#22d3ee1f;color:#a5f3fc;border:1px solid #22d3ee44}
+.uodds{margin-top:10px;font-size:11.5px;color:#8b93a7;line-height:1.7}
+.uodds b{color:#e2e8f0;font-family:'JetBrains Mono',ui-monospace,monospace}
+#ultraResult{min-height:18px}
 </style>
 </head>
 <body>
@@ -79,6 +91,14 @@ main{padding:16px 0 0}
       <span class="pe">🏫</span><span class="pn">7Д класс</span>
       <span class="pc" id="cntD">…</span>
     </button>
+  </div>
+
+  <div class="ultra" id="ultraBox">
+    <div class="uhead"><b>🌈 КЕЙС «УЛЬТРА»</b><span id="ultraPrice">15 000</span></div>
+    <div class="ucards" id="ultraCards"><span class="uc">Садыков</span><span class="uc">Лера</span></div>
+    <div class="uodds" id="ultraOdds"></div>
+    <button class="open" id="ultraOpen">Открыть за 15 000</button>
+    <div class="result" id="ultraResult">Только две ультры внутри и много пустоты.</div>
   </div>
   <div class="hint" id="hint">Выбери кейс — потом откроется лента</div>
 
@@ -244,6 +264,65 @@ document.querySelectorAll("#howmany [data-n]").forEach(function(b){
     sync();
   };
 });
+
+/* ---------- кейс «Ультра» ---------- */
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&]/g, function(c){
+  return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c]; }); }
+async function ultraLoad(){
+  try{
+    const r = await fetch("/api/case/ultra", {headers});
+    const d = await r.json();
+    if (d.error){ return; }
+    document.getElementById("ultraPrice").textContent = money(d.price);
+    if (d.cards && d.cards.length){
+      document.getElementById("ultraCards").innerHTML = d.cards.map(function(c){
+        return '<span class="uc">' + c.emoji + " " + esc(c.name) + '</span>';
+      }).join("");
+    }
+    if (d.odds){
+      document.getElementById("ultraOdds").innerHTML = d.odds.map(function(o){
+        return "<div><b>" + o.chance + "%</b> " + esc(o.title) +
+          (o.note ? " · " + esc(o.note) : "") + "</div>";
+      }).join("");
+    }
+    document.getElementById("ultraOpen").textContent = "Открыть за " + money(d.price);
+  }catch(e){}
+}
+async function ultraOpen(){
+  const btn = document.getElementById("ultraOpen");
+  const box = document.getElementById("ultraResult");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = "Крутим…";
+  try{
+    const r = await fetch("/api/case/ultra", {method:"POST", headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error, "bad"); return; }
+    if (d.kind === "ultra"){
+      box.className = "result win";
+      box.innerHTML = "🌈 " + d.card.emoji + " <b>" + esc(d.card.name) +
+        "</b> — " + esc(d.card.rarity_title) + "! +" + money(d.card.points) + " очков";
+      toast("УЛЬТРА!");
+    } else if (d.kind === "spin"){
+      box.className = "result";
+      box.innerHTML = "🎟 Крутка рулетки! Иди крутить.";
+      toast("Крутка в рулетке");
+    } else if (d.kind === "points"){
+      box.className = "result";
+      box.innerHTML = "💎 " + money(d.amount) + " очков!";
+      toast("+" + money(d.amount) + " очков");
+    } else {
+      box.className = "result";
+      box.innerHTML = "Пусто. В следующий раз повезёт.";
+      toast("Пусто", "bad");
+    }
+    await load();
+  }catch(e){ toast("Связь потерялась", "bad"); }
+  btn.disabled = false;
+  ultraLoad();
+}
+document.getElementById("ultraOpen").onclick = ultraOpen;
+ultraLoad();
 openBtn.onclick = open;
 if (tg){ tg.ready(); tg.expand(); }
 load();

@@ -550,6 +550,30 @@ async def main(argv: list[str] | None = None) -> int:
         check("профиль: баннер и аватар",
               bool((fresh or {}).get("banner_css")) and bool((fresh or {}).get("initial")), True)
 
+        # Кейс «Ультра»: цена, шансы, покупка и отказ без очков
+        status, ultra_state = await call("GET", "/api/case/ultra", first)
+        check("ультра-кейс: цена", (ultra_state or {}).get("price"), 15000)
+        check("ультра-кейс: четыре исхода",
+              len((ultra_state or {}).get("odds") or []), 4)
+        check("ультра-кейс: карты внутри",
+              len((ultra_state or {}).get("cards") or []), 2)
+        async with db._p().acquire() as con:
+            await con.execute(
+                "update players set bonus_points = 20000 where user_id = $1::bigint",
+                TEST_USERS[0],
+            )
+        status, opened_ultra = await call("POST", "/api/case/ultra", first, {})
+        check("ультра-кейс: открылся", status, 200)
+        check("ультра-кейс: исход известен",
+              (opened_ultra or {}).get("kind") in ("ultra", "spin", "points", "empty"), True)
+        async with db._p().acquire() as con:
+            await con.execute(
+                "update players set bonus_points = 0 where user_id = $1::bigint",
+                TEST_USERS[0],
+            )
+        status, poor = await call("POST", "/api/case/ultra", first, {})
+        check("ультра-кейс: без очков отказ", status, 400)
+
         # Квесты: награда забирается кнопкой, ровно один раз
         async with db._p().acquire() as con:
             await con.execute(

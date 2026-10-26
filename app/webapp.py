@@ -784,6 +784,80 @@ async def api_case_open(request: Request) -> JSONResponse:
     )
 
 
+async def _points_balance(state, user_id: int) -> int:
+    """Очки игрока: в проде через маркет, в тестах — прямо из базы."""
+    market = getattr(state, "market", None)
+    if market is not None:
+        with contextlib.suppress(Exception):
+            return int(await market.balance(user_id))
+    return int(await state.db.player_points(user_id))
+
+
+@router.get("/api/case/ultra")
+async def api_case_ultra_state(request: Request) -> JSONResponse:
+    """Что внутри кейса «Ультра» и сколько он стоит."""
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    return JSONResponse(
+        {
+            "price": cases_mod.ULTRA_CASE_PRICE,
+            "odds": cases_mod.ultra_case_odds(),
+            "cards": [
+                {
+                    "id": card_id,
+                    "name": CARDS_BY_ID[card_id].name,
+                    "emoji": CARDS_BY_ID[card_id].rarity_emoji,
+                }
+                for card_id in cases_mod.ULTRA_CASE_IDS
+                if card_id in CARDS_BY_ID
+            ],
+            "balance": await _points_balance(state, uid),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/case/ultra")
+async def api_case_ultra(request: Request) -> JSONResponse:
+    """Купить и сразу открыть кейс «Ультра»."""
+    state = request.app.state
+    uid, error = await _games_user(request)
+    if error is not None:
+        return error
+    price = cases_mod.ULTRA_CASE_PRICE
+    if not await state.db.spend_points(uid, price):
+        return JSONResponse(
+            {"error": "Нужно " + str(price) + " очков"}, status_code=400
+        )
+    result = cases_mod.roll_ultra_case()
+    payload: dict[str, Any] = {"ok": True, "kind": result["kind"], "price": price}
+    if result["kind"] == "ultra":
+        card = CARDS_BY_ID.get(result["card"])
+        if card is not None:
+            counts = await state.db.get_collection(uid)
+            payload["is_new"] = card.card_id not in counts
+            await state.db.add_card(uid, card.card_id)
+            await state.db.add_points(uid, card.points)
+            payload["card"] = {
+                "id": card.card_id,
+                "name": card.name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "points": card.points,
+                "color": cases_mod.RARITY_COLORS.get(card.rarity, "#334155"),
+            }
+    elif result["kind"] == "spin":
+        await state.db.grant_spin_limit(uid, roulette_day_key(), 1, SPINS_PER_DAY)
+    elif result["kind"] == "points":
+        await state.db.add_points(uid, int(result["amount"]))
+        payload["amount"] = int(result["amount"])
+    payload["balance"] = await _points_balance(state, uid)
+    return JSONResponse(payload)
+
+
 @router.get("/api/roulette")
 async def api_roulette(request: Request) -> JSONResponse:
     state = request.app.state

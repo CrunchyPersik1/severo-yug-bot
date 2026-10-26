@@ -358,6 +358,30 @@ class Database:
             return int(limit)
         return max(0, int(row["roulette_limit"]) - int(row["roulette_uses"]))
 
+    async def player_points(self, user_id: int) -> int:
+        """Очки игрока по базе — без маркета и кэшей."""
+        async with self._p().acquire() as con:
+            return int(
+                await con.fetchval(
+                    "select coalesce(bonus_points, 0) from players "
+                    "where user_id = $1::bigint",
+                    int(user_id),
+                )
+                or 0
+            )
+
+    async def spend_points(self, user_id: int, amount: int) -> bool:
+        """Списать очки, только если их хватает. False — не хватило."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "update players set bonus_points = bonus_points - $2 "
+                "where user_id = $1 and bonus_points >= $2 "
+                "returning bonus_points",
+                int(user_id),
+                int(amount),
+            )
+            return row is not None
+
     async def grant_spin_limit(
         self, user_id: int, day: Any, amount: int, default_limit: int = 1
     ) -> int:

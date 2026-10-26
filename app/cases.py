@@ -29,6 +29,46 @@ CASE_RARITY_ORDER: tuple[str, ...] = (
 )
 
 
+# --- кейс «Ультра» ---------------------------------------------------
+# Дорогой кейс за 15 000 очков: внутри только две ультры (Садыков и Лера)
+# и пустота. Шансы по ТЗ: 0.01% ульта, по 1% крутка и очки до 50 000,
+# остальное — пусто.
+ULTRA_CASE_PRICE = 15_000
+ULTRA_CASE_IDS: tuple[str, ...] = ("daniyar_epic", "valeriya")
+ULTRA_CASE_WEIGHTS: dict[str, float] = {
+    "ultra": 0.0001,
+    "spin": 0.01,
+    "points": 0.01,
+    "empty": 0.9799,
+}
+ULTRA_POINTS_MIN = 10_000
+ULTRA_POINTS_MAX = 50_000
+
+
+def ultra_case_odds() -> list[dict]:
+    """Расклад для интерфейса: шанс в процентах."""
+    return [
+        {"key": "ultra", "title": "Ультралегендарный", "chance": 0.01,
+         "note": "Садыков или Лера"},
+        {"key": "spin", "title": "Крутка рулетки", "chance": 1.0, "note": "одна"},
+        {"key": "points", "title": "Очки", "chance": 1.0, "note": "до 50 000"},
+        {"key": "empty", "title": "Пусто", "chance": 97.99, "note": "ничего"},
+    ]
+
+
+def roll_ultra_case(rng: random.Random | None = None) -> dict:
+    """Что выпало из кейса «Ультра»."""
+    rng = rng or random
+    keys = list(ULTRA_CASE_WEIGHTS)
+    kind = rng.choices(keys, weights=[ULTRA_CASE_WEIGHTS[k] for k in keys], k=1)[0]
+    if kind == "ultra":
+        return {"kind": "ultra", "card": rng.choice(list(ULTRA_CASE_IDS))}
+    if kind == "points":
+        steps = list(range(ULTRA_POINTS_MIN, ULTRA_POINTS_MAX + 1, 1_000))
+        return {"kind": "points", "amount": int(rng.choice(steps))}
+    return {"kind": kind}
+
+
 def case_rarities() -> list[str]:
     return list(CASE_RARITY_WEIGHTS)
 
