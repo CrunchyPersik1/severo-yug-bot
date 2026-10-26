@@ -6262,6 +6262,11 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
 .hptxt{position:fixed;left:0;right:0;bottom:300px;text-align:center;font-size:11px;
   font-weight:900;color:#fff;text-shadow:0 1px 4px #000;z-index:10;
   font-family:ui-monospace,monospace}
+.safebadge{position:fixed;left:50%;transform:translateX(-50%);bottom:332px;z-index:11;
+  background:#0f2a1bee;border:2px solid #2f7a52;border-radius:999px;padding:4px 12px;
+  font-size:8px;font-weight:900;letter-spacing:.4px;color:#9df0bd;
+  display:none;pointer-events:none;white-space:nowrap}
+.safebadge.on{display:block}
 .xpbar{position:fixed;left:14px;right:14px;bottom:306px;height:9px;z-index:10;
   background:#000a;border:2px solid #3b2b62;border-radius:99px;overflow:hidden}
 .xpbar i{display:block;height:100%;width:0;border-radius:99px;
@@ -6505,6 +6510,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 </div>
 <div class="hpbar"><i id="hpfill"></i></div>
 <div class="hptxt" id="hptxt">HP 120 / 120</div>
+<div class="safebadge" id="safebadge">🛡 СЕЙФ-ЗОНА · тут не бьют</div>
 <div class="xpbar"><i id="xpfill"></i></div>
 <div class="xptxt" id="xptxt">УР. 1 · 0 / 60</div>
 
@@ -7125,6 +7131,9 @@ const TG_INIT = readInitData();
   document.body.appendChild(hint);
 })();
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
+// Сейф-зона вокруг босса: внутри неё мобы не бьют и не подходят.
+// Круг босса (r=60) целиком внутри, поэтому заходить в бой можно.
+const SAFE_R = 210;
 const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false, rewarded: 0};
 
 async function coopApi(path, body){
@@ -7332,6 +7341,15 @@ function coopUiTick(dt){
     }
   }
 }
+
+function nearBoss(x, y, pad){
+  for (var i = 0; i < bosses.length; i++){
+    var bs = bosses[i];
+    if (Math.hypot(bs.x - x, bs.y - y) < (pad == null ? bs.r : pad)) return bs;
+  }
+  return null;
+}
+function inSafeZone(x, y){ return !!nearBoss(x, y, SAFE_R); }
 
 function bossEngage(bs){
   if (TG_INIT){ coopJoin(bs ? bs.zone : zoneIndex(P.y)); return; }
@@ -8162,6 +8180,16 @@ function attack(){
   const dmg = Number(w.dmg) || 12;
   P.atkCd = w.kind === "bow" ? 0.7 * w.spd : 0.45 * w.spd;
   FX.swingAt(P.dir, w.kind);
+  // сейф-зона — убежище в обе стороны: тут не бьют и тут не бьёшь,
+  // иначе можно было бы фармить мобов, стоя в безопасности
+  if (inSafeZone(P.x, P.y)){
+    if (!P.safeHint || performance.now() - P.safeHint > 4000){
+      P.safeHint = performance.now();
+      toast("В сейф-зоне не дерутся — выйди из круга");
+    }
+    hits.push({x: P.x, y: P.y - 34, t: 0.5, v: "", c: "#8fd8ff"});
+    return;
+  }
   const fxCol = w.kind === "bow" ? "#8bd65a" : w.kind === "staff" ? "#8fd8ff" : "#ffd98a";
   let hitAny = false;
   mobs.forEach(m => {
@@ -8516,12 +8544,21 @@ function loop(now){
   P.abCd = Math.max(0, P.abCd - dt);
   P.shield = Math.max(0, P.shield - dt);
 
+  const playerSafe = inSafeZone(P.x, P.y);
   mobs.forEach(m => {
     m.t -= dt;
     if (m.t <= 0){ m.t = rnd(1.5, 4); m.vx = rnd(-1, 1); m.vy = rnd(-1, 1); }
+    // моб, зашедший в сейф-зону, выталкивается обратно
+    const guard = nearBoss(m.x, m.y, SAFE_R + 8);
+    if (guard){
+      const gx = m.x - guard.x, gy = m.y - guard.y;
+      const gd = Math.hypot(gx, gy) || 1;
+      m.x = guard.x + gx / gd * (SAFE_R + 10);
+      m.y = guard.y + gy / gd * (SAFE_R + 10);
+    }
     const dm = Math.hypot(P.x - m.x, P.y - m.y);
     const strong = stats.lvl < zoneReq(m.y) ? 2.5 : 1;
-    if (dm < 260){
+    if (!playerSafe && dm < 260){
       m.x += (P.x - m.x) / dm * m.sp * dt;
       m.y += (P.y - m.y) / dm * m.sp * dt;
       if (dm < 34 && P.shield <= 0){
@@ -8581,6 +8618,10 @@ function loop(now){
     }
     return d.t > 0;
   });
+
+  // сейф-зона: показываем, что тут можно стоять и не отбиваться
+  const safeBadge = document.getElementById("safebadge");
+  if (safeBadge) safeBadge.classList.toggle("on", inSafeZone(P.x, P.y));
 
   // ожидание босса: 5 секунд в круге — и бой
   P.bossCd = Math.max(0, (P.bossCd || 0) - dt);
@@ -8744,6 +8785,23 @@ function render(dt){
   // арены боссов: пульсирующее кольцо, руны, прогресс ожидания
   bosses.forEach(function(bs){
     if (Math.abs(bs.y - P.y) > 1000) return;
+    // сейф-зона: мягкий зелёный круг, внутри босс не бьёт и мобы не лезут
+    const near = Math.hypot(bs.x - P.x, bs.y - P.y) < SAFE_R;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(bs.x, bs.y, SAFE_R, 0, 7);
+    ctx.fillStyle = near ? "rgba(110,220,150,.10)" : "rgba(110,220,150,.05)";
+    ctx.fill();
+    ctx.setLineDash([10, 10]);
+    ctx.lineWidth = near ? 3 : 2;
+    ctx.strokeStyle = near ? "rgba(140,240,175,.75)" : "rgba(120,200,150,.35)";
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = near ? "rgba(190,255,210,.95)" : "rgba(160,210,175,.55)";
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("СЕЙФ-ЗОНА", bs.x, bs.y - SAFE_R + 14);
+    ctx.restore();
     const pulse = 0.92 + Math.sin(animT * 2.4 + bs.idx * 1.7) * 0.08;
     FX.glowAt(bs.x, bs.y, bs.r * 2.8 * pulse, bs.t > 0 ? "#ff7a3c" : "#ff3b52", bs.t > 0 ? 0.5 : 0.36);
     ctx.save();
