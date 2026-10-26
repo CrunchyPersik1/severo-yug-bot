@@ -7150,11 +7150,14 @@ const SAFE_R = 105;
 const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false, rewarded: 0};
 
 async function coopApi(path, body){
-  const opts = {headers: {"X-Telegram-Init-Data": TG_INIT}};
+  const opts = {headers: {"X-Telegram-Init-Data": TG_INIT}, cache: "no-store"};
   if (body !== undefined){
     opts.method = "POST";
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
+  } else {
+    // GET без кэша: иначе WebView может отдать старый ответ 401
+    path += (path.indexOf("?") >= 0 ? "&" : "?") + "_=" + Date.now();
   }
   let data = null;
   try {
@@ -7433,6 +7436,7 @@ document.getElementById("cleave").onclick = function(){ coopClose(false); };
 
 /* ---------- НПС-квестовик ---------- */
 let QUEST = null;
+let QUEST_ERR = "";
 
 function questProgress(){
   return QUEST ? (QUEST.kind === "boss" ? (QUEST.bossDone || 0) : (QUEST.done || 0)) : 0;
@@ -7440,12 +7444,15 @@ function questProgress(){
 function questPaint(){
   const body = document.getElementById("qbody");
   if (!body) return;
-  const near = npcDist() < 110;
   if (!QUEST){
     body.innerHTML = '<div class="qrow"><div class="qface">🧙</div>' +
-      '<div class="qwhat">' + NPC.name + ' молчит.<div class="qzone">' +
-      (near ? "Подойди ближе и окликни его" : "Найди его у спавна в Опушке") +
-      '</div></div></div>';
+      '<div class="qwhat">' + NPC.name + ': «Погоди, бумаги перебираю…»' +
+      '<div class="qzone">' + (QUEST_ERR ? "Ошибка: " + esc(QUEST_ERR)
+                                        : "Загружаю задание…") +
+      '</div></div></div>' +
+      '<button id="qretry">ПОВТОРИТЬ</button>';
+    const retry = document.getElementById("qretry");
+    if (retry) retry.onclick = questLoad;
     return;
   }
   const need = QUEST.need || 1;
@@ -7470,11 +7477,17 @@ function questPaint(){
 }
 
 async function questLoad(){
-  try{
-    const r = await coopApi("/api/dungeon/quest");
-    if (r && r.quest){ QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0; }
-    else if (r && r.error){ toast("Квест: " + r.error); }
-  }catch(e){ toast("Квест: нет связи с сервером"); }
+  QUEST_ERR = "";
+  questPaint();
+  let r = null;
+  try{ r = await coopApi("/api/dungeon/quest"); }
+  catch(e){ r = {error: "нет связи с сервером"}; }
+  if (r && r.quest){
+    QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0;
+  } else {
+    QUEST_ERR = (r && r.error) || "сервер не ответил";
+    toast("Квест: " + QUEST_ERR);
+  }
   questPaint();
 }
 async function questTake(){
@@ -7962,6 +7975,7 @@ function heroApply(hero, heal){
   }
   P.max = heroMax(level);
   if (heal !== false) P.hp = P.max;
+  if (!QUEST) questLoad();
 }
 
 async function heroLoad(){
@@ -8157,6 +8171,11 @@ let stats = {kills: 0, lvl: 1, exp: 0};
 let inBattle = false;
 
 function rnd(a, b){ return a + Math.random() * (b - a); }
+function esc(s){
+  return String(s == null ? "" : s).replace(/[<>&]/g, function(c){
+    return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c];
+  });
+}
 function toast(t){
   const el = document.getElementById("toast");
   el.textContent = t; el.className = "on";
@@ -9479,7 +9498,10 @@ async def api_dungeon_quest(request: Request) -> JSONResponse:
                 int(quest["hour"]),
             )
         )
-    return JSONResponse({"ok": True, "quest": quest})
+    return JSONResponse(
+        {"ok": True, "quest": quest},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.post("/api/dungeon/quest")

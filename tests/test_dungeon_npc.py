@@ -33,8 +33,11 @@ def test_npc_can_be_tapped():
 
 def test_quest_panel_reports_errors():
     # раньше ошибка загрузки глоталась и панель выглядела «сломанной»
-    assert 'toast("Квест: " + r.error)' in DUNGEON_PAGE
-    assert 'toast("Квест: нет связи с сервером")' in DUNGEON_PAGE
+    assert 'QUEST_ERR = (r && r.error) || "сервер не ответил"' in DUNGEON_PAGE
+    assert 'toast("Квест: " + QUEST_ERR)' in DUNGEON_PAGE
+    # и кнопка повтора прямо в панели
+    assert 'id="qretry"' in DUNGEON_PAGE
+    assert 'if (retry) retry.onclick = questLoad;' in DUNGEON_PAGE
 
 
 def test_stats_and_buttons_fit():
