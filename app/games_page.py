@@ -128,6 +128,14 @@ const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 const GAP = 8;
 let pool = [], poolD = [], countG = 0, countD = 0, countU = 0;
+// Лента кейса «Ультра»: у него не карты, а четыре исхода
+const poolU = [
+  {name: "Данияр · Садыков", emoji: "🌈", points: 21000, price: 21000, color: "#22d3ee"},
+  {name: "Валерия · Лера", emoji: "🌈", points: 21000, price: 21000, color: "#22d3ee"},
+  {name: "Крутка рулетки", emoji: "🎟", points: 0, price: 0, color: "#ef4444"},
+  {name: "Очки до 50 000", emoji: "💎", points: 25000, price: 25000, color: "#eab308"},
+  {name: "Пусто", emoji: "💨", points: 0, price: 0, color: "#64748b"}
+];
 let kind = null, howMany = 1, spinning = false;
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
@@ -149,7 +157,10 @@ function tile(card){
     '<div class="tname">' + card.name + '</div>' +
     '<div class="tpoints">' + money(card.price || card.points) + '</div></div>';
 }
-function source(){ return kind === "d" ? poolD : pool; }
+function source(){
+  if (kind === "u") return poolU;
+  return kind === "d" ? poolD : pool;
+}
 function left(){ return kind === "d" ? countD : (kind === "u" ? countU : countG); }
 function randomOf(src){
   return src[Math.floor(Math.random() * src.length)] ||
@@ -187,9 +198,11 @@ function spinOne(item){
 function sync(){
   const l = left();
   openBtn.disabled = spinning || !kind || l <= 0;
+  const caseName = kind === "u" ? "Ультра" : (kind === "d" ? "7Д" : "7Г");
   openBtn.textContent = !kind ? "Сначала выбери кейс"
-    : l <= 0 ? (kind === "d" ? "Кейсов 7Д нет" : "Кейсов 7Г нет")
-    : (howMany > 1 ? "Открыть " + howMany + " кейсов" : "Открыть кейс");
+    : l <= 0 ? ("Кейсов " + caseName + " нет")
+    : (howMany > 1 ? ("Открыть " + howMany + " · " + caseName)
+                   : ("Открыть кейс " + caseName));
 }
 function updateCounts(g, d, u){
   countG = g; countD = d; countU = u || 0;
@@ -223,20 +236,45 @@ async function open(){
     });
     const d = await r.json();
     if (d.error){ toast(d.error, "bad"); spinning = false; sync(); return; }
+    reels.innerHTML = "";
     if (kind === "u"){
+      // исход ультры превращаем в элемент ленты
+      const items = (d.results || []).map(function(item){
+        let win;
+        if (item.kind === "ultra"){
+          win = {name: item.name, emoji: item.emoji || "🌈", points: item.points || 0,
+                 price: item.points || 0, color: item.color || "#22d3ee"};
+        } else if (item.kind === "spin"){
+          win = {name: "Крутка рулетки", emoji: "🎟", points: 0, price: 0, color: "#ef4444"};
+        } else if (item.kind === "points"){
+          win = {name: "Очки", emoji: "💎", points: item.amount || 0,
+                 price: item.amount || 0, color: "#eab308"};
+        } else {
+          win = {name: "Пусто", emoji: "💨", points: 0, price: 0, color: "#64748b"};
+        }
+        return {win: win, kind: item.kind, item: item};
+      });
+      const mini = items.length > 1;
+      const reelsOut = items.map(function(pack){
+        return makeReel(pack.win, mini, poolU);
+      });
+      void reels.offsetWidth;
+      reelsOut.forEach(spinOne);
       updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
-      const text = (d.results || []).map(function(item){
-        if (item.kind === "ultra")
-          return "🌈 <b>" + item.name + "</b> — " + item.rarity_title + "!";
-        if (item.kind === "spin") return "🎟 Крутка рулетки!";
-        if (item.kind === "points") return "💎 " + money(item.amount) + " очков!";
-        return "Пусто.";
-      }).join("<br>") || "Пусто.";
-      result.innerHTML = text;
-      spinning = false; sync();
+      setTimeout(function(){
+        result.innerHTML = items.map(function(pack){
+          if (pack.kind === "ultra")
+            return "🌈 <b>" + pack.item.name + "</b> — " + pack.item.rarity_title +
+              " · +" + money(pack.item.points) + " очк." +
+              (pack.item.is_new ? " · <b>НОВАЯ!</b>" : "");
+          if (pack.kind === "spin") return "🎟 Крутка рулетки!";
+          if (pack.kind === "points") return "💎 " + money(pack.item.amount) + " очков!";
+          return "💨 Пусто.";
+        }).join("<br>");
+        spinning = false; sync();
+      }, 4600);
       return;
     }
-    reels.innerHTML = "";
     const mini = d.cards.length > 1;
     const src = source();
     const items = d.cards.map(function(c){ return makeReel(c, mini, src); });

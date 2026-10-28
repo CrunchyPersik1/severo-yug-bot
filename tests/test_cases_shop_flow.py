@@ -52,3 +52,15 @@ def test_shop_page_css_restored():
     assert ".tabs{" in PAGE
     assert ".wallet{" in PAGE
     assert "--ex-bg" not in PAGE
+
+
+def test_ultra_has_its_own_reel():
+    from app.games_page import CASE_PAGE
+
+    # своя лента с четырьмя исходами, а не пул 7Г
+    assert "const poolU = [" in CASE_PAGE
+    assert 'if (kind === "u") return poolU;' in CASE_PAGE
+    # подписи кнопки знают про ультру
+    assert 'kind === "u" ? "Ультра"' in CASE_PAGE
+    # результат ультры тоже крутится лентой
+    assert "makeReel(pack.win, mini, poolU)" in CASE_PAGE
