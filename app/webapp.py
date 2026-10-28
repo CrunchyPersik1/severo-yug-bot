@@ -237,169 +237,67 @@ PAGE = r"""<!doctype html>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --ex-bg:#0e1116; --ex-panel:#161b24; --ex-panel2:#1d2430; --ex-line:#252e3d;
-  --ex-line2:#1a2230; --ex-ink:#f2ece5; --ex-muted:#8b93a7;
-  --ex-acc:#dc8a3f; --ex-acc2:#efaa5f; --ex-ink-acc:#1b1206;
-  --ex-up:#9dc941; --ex-down:#e0407a;
-  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;
+  --leaf:#c2410c; --leaf2:#ea580c; --bark:#7c2d12; --cream:#fffbf5;
+  --paper:#ffedd5; --ink:#43230f; --muted:#9a6b4f; --ok:#15803d; --bad:#b91c1c;
+  --line:#e7c9a9;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;overscroll-behavior:none}
+html,body{margin:0;padding:0}
 body{
-  background:#0e1116!important;color:#f2ece5!important;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  min-height:100vh;padding-bottom:190px;
+  background:linear-gradient(180deg,#fffaf3 0%,#ffedd5 40%,#fcd9ae 100%);
+  background-attachment:fixed;color:var(--ink);min-height:100vh;padding-bottom:96px;
 }
-body::before{
-  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:radial-gradient(1100px 560px at 85% -12%,#1b2740 0%,#0e1116 58%);
+.leafbar{font-size:20px;letter-spacing:6px;text-align:center;padding:10px 0 2px;opacity:.75}
+header{padding:6px 18px 14px;text-align:center}
+h1{margin:0;font-size:21px;letter-spacing:.3px}
+h1 small{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:4px;letter-spacing:1.5px;text-transform:uppercase}
+.wallet{
+  display:inline-flex;align-items:center;gap:8px;margin-top:12px;
+  background:linear-gradient(135deg,#fff 0%,#ffedd5 100%);
+  border:1px solid var(--line);border-radius:999px;padding:9px 18px;
+  font-weight:700;font-size:17px;box-shadow:0 4px 14px rgba(194,65,12,.12)
 }
-/* встроенная тема рисует свою шапку — у биржи своя */
-#__back{display:none!important}
-.wrap{position:relative;z-index:1;max-width:560px;margin:0 auto}
-
-/* ---------- шапка ---------- */
-header.top{
-  position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:10px;
-  padding:14px 15px;background:#0e1116e6!important;
-  backdrop-filter:blur(14px);border-bottom:1px solid #1a2230!important;
+.tabs{display:flex;gap:8px;padding:0 16px 14px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:0 0 auto;border:1px solid var(--line);background:var(--cream);
+  color:var(--muted);border-radius:999px;padding:9px 16px;font-size:14px;
+  font-weight:600;transition:.15s
 }
-header.top .back{
-  display:inline-flex;align-items:center;gap:6px;text-decoration:none;
-  background:#161b24!important;border:1px solid #252e3d!important;
-  border-radius:999px!important;color:#f2ece5!important;padding:8px 14px!important;
-  font:800 12px/1 inherit;
+.tab.on{background:linear-gradient(135deg,var(--leaf2),var(--leaf));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(194,65,12,.3)}
+main{padding:0 16px}
+.card{
+  background:var(--cream);border:1px solid var(--line);border-radius:18px;
+  padding:14px 15px;margin-bottom:12px;position:relative;overflow:hidden;
+  box-shadow:0 3px 12px rgba(124,45,18,.07)
 }
-header.top .ttl{flex:1;text-align:center;font:900 13px/1 inherit;letter-spacing:2.4px;
-  color:#f2ece5!important}
-.live{display:inline-flex;align-items:center;gap:6px;color:#9dc941!important;
-  font:700 10px/1 var(--mono);letter-spacing:1.2px}
-.live i{width:7px;height:7px;border-radius:50%;background:#9dc941;
-  box-shadow:0 0 9px #9dc941;animation:expulse 1.8s ease-in-out infinite}
-@keyframes expulse{0%,100%{opacity:1}50%{opacity:.25}}
-
-/* ---------- акция ---------- */
-.hero{padding:18px 15px 4px}
-.hero .nm{font-size:23px;font-weight:900;letter-spacing:-.5px;line-height:1.15;
-  color:#f2ece5!important}
-.hero .sub{font-size:11.5px;color:#8b93a7!important;margin-top:4px}
-.hero .pr{margin-top:14px;font:900 42px/1 var(--mono)!important;
-  letter-spacing:-1.8px;font-variant-numeric:tabular-nums;color:#f2ece5!important}
-.ch{
-  display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:6px 11px;
-  border:0!important;border-radius:999px!important;
-  font:800 12px/1 var(--mono)!important;font-variant-numeric:tabular-nums;
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:linear-gradient(180deg,var(--leaf2),var(--leaf))}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.name{font-weight:700;font-size:16px;line-height:1.25}
+.rar{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+.role{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.35}
+.stats{display:flex;gap:14px;margin-top:9px;font-size:13px;font-weight:600;color:var(--bark)}
+.price{font-weight:800;font-size:16px;color:var(--leaf);white-space:nowrap}
+.buy{
+  margin-top:12px;width:100%;border:0;border-radius:13px;padding:13px;
+  font-size:15px;font-weight:700;color:#fff;
+  background:linear-gradient(135deg,var(--leaf2),var(--leaf));
+  box-shadow:0 5px 14px rgba(194,65,12,.28);transition:.15s
 }
-.ch.up{color:#9dc941!important;background:#9dc9411f!important}
-.ch.down{color:#e0407a!important;background:#e0407a1f!important}
-.up{color:#9dc941!important}
-.down{color:#e0407a!important}
-
-/* ---------- плитки ---------- */
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:14px 15px 4px}
-.stat{background:#161b24!important;border:1px solid #252e3d!important;
-  border-radius:14px!important;padding:11px 13px!important;box-shadow:none!important}
-.stat span{display:block;font-size:10px;letter-spacing:1.1px;text-transform:uppercase;
-  color:#8b93a7!important;font-weight:800}
-.stat b{display:block;margin-top:5px;font:900 16px/1.15 var(--mono)!important;
-  font-variant-numeric:tabular-nums;color:#f2ece5!important}
-
-/* ---------- портфель ---------- */
-.pf{
-  margin:14px 15px 4px;padding:13px 14px;border-radius:16px!important;
-  background:#161b24!important;border:1px solid #252e3d!important;
-  position:relative;overflow:hidden;box-shadow:none!important;
-}
-.pf::before{
-  content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;
-  border-radius:0 3px 3px 0;background:#dc8a3f;
-}
-.pf .pt{padding-left:10px;font-size:10px;letter-spacing:1.4px;text-transform:uppercase;
-  color:#8b93a7!important;font-weight:800}
-.pf .pr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:11px;
-  padding-left:10px}
-.pf .pr>div{display:flex;flex-direction:column;gap:4px;min-width:0}
-.pf .pr span{font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;
-  color:#8b93a7!important;font-weight:800}
-.pf .pr b{font:900 15px/1.15 var(--mono)!important;font-variant-numeric:tabular-nums;
-  color:#f2ece5!important}
-.pf .sub{padding-left:10px;margin-top:10px;font-size:11px;color:#8b93a7!important;
-  line-height:1.5}
-
-/* ---------- график ---------- */
-.chart{padding:14px 15px 0}
-.chartbox{background:#12161d!important;border:1px solid #1e2634!important;
-  border-radius:16px!important;overflow:hidden;position:relative;box-shadow:none!important}
-.charthead{display:flex;justify-content:space-between;align-items:center;
-  padding:11px 13px 2px;font-size:10px;letter-spacing:1.3px;color:#8b93a7!important;
-  font-weight:800}
-#cv{height:240px;width:100%}
-.note{padding:10px 15px 0;font-size:11.5px;color:#8b93a7!important;line-height:1.5}
-
-/* ---------- липкая панель сделки ---------- */
-.dock{
-  position:fixed;left:0;right:0;bottom:0;z-index:14;
-  padding:10px 15px calc(12px + env(safe-area-inset-bottom));
-  background:linear-gradient(#0e111600,#0e1116f7 40%)!important;
-  backdrop-filter:blur(16px);border-top:1px solid #1a2230!important;
-}
-.stepper{display:flex;gap:7px;margin-bottom:9px;background:none!important}
-.stepper button{
-  flex:1;border:1px solid #252e3d!important;background:#161b24!important;
-  color:#8b93a7!important;border-radius:11px!important;padding:9px 0!important;
-  font:800 11px/1 inherit;box-shadow:none!important;
-}
-.stepper button.on{
-  background:#dc8a3f!important;color:#1b1206!important;border-color:#dc8a3f!important;
-}
-.act{
-  display:flex;gap:9px;background:none!important;border:0!important;
-  padding:0!important;box-shadow:none!important;border-radius:0!important;
-}
-.act button{
-  flex:1 1 0;min-width:0;width:auto;margin:0;border:0!important;
-  border-radius:14px!important;padding:16px!important;
-  font:900 15px/1 inherit;letter-spacing:.3px;box-shadow:none!important;
-}
-.act .buy{background:linear-gradient(#efaa5f,#dc8a3f)!important;color:#1b1206!important;
-  box-shadow:0 6px 18px #dc8a3f33!important}
-.act .sell{background:#1d2430!important;color:#f2ece5!important;
-  border:1px solid #2b3648!important}
-.act button[disabled]{opacity:.4!important}
-
-/* ---------- список акций ---------- */
-.list{padding:16px 15px 0}
-.lhead{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#8b93a7!important;
-  font-weight:800;padding:0 2px 10px}
-.row{
-  display:flex;align-items:center;gap:12px;background:#161b24!important;
-  border:1px solid #252e3d!important;border-radius:14px!important;
-  padding:12px 13px!important;margin-bottom:8px;box-shadow:none!important;
-  transition:border-color .15s ease,background .15s ease;
-}
-.row.on{border-color:#dc8a3f!important;background:#1b2130!important}
-.row .av{width:38px;height:38px;border-radius:12px;border:1px solid #252e3d;
-  flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:17px;
-  background:#1d2430}
-.row .mid{flex:1;min-width:0}
-.row .nm{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;color:#f2ece5!important}
-.row .mt{font-size:11px;color:#8b93a7!important;margin-top:2px}
-.row .rt{text-align:right}
-.row .rt b{display:block;font:900 14px/1.1 var(--mono)!important;
-  font-variant-numeric:tabular-nums;color:#f2ece5!important}
-.row .rt i{display:block;margin-top:3px;font:800 11px/1 var(--mono)!important;
-  font-variant-numeric:tabular-nums}
-
-/* ---------- тост ---------- */
+.buy:active{transform:scale(.985)}
+.buy[disabled]{background:#e5d5c5;color:#a1846c;box-shadow:none}
+.pack{font-size:13px;margin-top:8px;padding-left:2px;color:var(--bark);line-height:1.6}
+.empty{text-align:center;color:var(--muted);padding:40px 20px;font-size:14px}
 #toast{
-  position:fixed;left:14px;right:14px;bottom:190px;z-index:30;
-  background:#1d2430!important;color:#f2ece5!important;
-  border:1px solid #2b3648!important;border-radius:13px!important;
-  padding:13px 15px!important;font-size:12.5px;line-height:1.45;box-shadow:none!important;
-  transform:translateY(240%);transition:transform .25s ease;
+  position:fixed;left:14px;right:14px;bottom:18px;background:var(--ink);color:#fff;
+  border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.45;
+  transform:translateY(140%);transition:.28s cubic-bezier(.2,.8,.3,1);z-index:9
 }
 #toast.on{transform:translateY(0)}
+#toast.ok{background:linear-gradient(135deg,#15803d,#166534)}
+#toast.bad{background:linear-gradient(135deg,#b91c1c,#991b1b)}
 </style>
 </head>
 <body>
@@ -415,7 +313,7 @@ header.top .ttl{flex:1;text-align:center;font:900 13px/1 inherit;letter-spacing:
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : ""};
 // Вкладка кейса идёт первой: иначе товар не видно ни в одной категории.
-const TABS = [["case_d","🏫 Кейс 7Д"],["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
+const TABS = [["case_d","🏫 Кейс 7Д"],["case_ultra","🌈 Кейс Ультра"],["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
 let state = {items: [], tab: "case_d", balance: 0};
 
 function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
@@ -731,15 +629,19 @@ async def api_case(request: Request) -> JSONResponse:
         {
             "cases": len(cases),
             "count_g": sum(
-                1 for c in cases if str(c.get("source") or "") != cases_mod.CASE_D_SOURCE
+                1 for c in cases
+                if str(c.get("source") or "") not in (cases_mod.CASE_D_SOURCE, "ultra")
             ),
             "count_d": sum(
                 1 for c in cases if str(c.get("source") or "") == cases_mod.CASE_D_SOURCE
             ),
+            "count_ultra": sum(
+                1 for c in cases if str(c.get("source") or "") == "ultra"
+            ),
             "pool": cases_mod.case_pool(),
             "pool_d": cases_mod.case_pool_d(),
             "next_d": next_d,
-            "balance": await state.market.balance(uid),
+            "balance": await _points_balance(state, uid),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -817,45 +719,6 @@ async def api_case_ultra_state(request: Request) -> JSONResponse:
         },
         headers={"Cache-Control": "no-store"},
     )
-
-
-@router.post("/api/case/ultra")
-async def api_case_ultra(request: Request) -> JSONResponse:
-    """Купить и сразу открыть кейс «Ультра»."""
-    state = request.app.state
-    uid, error = await _games_user(request)
-    if error is not None:
-        return error
-    price = cases_mod.ULTRA_CASE_PRICE
-    if not await state.db.spend_points(uid, price):
-        return JSONResponse(
-            {"error": "Нужно " + str(price) + " очков"}, status_code=400
-        )
-    result = cases_mod.roll_ultra_case()
-    payload: dict[str, Any] = {"ok": True, "kind": result["kind"], "price": price}
-    if result["kind"] == "ultra":
-        card = CARDS_BY_ID.get(result["card"])
-        if card is not None:
-            counts = await state.db.get_collection(uid)
-            payload["is_new"] = card.card_id not in counts
-            await state.db.add_card(uid, card.card_id)
-            await state.db.add_points(uid, card.points)
-            payload["card"] = {
-                "id": card.card_id,
-                "name": card.name,
-                "emoji": card.rarity_emoji,
-                "rarity": card.rarity,
-                "rarity_title": rarity_name(card.rarity),
-                "points": card.points,
-                "color": cases_mod.RARITY_COLORS.get(card.rarity, "#334155"),
-            }
-    elif result["kind"] == "spin":
-        await state.db.grant_spin_limit(uid, roulette_day_key(), 1, SPINS_PER_DAY)
-    elif result["kind"] == "points":
-        await state.db.add_points(uid, int(result["amount"]))
-        payload["amount"] = int(result["amount"])
-    payload["balance"] = await _points_balance(state, uid)
-    return JSONResponse(payload)
 
 
 @router.get("/api/roulette")
@@ -5306,16 +5169,72 @@ async def api_case_open_many(request: Request) -> JSONResponse:
     cases = await state.db.user_cases(uid)
     if not cases:
         return JSONResponse({"error": "Кейсов нет — крути рулетку"}, status_code=400)
-    want_d = str((body or {}).get("kind", "g")) == "d"
-    picked = [
-        c
-        for c in cases
-        if (str(c.get("source") or "") == cases_mod.CASE_D_SOURCE) == want_d
-    ]
+    kind = str((body or {}).get("kind", "g"))
+    want_d = kind == "d"
+    want_u = kind == "u"
+    if want_u:
+        picked = [c for c in cases if str(c.get("source") or "") == "ultra"]
+    else:
+        picked = [
+            c
+            for c in cases
+            if (str(c.get("source") or "") == cases_mod.CASE_D_SOURCE) == want_d
+        ]
     if not picked:
+        error_text = "Кейсов «Ультра» нет" if want_u else (
+            "Кейсов 7Д нет" if want_d else "Кейсов 7Г нет")
+        return JSONResponse({"error": error_text}, status_code=400)
+
+    # «Ультра»: исходов четыре, лента карт тут не подходит
+    if want_u:
+        results: list[dict[str, Any]] = []
+        for case in picked[:want]:
+            if not await state.db.open_case(uid, int(case["id"])):
+                continue
+            result = cases_mod.roll_ultra_case()
+            item: dict[str, Any] = {"kind": result["kind"]}
+            if result["kind"] == "ultra":
+                card = CARDS_BY_ID.get(result["card"])
+                if card is not None:
+                    counts_now = await state.db.get_collection(uid)
+                    item["is_new"] = card.card_id not in counts_now
+                    await state.db.add_card(uid, card.card_id)
+                    await state.db.add_points(uid, card.points)
+                    item.update(
+                        {
+                            "id": card.card_id,
+                            "name": card.name,
+                            "emoji": card.rarity_emoji,
+                            "rarity": card.rarity,
+                            "rarity_title": rarity_name(card.rarity),
+                            "points": card.points,
+                        }
+                    )
+            elif result["kind"] == "spin":
+                await state.db.grant_spin_limit(uid, roulette_day_key(), 1, SPINS_PER_DAY)
+            elif result["kind"] == "points":
+                await state.db.add_points(uid, int(result["amount"]))
+                item["amount"] = int(result["amount"])
+            results.append(item)
+        if not results:
+            return JSONResponse({"error": "Не получилось открыть"}, status_code=400)
+        all_u = await state.db.user_cases(uid)
         return JSONResponse(
-            {"error": "Кейсов 7Д нет" if want_d else "Кейсов 7Г нет"},
-            status_code=400,
+            {
+                "ok": True,
+                "cards": [],
+                "results": results,
+                "count_ultra": sum(1 for c in all_u if str(c.get("source") or "") == "ultra"),
+                "count_g": sum(
+                    1 for c in all_u
+                    if str(c.get("source") or "") not in (cases_mod.CASE_D_SOURCE, "ultra")
+                ),
+                "count_d": sum(
+                    1 for c in all_u
+                    if str(c.get("source") or "") == cases_mod.CASE_D_SOURCE
+                ),
+                "balance": await _points_balance(state, uid),
+            }
         )
 
     opened: list[dict[str, Any]] = []
@@ -5357,6 +5276,9 @@ async def api_case_open_many(request: Request) -> JSONResponse:
             "count_d": sum(
                 1 for c in all_cases
                 if str(c.get("source") or "") == cases_mod.CASE_D_SOURCE
+            ),
+            "count_ultra": sum(
+                1 for c in all_cases if str(c.get("source") or "") == "ultra"
             ),
         }
     )

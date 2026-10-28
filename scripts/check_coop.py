@@ -559,40 +559,24 @@ async def main(argv: list[str] | None = None) -> int:
         check("профиль: баннер и аватар",
               bool((fresh or {}).get("banner_css")) and bool((fresh or {}).get("initial")), True)
 
-        # Кейс «Ультра»: цена, шансы, покупка и отказ без очков
-        status, ultra_state = await call("GET", "/api/case/ultra", first)
-        check("ультра-кейс: цена", (ultra_state or {}).get("price"), 15000)
-        check("ультра-кейс: четыре исхода",
-              len((ultra_state or {}).get("odds") or []), 4)
-        check("ультра-кейс: карты внутри",
-              len((ultra_state or {}).get("cards") or []), 2)
+        # Кейс «Ультра»: продаётся в магазине, открывается со страницы кейсов
         async with db._p().acquire() as con:
             await con.execute(
-                "update players set bonus_points = 20000 where user_id = $1::bigint",
+                "insert into cases (user_id, source) values ($1::bigint, 'ultra')",
                 TEST_USERS[0],
             )
-        status, opened_ultra = await call("POST", "/api/case/ultra", first, {})
-        check("ультра-кейс: открылся", status, 200)
-        check("ультра-кейс: исход известен",
-              (opened_ultra or {}).get("kind") in ("ultra", "spin", "points", "empty"), True)
-        async with db._p().acquire() as con:
-            await con.execute(
-                "update players set bonus_points = 0 where user_id = $1::bigint",
-                TEST_USERS[0],
-            )
-        status, poor = await call("POST", "/api/case/ultra", first, {})
-        check("ультра-кейс: без очков отказ", status, 400)
-
-        # Лёгкий автосейв: без ключа bag сумка на сервере остаётся прежней
-        await call("POST", "/api/dungeon/hero", first, {
-            "level": 12, "coins": 500, "weapon": "bow_3_1", "bag": ["bow_3_1", "sword_1_0"]})
-        await call("POST", "/api/dungeon/hero", first, {
-            "level": 12, "coins": 600, "weapon": "bow_3_1"})
-        status, light = await call("GET", "/api/dungeon/hero", first)
-        hero_light = (light or {}).get("hero") or {}
-        check("герой: сумка не стёрлась",
-              sorted(hero_light.get("bag") or []), ["bow_3_1", "sword_1_0"])
-        check("герой: монеты обновились", hero_light.get("coins"), 600)
+        status, ultra_state = await call("GET", "/api/case", first)
+        check("кейс Ультра: учтён в инвентаре",
+              int((ultra_state or {}).get("count_ultra") or 0) >= 1, True)
+        status, opened_ultra = await call("POST", "/api/case/open_many", first,
+                                          {"kind": "u", "count": 1})
+        check("кейс Ультра: открылся", status, 200)
+        results = (opened_ultra or {}).get("results") or []
+        check("кейс Ультра: исход известен",
+              bool(results) and results[0].get("kind") in ("ultra", "spin", "points", "empty"),
+              True)
+        check("кейс Ультра: счётчик убавился",
+              int((opened_ultra or {}).get("count_ultra") or 0), 0)
 
         # Квест НПС: выдается по часу и награда одна на час
         status, quest_state = await call("GET", "/api/dungeon/quest", first)

@@ -35,6 +35,8 @@ class ShopError(Exception):
 
 
 CASE_D_SKU = "case_d"
+CASE_ULTRA_SKU = "case_ultra"
+CASE_ULTRA_PRICE = 15_000
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,18 @@ def catalog() -> list[ShopEntry]:
             title="Кейс «7Д класс»",
             subtitle="27 карт второго класса · VIP — 250 000",
             price=350_000,
+            payload={},
+        )
+    )
+
+    # Кейс «Ультра»: дорогой, внутри две ультры и пустота.
+    entries.append(
+        ShopEntry(
+            sku=CASE_ULTRA_SKU,
+            kind="case_ultra",
+            title="Кейс «Ультра»",
+            subtitle="0.01% ультра · Садыков или Лера",
+            price=CASE_ULTRA_PRICE,
             payload={},
         )
     )
@@ -212,6 +226,12 @@ class ShopRepo:
                         user_id,
                     )
                     granted = ["кейс «7Д класс»"]
+                elif entry.kind == "case_ultra":
+                    await con.execute(
+                        "insert into cases (user_id, source) values ($1, 'ultra')",
+                        user_id,
+                    )
+                    granted = ["кейс «Ультра»"]
                 else:
                     granted = await self._grant(con, user_id, entry)
                 await con.execute(

@@ -91,15 +91,17 @@ main{padding:16px 0 0}
       <span class="pe">🏫</span><span class="pn">7Д класс</span>
       <span class="pc" id="cntD">…</span>
     </button>
+    <button class="ptile" data-k="u">
+      <span class="pe">🌈</span><span class="pn">Ультра</span>
+      <span class="pc" id="cntU">…</span>
+    </button>
+    <a class="ptile" href="/roulette_app">
+      <span class="pe">🎡</span><span class="pn">Рулетка</span>
+      <span class="pc">играть</span>
+    </a>
   </div>
 
-  <div class="ultra" id="ultraBox">
-    <div class="uhead"><b>🌈 КЕЙС «УЛЬТРА»</b><span id="ultraPrice">15 000</span></div>
-    <div class="ucards" id="ultraCards"><span class="uc">Садыков</span><span class="uc">Лера</span></div>
-    <div class="uodds" id="ultraOdds"></div>
-    <button class="open" id="ultraOpen">Открыть за 15 000</button>
-    <div class="result" id="ultraResult">Только две ультры внутри и много пустоты.</div>
-  </div>
+  
   <div class="hint" id="hint">Выбери кейс — потом откроется лента</div>
 
   <div id="play">
@@ -115,8 +117,9 @@ main{padding:16px 0 0}
   </div>
 
   <div class="legend">
-    🧩 <b>7Г</b> — обычная коллекция. 🏫 <b>7Д</b> — второй класс, только из кейса
-    и слова «западо-восток». Шансы сверху редкости низкие.
+    🧩 <b>7Г</b> — обычная коллекция. 🏫 <b>7Д</b> — второй класс.
+    🌈 <b>Ультра</b> — только две ультры и пустота.
+    Кейсы покупаются в магазине, открываются здесь. 🎡 Рулетка — рядом.
   </div>
 </main>
 <div id="toast"></div>
@@ -124,7 +127,7 @@ main{padding:16px 0 0}
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 const GAP = 8;
-let pool = [], poolD = [], countG = 0, countD = 0;
+let pool = [], poolD = [], countG = 0, countD = 0, countU = 0;
 let kind = null, howMany = 1, spinning = false;
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
@@ -147,7 +150,7 @@ function tile(card){
     '<div class="tpoints">' + money(card.price || card.points) + '</div></div>';
 }
 function source(){ return kind === "d" ? poolD : pool; }
-function left(){ return kind === "d" ? countD : countG; }
+function left(){ return kind === "d" ? countD : (kind === "u" ? countU : countG); }
 function randomOf(src){
   return src[Math.floor(Math.random() * src.length)] ||
     {name: "?", emoji: "?", points: 0, price: 0, color: "#334155"};
@@ -188,11 +191,13 @@ function sync(){
     : l <= 0 ? (kind === "d" ? "Кейсов 7Д нет" : "Кейсов 7Г нет")
     : (howMany > 1 ? "Открыть " + howMany + " кейсов" : "Открыть кейс");
 }
-function updateCounts(g, d){
-  countG = g; countD = d;
+function updateCounts(g, d, u){
+  countG = g; countD = d; countU = u || 0;
   document.getElementById("cntG").textContent = g + " шт.";
   document.getElementById("cntD").textContent = d + " шт.";
-  document.getElementById("total").textContent = g + d;
+  const cu = document.getElementById("cntU");
+  if (cu) cu.textContent = countU + " шт.";
+  document.getElementById("total").textContent = g + d + countU;
   sync();
 }
 function choose(k){
@@ -218,13 +223,26 @@ async function open(){
     });
     const d = await r.json();
     if (d.error){ toast(d.error, "bad"); spinning = false; sync(); return; }
+    if (kind === "u"){
+      updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
+      const text = (d.results || []).map(function(item){
+        if (item.kind === "ultra")
+          return "🌈 <b>" + item.name + "</b> — " + item.rarity_title + "!";
+        if (item.kind === "spin") return "🎟 Крутка рулетки!";
+        if (item.kind === "points") return "💎 " + money(item.amount) + " очков!";
+        return "Пусто.";
+      }).join("<br>") || "Пусто.";
+      result.innerHTML = text;
+      spinning = false; sync();
+      return;
+    }
     reels.innerHTML = "";
     const mini = d.cards.length > 1;
     const src = source();
     const items = d.cards.map(function(c){ return makeReel(c, mini, src); });
     void reels.offsetWidth;
     items.forEach(spinOne);
-    updateCounts(d.count_g || 0, d.count_d || 0);
+    updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
     setTimeout(function(){
       result.innerHTML = d.cards.map(function(c){
         return "🎉 <b>" + c.name + "</b> · " + c.rarity_title +
@@ -246,7 +264,7 @@ async function load(){
     if (d.error){ hint.textContent = d.error; return; }
     pool = d.pool || [];
     poolD = d.pool_d || [];
-    updateCounts(d.count_g || 0, d.count_d || 0);
+    updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
   }catch(e){
     hint.textContent = "Не смог загрузить кейсы";
   }
@@ -265,64 +283,6 @@ document.querySelectorAll("#howmany [data-n]").forEach(function(b){
   };
 });
 
-/* ---------- кейс «Ультра» ---------- */
-function esc(s){ return String(s == null ? "" : s).replace(/[<>&]/g, function(c){
-  return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c]; }); }
-async function ultraLoad(){
-  try{
-    const r = await fetch("/api/case/ultra", {headers});
-    const d = await r.json();
-    if (d.error){ return; }
-    document.getElementById("ultraPrice").textContent = money(d.price);
-    if (d.cards && d.cards.length){
-      document.getElementById("ultraCards").innerHTML = d.cards.map(function(c){
-        return '<span class="uc">' + c.emoji + " " + esc(c.name) + '</span>';
-      }).join("");
-    }
-    if (d.odds){
-      document.getElementById("ultraOdds").innerHTML = d.odds.map(function(o){
-        return "<div><b>" + o.chance + "%</b> " + esc(o.title) +
-          (o.note ? " · " + esc(o.note) : "") + "</div>";
-      }).join("");
-    }
-    document.getElementById("ultraOpen").textContent = "Открыть за " + money(d.price);
-  }catch(e){}
-}
-async function ultraOpen(){
-  const btn = document.getElementById("ultraOpen");
-  const box = document.getElementById("ultraResult");
-  if (btn.disabled) return;
-  btn.disabled = true;
-  btn.textContent = "Крутим…";
-  try{
-    const r = await fetch("/api/case/ultra", {method:"POST", headers});
-    const d = await r.json();
-    if (d.error){ toast(d.error, "bad"); return; }
-    if (d.kind === "ultra"){
-      box.className = "result win";
-      box.innerHTML = "🌈 " + d.card.emoji + " <b>" + esc(d.card.name) +
-        "</b> — " + esc(d.card.rarity_title) + "! +" + money(d.card.points) + " очков";
-      toast("УЛЬТРА!");
-    } else if (d.kind === "spin"){
-      box.className = "result";
-      box.innerHTML = "🎟 Крутка рулетки! Иди крутить.";
-      toast("Крутка в рулетке");
-    } else if (d.kind === "points"){
-      box.className = "result";
-      box.innerHTML = "💎 " + money(d.amount) + " очков!";
-      toast("+" + money(d.amount) + " очков");
-    } else {
-      box.className = "result";
-      box.innerHTML = "Пусто. В следующий раз повезёт.";
-      toast("Пусто", "bad");
-    }
-    await load();
-  }catch(e){ toast("Связь потерялась", "bad"); }
-  btn.disabled = false;
-  ultraLoad();
-}
-document.getElementById("ultraOpen").onclick = ultraOpen;
-ultraLoad();
 openBtn.onclick = open;
 if (tg){ tg.ready(); tg.expand(); }
 load();

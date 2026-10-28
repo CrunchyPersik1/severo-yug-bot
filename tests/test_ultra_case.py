@@ -46,7 +46,9 @@ def test_distribution_is_close_to_rules():
     assert abs(spin - 0.01) < 0.002
 
 
-def test_page_has_ultra_block():
-    for marker in ('id="ultraOpen"', 'id="ultraOdds"', 'id="ultraPrice"',
-                   "/api/case/ultra", "ultraOpen()"):
-        assert marker in CASE_PAGE, marker
+def test_page_has_ultra_tile():
+    # покупка ушла в магазин: на странице кейсов только плитка и открытие
+    assert 'data-k="u"' in CASE_PAGE
+    assert 'id="cntU"' in CASE_PAGE
+    assert 'href="/roulette_app"' in CASE_PAGE
+    assert "ultraOpen" not in CASE_PAGE
