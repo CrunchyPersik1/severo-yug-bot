@@ -31,6 +31,7 @@ from .market import UPGRADE_PRICE, market_price
 from . import levels
 from . import dice_casino
 from . import themes
+from . import admin_settings as admin_settings_mod
 from . import bundles as bundles_mod
 from . import cardsfx
 from . import cases as cases_mod
@@ -413,6 +414,10 @@ async def api_shop(request: Request) -> JSONResponse:
         user = await _player(request)
     except ShopError as error:
         return JSONResponse({"error": str(error)}, status_code=401)
+    if not await admin_settings_mod.on(state.db, "shop_open"):
+        return JSONResponse(
+            {"error": "Магазин на паузе — загляни позже"}, status_code=403
+        )
     return JSONResponse(
         await _shop_payload(state, int(user["id"])),
         headers={"Cache-Control": "no-store"},
@@ -612,6 +617,8 @@ async def api_mob_kill(request: Request) -> JSONResponse:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
+    if not await admin_settings_mod.on(state.db, "mop_gems"):
+        return JSONResponse({"ok": True, "gems": 0, "off": True})
     zone = gems_mod.clamp_zone((body or {}).get("zone"))
     now = datetime.now(timezone.utc)
     last = _GEM_SEEN.get(user_id)
@@ -8327,7 +8334,7 @@ let gemBusy = false;
 async function gemPing(zone){
   if (gemBusy || !TG_INIT) return;
   gemBusy = true;
-  setTimeout(function(){ gemBusy = false; }, 10000);
+  setTimeout(function(){ gemBusy = false; }, 11000);
   const d = await coopApi("/api/dungeon/mob-kill", {zone: Math.max(0, zone | 0)});
   if (d && d.gems > 0){
     toast("💎 Кристалл! +" + d.gems + " · всего " + d.crystals);

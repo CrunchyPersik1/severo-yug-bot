@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
 from . import (
     admin_actions,
+    admin_settings,
     boss,
     buyer,
     casino,
@@ -274,6 +275,14 @@ async def cmd_admin(
         )
         return
 
+    # /admin settings — панель переключателей: биржа, мини-аппки, дроп и т.д.
+    if len(head) >= 2 and head[1].lower() in ("settings", "настройки", "сеттингс"):
+        state = await admin_settings.load(db)
+        await message.answer(
+            admin_settings.text(state), reply_markup=admin_settings.keyboard(state)
+        )
+        return
+
     # /admin clicker [off] — кликер: тапают и получают подарки.
     if len(head) >= 2 and head[1].lower() in ("clicker", "кликер"):
         arg = head[2].strip().lower() if len(head) > 2 else ""
@@ -298,6 +307,30 @@ async def cmd_admin(
         await message.answer("⚠️ Не получилось, я записал ошибку в логи.")
         return
     await message.answer(f"<pre>{render.esc(result)}</pre>")
+
+
+@router.callback_query(F.data.startswith("adm:s:"))
+async def cb_admin_settings(query: CallbackQuery, db: Database) -> None:
+    """Кнопки панели /admin settings: переключить и перерисовать."""
+    user = query.from_user
+    if user is None or not settings.is_admin(user.id):
+        await query.answer("Только для админа", show_alert=True)
+        return
+    key = (query.data or "").split(":", 2)[-1]
+    note = "Обновил"
+    if key != "refresh":
+        try:
+            now_on = await admin_settings.toggle(db, key)
+            note = ("Включил: " if now_on else "Выключил: ") + admin_settings.BY_KEY[key]["title"]
+        except ValueError as error:
+            await query.answer(str(error), show_alert=True)
+            return
+    state = await admin_settings.load(db)
+    with contextlib.suppress(Exception):
+        await query.message.edit_text(
+            admin_settings.text(state), reply_markup=admin_settings.keyboard(state)
+        )
+    await query.answer(note)
 
 
 @router.message(Command("drop", "daily", "карта"))

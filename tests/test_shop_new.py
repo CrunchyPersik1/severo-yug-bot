@@ -195,8 +195,8 @@ def test_gem_roll_is_rare():
     assert 0 < drops < 250, drops
 
 
-def test_gem_cooldown_is_a_minute():
-    assert gems.COOLDOWN_SECONDS == 60
+def test_gem_cooldown_is_ten_seconds():
+    assert gems.COOLDOWN_SECONDS == 10
 
 
 # --------------------------------------------------------------------------- #

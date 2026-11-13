@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import random
 
-# Не чаще одного дропа в минуту на игрока.
-COOLDOWN_SECONDS = 60
+# Не чаще одной попытки в 10 секунд на игрока.
+COOLDOWN_SECONDS = 10
 
 # Шанс зависит от локации, но полого: 0.12% в Опушке, 0.40% в Бездне.
 CHANCE_MIN = 0.0012
