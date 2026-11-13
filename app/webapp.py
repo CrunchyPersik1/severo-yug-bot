@@ -6383,19 +6383,29 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
   border-radius:12px;padding:11px 13px;font-family:inherit;font-size:12.5px;font-weight:700;line-height:1.4}
 .choices button.sel{border-color:var(--acc);background:#1c2b45}
 /* бой */
-.fight{position:fixed;inset:0;z-index:9600;background:#060a12;display:none;flex-direction:column}
+.fight{position:fixed;inset:0;z-index:9600;background:#060a12;display:none;flex-direction:column;overflow:hidden}
 .fight.on{display:flex}
-.hpbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;
-  font-size:12px;font-weight:900}
-.hpbar .bar{flex:1;height:10px;border-radius:5px;background:#1b2233;overflow:hidden}
-.hpbar .bar i{display:block;height:100%;width:100%;background:#3fae6a}
-.hpbar .bar.foe i{background:#e11d48}
-.stage2{position:relative;flex:1;display:flex;overflow:hidden}
-.stage2 canvas{flex:1;display:block;width:100%;touch-action:none}
-.stage2 .foeimg{position:absolute;width:104px;height:104px;pointer-events:none;
-  image-rendering:pixelated;transform:translate(-50%,-50%);z-index:2}
-.fight .hint2{text-align:center;font-size:11.5px;color:#8b93a7;padding:8px 12px 14px}
-/* магазин */
+.bhud{display:flex;gap:9px;padding:8px 11px;align-items:center;background:rgba(6,10,18,.92);z-index:3}
+.bhud .who{font-size:11.5px;font-weight:900;white-space:nowrap;color:#dbe9ff}
+.bhud .bar{flex:1;height:11px;border-radius:6px;background:#1b2233;overflow:hidden;border:1px solid #26324a}
+.bhud .bar i{display:block;height:100%;width:100%;background:#3fae6a;transition:width .18s}
+.bhud .bar.foe i{background:#e11d48}
+.bhud .num{font-size:11px;color:#c7d4ea;min-width:42px;text-align:right;font-weight:800}
+.stage3{position:relative;flex:1;display:flex;overflow:hidden}
+.stage3 canvas{flex:1;display:block;width:100%;height:100%;touch-action:none}
+.joy{position:absolute;left:16px;bottom:18px;width:118px;height:118px;border-radius:50%;
+  background:rgba(18,27,44,.5);border:2px solid #2c4566;z-index:4;touch-action:none}
+.joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
+  border-radius:50%;background:rgba(143,208,255,.32);border:2px solid #6fa8d8;display:block}
+.batk{position:absolute;right:18px;bottom:24px;width:86px;height:86px;border-radius:50%;
+  border:2px solid #6b4a22;background:radial-gradient(circle at 35% 30%,#f0b276,#b45309);
+  color:#1a1205;font-size:30px;font-family:inherit;z-index:4}
+.batk:active{transform:scale(.94)}
+.bdash{position:absolute;right:112px;bottom:100px;width:60px;height:60px;border-radius:50%;
+  border:2px solid #2c4566;background:rgba(18,27,44,.8);color:#9fc7ff;font-size:22px;z-index:4}
+.bdash:active{transform:scale(.94)}
+.bfoot{position:absolute;right:16px;bottom:118px;font-size:10.5px;color:#8b93a7;z-index:4;text-align:right;max-width:150px}
+/* магазин *//* магазин */
 .shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
 .shop .cap{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#f6c94a;font-weight:900}
 .shop .when{font-size:11.5px;color:var(--muted);margin-top:5px}
@@ -6437,19 +6447,23 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 </div>
 
 <div class="fight" id="fight">
-  <div class="hpbar">
-    <span>🧙 ты</span><div class="bar"><i id="php"></i></div>
-    <span id="phpTxt">100</span>
+  <div class="bhud">
+    <span class="who">🧙 Ты</span>
+    <div class="bar"><i id="php"></i></div>
+    <span class="num" id="phpTxt">120</span>
   </div>
-  <div class="hpbar">
-    <span id="foeName">эльф</span><div class="bar foe"><i id="fhp"></i></div>
-    <span id="fhpTxt">100</span>
+  <div class="bhud">
+    <span class="who" id="foeName">🧝 Эльф</span>
+    <div class="bar foe"><i id="fhp"></i></div>
+    <span class="num" id="fhpTxt">100</span>
   </div>
-  <div class="stage2">
+  <div class="stage3">
     <canvas id="cv"></canvas>
-    <img id="foeImg" class="foeimg" src="/images/event/elf_idle.gif" alt="">
+    <div class="joy" id="joy"><i id="joyKnob"></i></div>
+    <button class="batk" id="atkBtn">⚔</button>
+    <button class="bdash" id="dashBtn">💨</button>
+    <div class="bfoot" id="bfoot">⚔ — удар, 💨 — рывок</div>
   </div>
-  <div class="hint2" id="fightHint">Тапай по эльфу, чтобы бить. Веди пальцем — двигаться. Уворачивайся.</div>
 </div>
 <div id="toast"></div>
 <script>
@@ -6681,129 +6695,218 @@ async function buy(id){
   S = d.state; render();
   toast("Куплено: " + (d.granted || []).join(", "));
 }
-/* ------------------------- бой с эльфом ------------------------- */
-let G = null, raf = 0;
+/* ---------- бой с эльфом: как в подземелье ---------- */
+let G = null, raf = 0, joystick = {active: false, x: 0, y: 0, dx: 0, dy: 0};
+const IMG = {};
+function loadImg(key, src){
+  if (IMG[key]) return IMG[key];
+  const im = new Image();
+  im.src = src;
+  IMG[key] = im;
+  return im;
+}
+loadImg("hero", "/static/hero_knight_m.png");
+loadImg("idle", "/images/event/elf_idle.png");
+loadImg("walk", "/images/event/elf_walk.png");
+loadImg("atk", "/images/event/elf_atk.png");
+loadImg("hurt", "/images/event/elf_hurt.png");
+
+const ELF_SHEETS = {idle: {img: "idle", frames: 6}, walk: {img: "walk", frames: 8},
+                    atk: {img: "atk", frames: 7}, hurt: {img: "hurt", frames: 4}};
+const ELF_FRAME_W = 160, ELF_FRAME_H = 144;
+
 function startFight(lv){
   const fight = document.getElementById("fight");
   fight.classList.add("on");
   document.getElementById("foeName").textContent = "🧝 " + lv.name;
   const cv = document.getElementById("cv");
   const rect = cv.getBoundingClientRect();
-  cv.width = Math.floor(rect.width * (window.devicePixelRatio || 1));
-  cv.height = Math.floor(rect.height * (window.devicePixelRatio || 1));
   const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.floor(rect.width * dpr);
+  cv.height = Math.floor(rect.height * dpr);
   G = {
-    lv: lv, dpr: dpr, w: cv.width / dpr, h: cv.height / dpr,
-    p: {x: 60, y: 0, hp: 120, max: 120, atkCd: 0},
-    e: {x: 0, y: 0, hp: lv.hp, max: lv.hp, shootCd: 900, dashCd: 2200, dodgeCd: 1200, vx: 0, vy: 0},
-    arrows: [], over: false, t: 0
+    lv: lv, dpr: dpr, w: rect.width, h: rect.height, t: 0, over: false, hits: [],
+    p: {x: rect.width * 0.3, y: rect.height * 0.5, hp: 140, max: 140, atkCd: 0,
+        dashCd: 0, dashT: 0, vx: 0, vy: 0, face: 1, moving: false, atkAnim: 0},
+    e: {x: rect.width * 0.7, y: rect.height * 0.5, hp: lv.hp, max: lv.hp,
+        shootCd: 1200, dodgeCd: 1800, hurtT: 0, face: -1, moving: false,
+        atkAnim: 0, vx: 0, vy: 0},
+    arrows: []
   };
-  G.p.y = G.h - 70;
-  G.e.x = G.w - 80; G.e.y = G.h / 2;
-  cv.onpointerdown = onPointer;
-  cv.onpointermove = onPointer;
+  bindFightControls();
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
 }
-function onPointer(ev){
-  if (!G || G.over) return;
-  const cv = document.getElementById("cv");
-  const r = cv.getBoundingClientRect();
-  const x = ev.clientX - r.left, y = ev.clientY - r.top;
-  const dx = G.e.x - x, dy = G.e.y - y;
-  if (Math.hypot(dx, dy) < 64){
-    // удар по эльфу
-    if (G.p.atkCd <= 0){
-      G.e.hp -= 10 + Math.floor(Math.random() * 5);
-      G.p.atkCd = 380;
-      G.e.hurtUntil = G.t + 0.3;
-      G.e.dodgeCd = Math.min(G.e.dodgeCd, 260);
-    }
-  } else {
-    // идём к точке
-    G.p.tx = x; G.p.ty = y;
+function bindFightControls(){
+  const joy = document.getElementById("joy");
+  const knob = document.getElementById("joyKnob");
+  function move(ev){
+    const r = joy.getBoundingClientRect();
+    const dx = ev.clientX - (r.left + r.width / 2);
+    const dy = ev.clientY - (r.top + r.height / 2);
+    const len = Math.hypot(dx, dy) || 1;
+    const cap = Math.min(len, 44);
+    joystick.dx = dx / len * (cap / 44);
+    joystick.dy = dy / len * (cap / 44);
+    knob.style.transform = "translate(" + (joystick.dx * 34) + "px," + (joystick.dy * 34) + "px)";
   }
+  function end(){
+    joystick.active = false; joystick.dx = 0; joystick.dy = 0;
+    knob.style.transform = "translate(0,0)";
+  }
+  joy.onpointerdown = function(ev){ joystick.active = true; joy.setPointerCapture(ev.pointerId); move(ev); };
+  joy.onpointermove = function(ev){ if (joystick.active) move(ev); };
+  joy.onpointerup = end;
+  joy.onpointercancel = end;
+  document.getElementById("atkBtn").onclick = attack;
+  document.getElementById("dashBtn").onclick = dash;
+}
+function attack(){
+  if (!G || G.over) return;
+  G.p.atkAnim = 0.22;
+  if (G.p.atkCd > 0) return;
+  G.p.atkCd = 0.42;
+  const d = Math.hypot(G.e.x - G.p.x, G.e.y - G.p.y);
+  G.p.face = G.e.x >= G.p.x ? 1 : -1;
+  if (d < 78){
+    const dmg = 12 + Math.floor(Math.random() * 6);
+    G.e.hp -= dmg;
+    G.e.hurtT = 0.28;
+    G.hits.push({x: G.e.x, y: G.e.y - 40, t: 0.7, dmg: dmg});
+    if (navigator.vibrate) navigator.vibrate(12);
+  }
+}
+function dash(){
+  if (!G || G.over || G.p.dashCd > 0) return;
+  G.p.dashCd = 1.6;
+  G.p.dashT = 0.18;
 }
 function loop(){
   raf = requestAnimationFrame(loop);
   if (!G || G.over) return;
-  const dt = 1 / 60;
+  const dt = Math.min(0.05, 1 / 60);
   G.t += dt;
   const cv = document.getElementById("cv");
   const ctx = cv.getContext("2d");
   ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
-  ctx.clearRect(0, 0, G.w, G.h);
-  // фон
-  ctx.fillStyle = "#0a1220"; ctx.fillRect(0, 0, G.w, G.h);
-  ctx.fillStyle = "#0f1b2e";
-  for (let i = 0; i < 40; i++){
-    ctx.fillRect((i * 97) % G.w, (i * 61) % G.h, 3, 3);
-  }
+  drawGround(ctx);
   // игрок
+  const sp = (G.p.dashT > 0 ? 620 : 190);
+  G.p.x += joystick.dx * sp * dt;
+  G.p.y += joystick.dy * sp * dt;
+  G.p.moving = Math.abs(joystick.dx) + Math.abs(joystick.dy) > 0.08;
+  if (Math.abs(joystick.dx) > 0.15) G.p.face = joystick.dx > 0 ? 1 : -1;
+  G.p.x = Math.max(26, Math.min(G.w - 26, G.p.x));
+  G.p.y = Math.max(36, Math.min(G.h - 26, G.p.y));
   G.p.atkCd = Math.max(0, G.p.atkCd - dt);
-  if (G.p.tx != null){
-    const dx = G.p.tx - G.p.x, dy = G.p.ty - G.p.y, d = Math.hypot(dx, dy);
-    if (d > 6){ G.p.x += dx / d * 180 * dt; G.p.y += dy / d * 180 * dt; }
-  }
-  // эльф: держит дистанцию, стреляет, уклоняется рывком
-  const ex = G.p.x - G.e.x, ey = G.p.y - G.e.y, dist = Math.hypot(ex, ey) || 1;
-  const want = 170;
-  const speed = 55 * (G.lv.speed || 1);
-  if (dist < want - 20){ G.e.x -= ex / dist * speed * dt; G.e.y -= ey / dist * speed * dt; }
-  if (dist > want + 40){ G.e.x += ex / dist * speed * dt * 0.6; G.e.y += ey / dist * speed * dt * 0.6; }
+  G.p.atkAnim = Math.max(0, G.p.atkAnim - dt);
+  G.p.dashCd = Math.max(0, G.p.dashCd - dt);
+  G.p.dashT = Math.max(0, G.p.dashT - dt);
+  // эльф
+  const dx = G.p.x - G.e.x, dy = G.p.y - G.e.y, dist = Math.hypot(dx, dy) || 1;
+  const speed = 70 * (G.lv.speed || 1);
+  let mx = 0, my = 0;
+  if (dist < 150){ mx = -dx / dist; my = -dy / dist; }
+  else if (dist > 230){ mx = dx / dist * 0.7; my = dy / dist * 0.7; }
+  G.e.x += mx * speed * dt;
+  G.e.y += my * speed * dt;
+  G.e.moving = Math.abs(mx) + Math.abs(my) > 0.05;
+  if (!G.e.moving) G.e.face = dx >= 0 ? 1 : -1; else G.e.face = mx >= 0 ? 1 : -1;
   G.e.x = Math.max(30, Math.min(G.w - 30, G.e.x));
-  G.e.y = Math.max(30, Math.min(G.h - 30, G.e.y));
-  G.e.moving = Math.abs(G.e.x - (G.e.px || G.e.x)) > 0.4 || Math.abs(G.e.y - (G.e.py || G.e.y)) > 0.4;
-  G.e.px = G.e.x; G.e.py = G.e.y;
+  G.e.y = Math.max(40, Math.min(G.h - 30, G.e.y));
+  G.e.hurtT = Math.max(0, G.e.hurtT - dt);
+  G.e.atkAnim = Math.max(0, G.e.atkAnim - dt);
   G.e.shootCd -= dt * 1000;
-  if (G.e.shootCd <= 0){
-    G.e.shootCd = 1400 - 300 * (G.lv.aim || 0.4);
-    G.e.shotAt = G.t;
-    const a = Math.atan2(G.p.y - G.e.y, G.p.x - G.e.x);
-    G.arrows.push({x: G.e.x, y: G.e.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260});
+  if (G.e.shootCd <= 0 && dist < 420){
+    G.e.shootCd = 1500 - 400 * (G.lv.aim || 0.4);
+    G.e.atkAnim = 0.4;
+    const a = Math.atan2(dy, dx);
+    G.arrows.push({x: G.e.x, y: G.e.y - 30, vx: Math.cos(a) * 290, vy: Math.sin(a) * 290});
   }
   G.e.dodgeCd -= dt * 1000;
-  if (G.e.dodgeCd <= 0 && dist < 90){
-    G.e.dodgeCd = 1400;
-    G.e.y += (Math.random() < 0.5 ? -1 : 1) * 60;
-    G.e.x += (Math.random() < 0.5 ? -1 : 1) * 70;
+  if (G.e.dodgeCd <= 0 && dist < 120){
+    G.e.dodgeCd = 1500;
+    G.e.y += (Math.random() < 0.5 ? -1 : 1) * 70;
   }
   // стрелы
   G.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; });
   G.arrows = G.arrows.filter(function(a){
-    if (Math.hypot(a.x - G.p.x, a.y - G.p.y) < 22){
-      G.p.hp -= 8 + Math.floor(Math.random() * 6);
+    if (Math.hypot(a.x - G.p.x, a.y - (G.p.y - 26)) < 26){
+      G.p.hp -= 7 + Math.floor(Math.random() * 6);
       return false;
     }
-    return a.x > -20 && a.x < G.w + 20 && a.y > -20 && a.y < G.h + 20;
+    return a.x > -30 && a.x < G.w + 30 && a.y > -30 && a.y < G.h + 30;
   });
-  // отрисовка
-  ctx.fillStyle = "#8fd0ff"; ctx.beginPath();
-  ctx.arc(G.p.x, G.p.y, 16, 0, Math.PI * 2); ctx.fill();
-  ctx.font = "22px serif"; ctx.fillText("🎅", G.p.x - 11, G.p.y + 8);
-  // эльф рисуется гифкой поверх канваса: так не надо резать спрайт-листы
-  const foe = document.getElementById("foeImg");
-  if (foe){
-    foe.style.left = G.e.x + "px";
-    foe.style.top = G.e.y + "px";
-    const state = (G.e.hurtUntil || 0) > G.t ? "hurt"
-      : (G.t - (G.e.shotAt || -9) < 0.35) ? "basicatk"
-      : (G.e.moving ? "walk" : "idle");
-    if (foe.dataset.state !== state){
-      foe.dataset.state = state;
-      foe.src = "/images/event/elf_" + state + ".gif";
-    }
-  }
+  G.hits = G.hits.filter(function(hit){ hit.t -= dt; hit.y -= 26 * dt; return hit.t > 0; });
+  // рисуем
+  drawPlayer(ctx);
+  drawElf(ctx);
   ctx.fillStyle = "#ffd166";
   G.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.fill(); });
-  // полосы
+  ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
+  G.hits.forEach(function(hit){
+    ctx.globalAlpha = Math.max(0, hit.t);
+    ctx.fillStyle = "#ff6b6b";
+    ctx.fillText("-" + hit.dmg, hit.x, hit.y);
+    ctx.globalAlpha = 1;
+  });
+  // HUD
   document.getElementById("php").style.width = Math.max(0, G.p.hp / G.p.max * 100) + "%";
   document.getElementById("phpTxt").textContent = Math.max(0, Math.round(G.p.hp));
   document.getElementById("fhp").style.width = Math.max(0, G.e.hp / G.e.max * 100) + "%";
   document.getElementById("fhpTxt").textContent = Math.max(0, Math.round(G.e.hp));
-  // исход
   if (G.e.hp <= 0) return finishFight(true);
   if (G.p.hp <= 0) return finishFight(false);
+}
+function drawGround(ctx){
+  ctx.fillStyle = "#0b1526";
+  ctx.fillRect(0, 0, G.w, G.h);
+  // снег и камни: сетка без картинок
+  for (let i = 0; i < 90; i++){
+    const x = (i * 137) % G.w, y = (i * 89) % G.h;
+    ctx.fillStyle = i % 5 ? "rgba(200,225,255,.10)" : "rgba(143,208,255,.22)";
+    ctx.fillRect(x, y, 2, 2);
+  }
+  ctx.fillStyle = "rgba(28,53,87,.55)";
+  for (let i = 0; i < 7; i++){
+    const x = (i * 211 + 40) % G.w, y = (i * 157 + 30) % G.h;
+    ctx.fillRect(x, y, 46, 3);
+    ctx.fillRect(x + 20, y - 8, 3, 11);
+  }
+}
+function drawPlayer(ctx){
+  const im = IMG.hero;
+  const frame = G.p.atkAnim > 0 ? 4 + (Math.floor(G.t * 18) % 4)
+    : G.p.moving ? 4 + (Math.floor(G.t * 10) % 4) : Math.floor(G.t * 5) % 4;
+  ctx.save();
+  ctx.translate(G.p.x, G.p.y);
+  ctx.scale(G.p.face, 1);
+  if (im.complete && im.naturalWidth){
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, frame * 16, 0, 16, 16, -26, -52, 52, 52);
+  } else {
+    ctx.fillStyle = "#8fd0ff"; ctx.fillRect(-12, -40, 24, 40);
+  }
+  ctx.restore();
+}
+function drawElf(ctx){
+  const state = G.e.hurtT > 0 ? "hurt" : G.e.atkAnim > 0 ? "atk" : G.e.moving ? "walk" : "idle";
+  const sheet = ELF_SHEETS[state];
+  const im = IMG[sheet.img];
+  const frame = Math.floor(G.t * (state === "idle" ? 6 : 10)) % sheet.frames;
+  ctx.save();
+  ctx.translate(G.e.x, G.e.y);
+  ctx.scale(G.e.face, 1);
+  if (im.complete && im.naturalWidth){
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, frame * ELF_FRAME_W, 0, ELF_FRAME_W, ELF_FRAME_H,
+                  -60, -104, 120, 108);
+  } else {
+    ctx.fillStyle = "#e11d48"; ctx.fillRect(-16, -70, 32, 70);
+  }
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.ellipse(0, 4, 26, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 async function finishFight(win){
   if (!G || G.over) return;
@@ -6811,7 +6914,7 @@ async function finishFight(win){
   cancelAnimationFrame(raf);
   const fight = document.getElementById("fight");
   if (!win){
-    toast("Эльф сильнее. Попробуй ещё раз!");
+    toast("Эльф сильнее. Вернись с оружием получше!");
     setTimeout(function(){ fight.classList.remove("on"); }, 900);
     return;
   }
@@ -6822,6 +6925,7 @@ async function finishFight(win){
   render();
   toast("Эльф повержен! " + (d.granted || []).join(", "));
 }
+
 document.getElementById("exitBtn").onclick = function(){ location.href = "/hub"; };
 if (tg){ tg.ready(); tg.expand(); }
 load();
