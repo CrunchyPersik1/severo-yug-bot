@@ -4229,7 +4229,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .tile .tt{font-size:14.5px;font-weight:800;letter-spacing:.2px;position:relative;z-index:2}
 .tile .tn{font-size:11.5px;color:var(--muted);position:relative;z-index:2}
 .tile .tart{position:absolute;top:0;right:0;bottom:0;width:52%;z-index:1;
-  background-size:cover;background-position:center top;
+  background-size:cover;background-position:center;background-color:#0d1524;
   clip-path:polygon(26% 0,100% 0,100% 100%,0 100%);
   opacity:.95;image-rendering:pixelated}
 .tile .tart::after{content:"";position:absolute;inset:0;
