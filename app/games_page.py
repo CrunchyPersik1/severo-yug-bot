@@ -137,9 +137,9 @@ const poolU = [
   {name: "Пусто", emoji: "💨", points: 0, price: 0, color: "#64748b"}
 ];
 let kind = null, howMany = 1, spinning = false;
-/* Параметры прокрута приходят с сервера: 15 секунд, три стадии. */
-let SPIN = {spin_ms: 15000, spin_stages: [6750, 6000, 2250], slip_chance: 0.15,
-            stage_tiles: [14, 4, 1.4], slip_tiles: [14, 3, 2.4]};
+/* Параметры прокрута приходят с сервера: одна анимация, быстрый старт. */
+let SPIN = {reel_ms: 4500, wheel_ms: 5000, hold_ms: 350,
+            curve: "cubic-bezier(.08,.78,.1,1)"};
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
 const openBtn = document.getElementById("open");
@@ -167,12 +167,14 @@ function source(){
 /* Прокрут: три стадии — быстро, медленнее, совсем медленно. В самом конце
    есть шанс, что лента проедет ещё тайл: игрок видит, как она почти встала
    и всё-таки съехала. Финиш всегда совпадает с призом с сервера. */
-function spinPlan(){
-  var cfg = SPIN || {};
-  var st = cfg.spin_stages || [6750, 6000, 2250];
-  var slip = Math.random() < (cfg.slip_chance || 0);
-  var tiles = slip ? (cfg.slip_tiles || [14, 3, 2.4]) : (cfg.stage_tiles || [14, 4, 1.4]);
-  return {stages: st, tiles: tiles, slip: slip, ms: Number(cfg.spin_ms) || 15000};
+function reelMs(){
+  return Number((SPIN || {}).reel_ms) || 4500;
+}
+function spinCurve(){
+  return (SPIN || {}).curve || "cubic-bezier(.08,.78,.1,1)";
+}
+function holdMs(){
+  return Number((SPIN || {}).hold_ms) || 350;
 }
 function left(){ return kind === "d" ? countD : (kind === "u" ? countU : countG); }
 function randomOf(src){
@@ -199,31 +201,18 @@ function makeReel(win, mini, src){
   el.innerHTML = html;
   return {el: el, target: target, step: tw + GAP, tw: tw};
 }
-function spinOne(item, plan){
-  plan = plan || spinPlan();
+function spinOne(item, ms){
   const center = window.innerWidth / 2;
   const jitter = (Math.random() * 40) - 20;
   const finish = item.target * item.step + item.tw / 2 - center + jitter;
-  const st = plan.stages;
-  const tiles = plan.tiles;
-  const p2 = finish - tiles[2] * item.step;
-  const p1 = p2 - tiles[1] * item.step;
-  const start = Math.max(0, p1 - tiles[0] * item.step);
+  const ms2 = ms || reelMs();
   item.el.style.transition = "none";
-  item.el.style.transform = "translateX(" + (-start) + "px)";
+  item.el.style.transform = "translateX(0px)";
   void item.el.offsetWidth;
   setTimeout(function(){
-    item.el.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
-    item.el.style.transform = "translateX(" + (-p1) + "px)";
-  }, 30);
-  setTimeout(function(){
-    item.el.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
-    item.el.style.transform = "translateX(" + (-p2) + "px)";
-  }, 30 + st[0]);
-  setTimeout(function(){
-    item.el.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
+    item.el.style.transition = "transform " + (ms2 / 1000) + "s " + spinCurve();
     item.el.style.transform = "translateX(" + (-finish) + "px)";
-  }, 30 + st[0] + st[1]);
+  }, 20);
 }
 function sync(){
   const l = left();
@@ -289,8 +278,8 @@ async function open(){
         return makeReel(pack.win, mini, poolU);
       });
       void reels.offsetWidth;
-      const planU = spinPlan();
-      reelsOut.forEach(function(item){ spinOne(item, planU); });
+      const msU = reelMs();
+      reelsOut.forEach(function(item){ spinOne(item, msU); });
       updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
       setTimeout(function(){
         result.innerHTML = items.map(function(pack){
@@ -303,15 +292,15 @@ async function open(){
           return "💨 Пусто.";
         }).join("<br>");
         spinning = false; sync();
-      }, planU.ms + 500);
+      }, reelMs() + holdMs());
       return;
     }
     const mini = d.cards.length > 1;
     const src = source();
     const items = d.cards.map(function(c){ return makeReel(c, mini, src); });
     void reels.offsetWidth;
-    const plan = spinPlan();
-    items.forEach(function(item){ spinOne(item, plan); });
+    const msReel = reelMs();
+    items.forEach(function(item){ spinOne(item, msReel); });
     updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
     setTimeout(function(){
       result.innerHTML = d.cards.map(function(c){
@@ -321,7 +310,7 @@ async function open(){
       }).join("<br>");
       spinning = false;
       sync();
-    }, plan.ms + 500);
+    }, msReel + holdMs());
   }catch(e){
     toast("Связь потерялась", "bad");
     spinning = false; sync();
@@ -474,8 +463,8 @@ let kind = "classic", view = "wheel", count = 1, spinning = false;
 let segments = [], spinsLeft = 0, freeLeft = 0, balance = 0, crystals = 0, price = 0;
 let currentRot = 0, maxAtOnce = 3;
 /* Те же 15 секунд, что и у кейсов: параметры приходят с сервера. */
-let SPIN = {spin_ms: 15000, spin_stages: [6750, 6000, 2250], slip_chance: 0.15,
-            stage_tiles: [14, 4, 1.4], slip_tiles: [14, 3, 2.4]};
+let SPIN = {reel_ms: 4500, wheel_ms: 5000, hold_ms: 350,
+            curve: "cubic-bezier(.08,.78,.1,1)"};
 const canvas = document.getElementById("wheel");
 const stage = document.getElementById("stage");
 const reelsBox = document.getElementById("reels");
@@ -541,40 +530,25 @@ function prep(segs){
   segments = segs;
   draw(segs);
 }
-function spinPlan(){
-  var cfg = SPIN || {};
-  var st = cfg.spin_stages || [6750, 6000, 2250];
-  var slip = Math.random() < (cfg.slip_chance || 0);
-  var tiles = slip ? (cfg.slip_tiles || [14, 3, 2.4]) : (cfg.stage_tiles || [14, 4, 1.4]);
-  return {stages: st, tiles: tiles, slip: slip, ms: Number(cfg.spin_ms) || 15000};
+function reelMs(){
+  return Number((SPIN || {}).reel_ms) || 4500;
 }
-function spinTo(index, plan){
-  plan = plan || spinPlan();
+function spinCurve(){
+  return (SPIN || {}).curve || "cubic-bezier(.08,.78,.1,1)";
+}
+function holdMs(){
+  return Number((SPIN || {}).hold_ms) || 350;
+}
+function spinTo(index, ms){
   var mid = segments[index] ? segments[index].mid : 0;
   var want = (360 - mid) % 360;
   var cur = ((currentRot % 360) + 360) % 360;
   var delta = (want - cur + 360) % 360;
-  var turns = 8 + Math.floor(Math.random()*4);
-  var total = turns*360 + delta;
-  var st = plan.stages;
-  // Три стадии как у ленты: разгон, замедление, последние 18° ползём.
-  var last = 18;
-  var second = 150;
-  var first = Math.max(0, total - last - second);
-  var stage1 = currentRot + first;
-  var stage2 = stage1 + second;
-  var stage3 = stage2 + last;
-  canvas.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
-  canvas.style.transform = "rotate(" + stage1 + "deg)";
-  setTimeout(function(){
-    canvas.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
-    canvas.style.transform = "rotate(" + stage2 + "deg)";
-  }, st[0]);
-  setTimeout(function(){
-    canvas.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
-    canvas.style.transform = "rotate(" + stage3 + "deg)";
-  }, st[0] + st[1]);
-  currentRot = stage3;
+  var turns = 9 + Math.floor(Math.random()*4);
+  currentRot += turns*360 + delta;
+  var ms2 = ms || Number((SPIN || {}).wheel_ms) || 5000;
+  canvas.style.transition = "transform " + (ms2 / 1000) + "s " + spinCurve();
+  canvas.style.transform = "rotate(" + currentRot + "deg)";
 }
 
 /* ---------- лента ---------- */
@@ -603,31 +577,18 @@ function makeReel(winIndex, mini){
   el.innerHTML = html;
   return {el: el, target: target, step: tw + 8, tw: tw};
 }
-function spinReel(item, plan){
-  plan = plan || spinPlan();
+function spinReel(item, ms){
   var center = reelsBox.clientWidth / 2 || window.innerWidth / 2;
   var jitter = (Math.random() * 36) - 18;
   var finish = item.target * item.step + item.tw / 2 - center + jitter;
-  var st = plan.stages;
-  var tiles = plan.tiles;
-  var p2 = finish - tiles[2] * item.step;
-  var p1 = p2 - tiles[1] * item.step;
-  var start = Math.max(0, p1 - tiles[0] * item.step);
+  var ms2 = ms || reelMs();
   item.el.style.transition = "none";
-  item.el.style.transform = "translateX(" + (-start) + "px)";
+  item.el.style.transform = "translateX(0px)";
   void item.el.offsetWidth;
   setTimeout(function(){
-    item.el.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
-    item.el.style.transform = "translateX(" + (-p1) + "px)";
-  }, 30);
-  setTimeout(function(){
-    item.el.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
-    item.el.style.transform = "translateX(" + (-p2) + "px)";
-  }, 30 + st[0]);
-  setTimeout(function(){
-    item.el.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
+    item.el.style.transition = "transform " + (ms2 / 1000) + "s " + spinCurve();
     item.el.style.transform = "translateX(" + (-finish) + "px)";
-  }, 30 + st[0] + st[1]);
+  }, 20);
 }
 
 /* ---------- состояние ---------- */
@@ -734,27 +695,28 @@ async function spin(){
     crystals = d.crystals || 0;
 
     reelsBox.innerHTML = "";
-    var plan = spinPlan();
     if (view === "wheel" && items.length === 1){
-      spinTo(items[0].index || 0, plan);
+      var msWheel = Number((SPIN || {}).wheel_ms) || 5000;
+      spinTo(items[0].index || 0, msWheel);
       setTimeout(function(){
         showResult(items);
         spinning = false;
         sync();
         load();
-      }, plan.ms + 500);
+      }, msWheel + holdMs());
       return;
     }
     var mini = items.length > 1;
     var created = items.map(function(item){ return makeReel(item.index || 0, mini); });
     void reelsBox.offsetWidth;
-    created.forEach(function(item){ spinReel(item, plan); });
+    var msSpin = reelMs();
+    created.forEach(function(item){ spinReel(item, msSpin); });
     setTimeout(function(){
       showResult(items);
       spinning = false;
       sync();
       load();
-    }, plan.ms + 500);
+    }, msSpin + holdMs());
   }catch(e){
     toast("Связь потерялась", "bad");
     spinning = false; sync();

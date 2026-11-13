@@ -1,82 +1,62 @@
-"""Открытие приза: 15 секунд, три стадии и «проскок» на соседний тайл."""
+"""Прокрут приза: одна быстрая анимация с плавным торможением (как в CS)."""
 
 import inspect
 
 from app import reveal
 
 
-def test_spin_is_at_least_fifteen_seconds():
-    assert reveal.SPIN_MS == 15_000
-    assert reveal.total_ms() >= 15_000
+def test_durations_are_short_enough():
+    assert reveal.REEL_MS <= 5000
+    assert reveal.WHEEL_MS <= 6000
+    assert reveal.HOLD_MS <= 600
 
 
-def test_three_stages_add_up_to_the_whole_time():
-    first, second, third = reveal.stage_ms()
-    assert first + second + third == reveal.SPIN_MS
-    assert first > second > third, "сначала быстро, потом медленнее, потом совсем медленно"
+def test_curve_starts_fast_and_ends_slow():
+    # cubic-bezier(x1,y1,x2,y2): y1 высокий — резкий старт, x2/y2 — мягкий финиш
+    nums = [float(part) for part in reveal.CURVE.replace("cubic-bezier(", "").replace(")", "").split(",")]
+    assert len(nums) == 4
+    x1, y1, x2, y2 = nums
+    assert y1 > 0.6, "лента должна сразу лететь"
+    assert x2 > 0.05 and y2 >= 0.95, "и плавно тормозить в конце"
 
 
-def test_stage_shares():
-    assert abs(sum(reveal.STAGE_SHARE) - 1.0) < 1e-9
-    assert reveal.STAGE_SHARE[0] > reveal.STAGE_SHARE[1] > reveal.STAGE_SHARE[2]
-
-
-def test_stage_ms_never_shorter_than_minimum():
-    first, second, third = reveal.stage_ms(1000)
-    assert first + second + third == reveal.SPIN_MS
-
-
-def test_slip_chance_is_fifteen_percent():
-    assert reveal.slip_chance() == 0.15
-
-
-def test_usual_end_barely_moves():
-    """Обычно лента почти не сдвигается после «остановки»."""
-    usual = reveal.STAGE_TILES[-1]
-    slip = reveal.SLIP_TILES[-1]
-    assert usual < 0.6
-    assert slip > 1.0
-    assert slip > usual
-
-
-def test_payload_for_pages():
+def test_payload_shape():
     data = reveal.payload()
-    assert data["spin_ms"] == reveal.SPIN_MS
-    assert len(data["spin_stages"]) == 3
-    assert sum(data["spin_stages"]) == reveal.SPIN_MS
-    assert data["slip_chance"] == reveal.SLIP_CHANCE
-    assert len(data["stage_tiles"]) == 3 and len(data["slip_tiles"]) == 3
+    assert data["reel_ms"] == reveal.REEL_MS
+    assert data["wheel_ms"] == reveal.WHEEL_MS
+    assert data["hold_ms"] == reveal.HOLD_MS
+    assert data["curve"] == reveal.CURVE
 
 
-def test_api_sends_spin_config():
+def test_no_stages_or_slips_left():
+    source = inspect.getsource(reveal)
+    for old in ("STAGE_TILES", "SLIP_TILES", "SLIP_CHANCE", "stage_ms"):
+        assert old not in source, old
+
+
+def test_api_sends_single_spin_config():
     from app import webapp
 
     assert '"spin": reveal_mod.payload()' in inspect.getsource(webapp.api_case)
     assert '"spin": reveal_mod.payload()' in inspect.getsource(webapp._roulette_payload)
 
 
-def test_no_speed_profiles_left():
-    from app import webapp
-    from app.webapp import PREFS_DEFAULTS
-
-    assert "speed" not in PREFS_DEFAULTS
-    assert "speed" not in inspect.getsource(webapp.api_prefs)
-
-
-def test_pages_use_stages_and_slip():
+def test_pages_have_one_continuous_animation():
     from app.games_page import CASE_PAGE, ROULETTE_PAGE
 
     for page in (CASE_PAGE, ROULETTE_PAGE):
-        assert "spinPlan" in page
-        assert "slip" in page
-        assert "spin_ms" in page
-        for old in ("SPEEDS", "SPEED_ID", "reelMs(", "wheelMs("):
+        assert "reelMs()" in page
+        assert "spinCurve()" in page
+        for old in ("spinPlan", "slip", "stage_tiles", "SPEED", "plan.ms", "reelMs(count)"):
             assert old not in page, old
-    assert "spinTo(items[0].index || 0, plan)" in ROULETTE_PAGE
+    # одна transition на весь прокрут, без цепочки таймеров
+    assert page.count("setTimeout") >= 1
 
 
-def test_settings_have_no_speed_row():
-    from app.webtheme import BOOTSTRAP
+def test_case_reel_lands_exactly_once():
+    from app.games_page import CASE_PAGE
 
-    assert "__speeds" not in BOOTSTRAP
-    assert "Скорость открытия" not in BOOTSTRAP
+    # ровно один вызов перехода внутри spinOne
+    block = CASE_PAGE.split("function spinOne(item, ms){")[1].split("function sync")[0]
+    assert block.count('style.transition = "transform') == 1
+    assert block.count("setTimeout") == 1
