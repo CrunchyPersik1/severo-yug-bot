@@ -41,6 +41,7 @@ from . import gems as gems_mod
 from . import mega as mega_mod
 from . import eggs as eggs_mod
 from . import packs as packs_mod
+from . import petfx
 from . import pets as pets_mod
 from . import reveal as reveal_mod
 from . import santa as santa_mod
@@ -108,11 +109,20 @@ router = APIRouter()
 IMAGES_DIR = Path(__file__).resolve().parent.parent / "images"
 
 
-@router.get("/images/{name}")
+@router.get("/images/{name:path}")
 async def card_image(name: str) -> FileResponse:
-    safe = Path(name).name
-    path = IMAGES_DIR / safe
-    if not path.is_file():
+    """Картинки карт и ассеты ивента.
+
+    Путь может быть вложенным (event/elf_idle.gif), поэтому проверяем, что
+    он не вылез за пределы каталога images.
+    """
+    root = IMAGES_DIR.resolve()
+    path = (IMAGES_DIR / name).resolve()
+    try:
+        inside = path.is_relative_to(root)
+    except AttributeError:  # очень старый Python
+        inside = str(path).startswith(str(root))
+    if not inside or not path.is_file():
         raise HTTPException(status_code=404, detail="нет такой картинки")
     return FileResponse(path)
 
@@ -608,7 +618,9 @@ async def api_mega_claim(request: Request) -> JSONResponse:
         )
     if not await state.db.mega_claim(user_id, quest["week"]):
         return JSONResponse({"error": "Награда уже забрана"}, status_code=400)
-    granted = await state.db.grant_bundle(user_id, quest["reward"])
+    chelsi = (await petfx.multi(state.db, user_id)).get("quest_reward", 0.0)
+    reward = petfx.bonus_points(quest["reward"], chelsi)
+    granted = await state.db.grant_bundle(user_id, reward)
     return JSONResponse(
         {"ok": True, "granted": granted, "title": quest["reward_title"]}
     )
@@ -645,7 +657,8 @@ async def api_mob_kill(request: Request) -> JSONResponse:
     _GEM_SEEN[user_id] = now
     if len(_GEM_SEEN) > 5000:
         _GEM_SEEN.clear()
-    amount = gems_mod.roll(zone)
+    gem_bonus = (await petfx.multi(state.db, user_id)).get("gems", 0.0)
+    amount = gems_mod.roll(zone, boost=1.0 + gem_bonus)
     if amount <= 0:
         return JSONResponse({"ok": True, "gems": 0, "cooldown": GEM_COOLDOWN})
     crystals = await state.db.add_gem_drop(user_id, amount, zone)
@@ -1498,7 +1511,16 @@ async def api_drop(request: Request) -> JSONResponse:
     await state.db.add_points(uid, card.points)
     payload = _card_reveal(card)
     payload["is_new"] = is_new
-    return JSONResponse({"ok": True, "card": payload, "left": int(left)})
+    extra: dict[str, Any] | None = None
+    najda = (await petfx.multi(state.db, uid)).get("double_drop", 0.0)
+    if najda > 0 and random.random() < najda:
+        second = roll_card_d() if kind == "d" else roll_gacha_card()
+        counts = await state.db.get_collection(uid)
+        await state.db.add_card(uid, second.card_id)
+        await state.db.add_points(uid, second.points)
+        extra = _card_reveal(second)
+        extra["is_new"] = second.card_id not in counts
+    return JSONResponse({"ok": True, "card": payload, "extra": extra, "left": int(left)})
 
 
 # --------------------------------------------------------------------------- #
@@ -1932,7 +1954,9 @@ async def api_santa_buy(request: Request) -> JSONResponse:
         await state.db.add_eggs(uid, eggs_mod.EGG_CATS, 1)
         granted.append("яйцо «Коты»")
     else:
-        pet = pets_mod.get(item["id"])
+        # id вида kotos_gems / kotos_points — это один и тот же пет
+        pet_id = str(item["id"]).split("_")[0]
+        pet = pets_mod.get(pet_id) or pets_mod.get(item["id"])
         if pet is not None:
             await state.db.add_pet(uid, pet.id, 1, "santa")
             granted.append(pet.name)
@@ -6323,8 +6347,12 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .scene{position:relative;border-radius:16px;padding:14px;margin:12px 0;
   background:linear-gradient(160deg,#12233a,#0a131f);border:1px solid #243350}
 .scene .who{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.scene .ava{width:38px;height:38px;border-radius:11px;background:#1b2c46;display:flex;
-  align-items:center;justify-content:center;font-size:22px;border:1px solid #2c4566}
+.scene .ava{width:44px;height:44px;border-radius:11px;object-fit:cover;
+  border:1px solid #2c4566;background:#1b2c46;display:block}
+.scene .line{display:flex;gap:10px;align-items:flex-start;margin-top:10px}
+.scene .line img{width:40px;height:40px;border-radius:10px;object-fit:cover;border:1px solid #2c4566}
+.scene .line .bub{flex:1;background:#0f1b2e;border:1px solid #1e3350;border-radius:12px;
+  padding:9px 11px;font-size:12.5px;line-height:1.5;color:#dbe9ff}
 .scene .nm{font-size:12px;font-weight:900;color:#9fc7ff}
 .scene .tx{font-size:13px;line-height:1.55;color:#dbe9ff}
 .choices{display:flex;flex-direction:column;gap:8px;margin-top:10px}
@@ -6339,7 +6367,10 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .hpbar .bar{flex:1;height:10px;border-radius:5px;background:#1b2233;overflow:hidden}
 .hpbar .bar i{display:block;height:100%;width:100%;background:#3fae6a}
 .hpbar .bar.foe i{background:#e11d48}
-canvas{flex:1;display:block;width:100%;touch-action:none}
+.stage2{position:relative;flex:1;display:flex;overflow:hidden}
+.stage2 canvas{flex:1;display:block;width:100%;touch-action:none}
+.stage2 .foeimg{position:absolute;width:104px;height:104px;pointer-events:none;
+  image-rendering:pixelated;transform:translate(-50%,-50%);z-index:2}
 .fight .hint2{text-align:center;font-size:11.5px;color:#8b93a7;padding:8px 12px 14px}
 /* магазин */
 .shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
@@ -6383,7 +6414,10 @@ canvas{flex:1;display:block;width:100%;touch-action:none}
     <span id="foeName">эльф</span><div class="bar foe"><i id="fhp"></i></div>
     <span id="fhpTxt">100</span>
   </div>
-  <canvas id="cv"></canvas>
+  <div class="stage2">
+    <canvas id="cv"></canvas>
+    <img id="foeImg" class="foeimg" src="/images/event/elf_idle.gif" alt="">
+  </div>
   <div class="hint2" id="fightHint">Тапай по эльфу, чтобы бить. Веди пальцем — двигаться. Уворачивайся.</div>
 </div>
 <div id="toast"></div>
@@ -6404,21 +6438,45 @@ function renderWallet(){
   document.getElementById("gms").textContent = "💎 " + money(S.wallet.gems);
   document.getElementById("eggs").textContent = "🥚 " + S.eggs_owned;
 }
+const SANTA_IMG = "/images/event/santa_";
+const ELF_IMG = "/images/event/elf_";
+function portrait(who, emotion){
+  const base = who === "elf" ? ELF_IMG : SANTA_IMG;
+  return base + emotion + ".jpg";
+}
+function santaHead(){
+  return '<div class="who"><img class="ava" src="' + portrait("santa", "joy") + '" alt="">' +
+    '<div class="nm">Санта Егор</div></div>';
+}
+function scene(inner){
+  return '<div class="scene">' + santaHead() + inner + '</div>';
+}
+function bubble(who, name, emotion, text){
+  return '<div class="line"><img src="' + portrait(who, emotion) + '" alt="">' +
+    '<div class="bub"><b>' + esc(name) + ':</b> ' + esc(text) + '</div></div>';
+}
 function renderStory(){
   const box = document.getElementById("storyBox");
   if (S.story_done){
     const ch = (S.choices || []).find(c => c.id === S.choice);
-    box.innerHTML = '<div class="scene"><div class="who"><div class="ava">🎅</div>' +
-      '<div class="nm">Санта Егор</div></div><div class="tx">' +
-      esc(ch ? ch.story : "Санта кивает: дело сделано.") + '</div></div>';
+    const good = (ch && ch.discount) > 0;
+    const bad = (ch && ch.discount) < 0;
+    box.innerHTML = scene(
+      bubble("santa", "Санта Егор", good ? "joy" : bad ? "angry" : "think",
+             ch ? ch.story : "Санта кивает: дело сделано.") +
+      bubble("elf", "Эльфы-амиры", good ? "joy" : bad ? "sad" : "confused",
+             good ? "Мы почувствовали добро. Приходи чаще, санта щедрый!"
+                  : bad ? "Мы так и знали. Уходи, пока не позвали остальных."
+                        : "Ладно. Жить можно."));
     return;
   }
-  box.innerHTML = '<div class="scene"><div class="who"><div class="ava">🎅</div>' +
-    '<div class="nm">Санта Егор</div></div>' +
-    '<div class="tx">' + esc(S.story.intro) + '</div></div>' +
+  box.innerHTML = scene(
+    bubble("santa", "Санта Егор", "confused", S.story.intro) +
+    bubble("elf", "Эльф-амир", "angry",
+           "Ты слишком серьёзен, Санта. Мы не получаем ни добра, ни любви!") +
     '<div class="choices" id="choices">' + (S.choices || []).map(c =>
       '<button data-ch="' + c.id + '">' + esc(c.title) + '<br><span class="sub">' +
-      esc(c.note) + '</span></button>').join("") + '</div>';
+      esc(c.note) + '</span></button>').join("") + '</div>');
   document.querySelectorAll("[data-ch]").forEach(b => b.onclick = () => choose(b.dataset.ch));
 }
 function renderMap(){
@@ -6554,6 +6612,7 @@ function onPointer(ev){
     if (G.p.atkCd <= 0){
       G.e.hp -= 10 + Math.floor(Math.random() * 5);
       G.p.atkCd = 380;
+      G.e.hurtUntil = G.t + 0.3;
       G.e.dodgeCd = Math.min(G.e.dodgeCd, 260);
     }
   } else {
@@ -6590,9 +6649,12 @@ function loop(){
   if (dist > want + 40){ G.e.x += ex / dist * speed * dt * 0.6; G.e.y += ey / dist * speed * dt * 0.6; }
   G.e.x = Math.max(30, Math.min(G.w - 30, G.e.x));
   G.e.y = Math.max(30, Math.min(G.h - 30, G.e.y));
+  G.e.moving = Math.abs(G.e.x - (G.e.px || G.e.x)) > 0.4 || Math.abs(G.e.y - (G.e.py || G.e.y)) > 0.4;
+  G.e.px = G.e.x; G.e.py = G.e.y;
   G.e.shootCd -= dt * 1000;
   if (G.e.shootCd <= 0){
     G.e.shootCd = 1400 - 300 * (G.lv.aim || 0.4);
+    G.e.shotAt = G.t;
     const a = Math.atan2(G.p.y - G.e.y, G.p.x - G.e.x);
     G.arrows.push({x: G.e.x, y: G.e.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260});
   }
@@ -6615,9 +6677,19 @@ function loop(){
   ctx.fillStyle = "#8fd0ff"; ctx.beginPath();
   ctx.arc(G.p.x, G.p.y, 16, 0, Math.PI * 2); ctx.fill();
   ctx.font = "22px serif"; ctx.fillText("🎅", G.p.x - 11, G.p.y + 8);
-  ctx.beginPath(); ctx.arc(G.e.x, G.e.y, 18, 0, Math.PI * 2);
-  ctx.fillStyle = "#e11d48"; ctx.fill();
-  ctx.font = "22px serif"; ctx.fillText("🧝", G.e.x - 11, G.e.y + 8);
+  // эльф рисуется гифкой поверх канваса: так не надо резать спрайт-листы
+  const foe = document.getElementById("foeImg");
+  if (foe){
+    foe.style.left = G.e.x + "px";
+    foe.style.top = G.e.y + "px";
+    const state = (G.e.hurtUntil || 0) > G.t ? "hurt"
+      : (G.t - (G.e.shotAt || -9) < 0.35) ? "basicatk"
+      : (G.e.moving ? "walk" : "idle");
+    if (foe.dataset.state !== state){
+      foe.dataset.state = state;
+      foe.src = "/images/event/elf_" + state + ".gif";
+    }
+  }
   ctx.fillStyle = "#ffd166";
   G.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.fill(); });
   // полосы
@@ -6940,7 +7012,8 @@ async function open(kind){
     if (d.error){ toast(d.error); S.busy = false; render(); return; }
     S.left = d.left || 0;
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
-    if (window.__revealOne) window.__revealOne(d.card, function(){ S.busy = false; render(); });
+    const shown = d.extra ? [d.card, d.extra] : [d.card];
+    if (window.__revealCards) window.__revealCards(shown, function(){ S.busy = false; render(); });
     else { S.busy = false; render(); }
   }catch(e){ toast("Связь потерялась"); S.busy = false; render(); }
 }
@@ -11283,12 +11356,22 @@ function petTick(dt){
   FX.burst(best.x, best.y - 10, 7, "#8fd0ff", 100, 10);
   if (best.hp <= 0) killMob(best);
 }
+const CAT_IMG = new Image();
+CAT_IMG.src = "/images/event/cat.png";
 function petDraw(){
   if (PET.id !== "mani") return;
   ctx.save();
-  ctx.font = "18px serif";
-  ctx.textAlign = "center";
-  ctx.fillText("🐱", PET.x, PET.y);
+  if (CAT_IMG.complete && CAT_IMG.naturalWidth){
+    // спрайт-лист 4x5 по 64 px: берём первый ряд и крутим четыре кадра
+    const fw = CAT_IMG.naturalWidth / 4, fh = CAT_IMG.naturalHeight / 5;
+    const frame = Math.floor(Date.now() / 170) % 4;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(CAT_IMG, frame * fw, 0, fw, fh, PET.x - 26, PET.y - 44, 52, 52);
+  } else {
+    ctx.font = "18px serif";
+    ctx.textAlign = "center";
+    ctx.fillText("🐱", PET.x, PET.y);
+  }
   ctx.restore();
   ctx.save();
   ctx.fillStyle = "rgba(143,208,255,.05)";

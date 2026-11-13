@@ -142,13 +142,16 @@ def test_shop_cycle_depends_on_choice():
     assert santa.opens_in_days(later, "strict") > 0
 
 
-def test_stock_is_five_pets_plus_egg():
+def test_stock_is_five_pets_plus_kotos_and_egg():
     day = santa.today_ekb()
     items = santa.stock(day, "praise")
-    assert len(items) == 6
-    assert sum(1 for item in items if item["kind"] == "pet") == 5
+    pets = [item for item in items if item["kind"] == "pet"]
+    assert len(pets) == 7          # 5 случайных + котость в двух валютах
     assert sum(1 for item in items if item["kind"] == "egg") == 1
-    assert len({item["id"] for item in items}) == 6
+    assert len({item["id"] for item in items}) == len(items)
+    kotos = [item for item in pets if item["id"].startswith("kotos")]
+    assert len(kotos) == 2
+    assert {item["currency"] for item in kotos} == {"gems", "points"}
 
 
 def test_stock_is_stable_within_a_season():

@@ -46,10 +46,10 @@ def amount_range(zone: int) -> tuple[int, int]:
     return low, max(low, high)
 
 
-def roll(zone: int, rng: random.Random | None = None) -> int:
-    """Сколько кристаллов выпало. 0 — ничего."""
+def roll(zone: int, rng: random.Random | None = None, boost: float = 1.0) -> int:
+    """Сколько кристаллов выпало. 0 — ничего. boost — бонус пета (Рокки)."""
     rng = rng or random
-    if rng.random() >= chance(zone):
+    if rng.random() >= min(0.9, chance(zone) * max(0.0, float(boost))):
         return 0
     low, high = amount_range(zone)
     return rng.randint(low, high)

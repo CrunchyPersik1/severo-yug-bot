@@ -185,6 +185,31 @@ def stock(day: date, choice_id: str | None = None) -> list[dict[str, Any]]:
                 "rare": pet.rare,
             }
         )
+    # Котость висит в магазине всегда и сразу в двух валютах.
+    items.append(
+        {
+            "kind": "pet",
+            "id": "kotos_gems",
+            "title": "КОТОСТЬ",
+            "emoji": "🐈‍⬛",
+            "note": "+1000% ко всем шансам · только за кристаллы",
+            "price": max(1, int(round(800 * factor))),
+            "currency": "gems",
+            "rare": True,
+        }
+    )
+    items.append(
+        {
+            "kind": "pet",
+            "id": "kotos_points",
+            "title": "КОТОСТЬ",
+            "emoji": "🐈‍⬛",
+            "note": "+1000% ко всем шансам · только за очки",
+            "price": max(1, int(round(100_000_000 * factor))),
+            "currency": "points",
+            "rare": True,
+        }
+    )
     egg = eggs_mod.egg()
     items.append(
         {

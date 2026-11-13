@@ -100,7 +100,7 @@ def test_reveal_wired_into_pages():
 
     assert "__revealCards" in CASE_PAGE
     assert "revealFrom" in ROULETTE_PAGE
-    assert "__revealOne" in DROP_PAGE
+    assert "__revealCards" in DROP_PAGE
 
 
 def test_card_packs_in_shop():
