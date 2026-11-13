@@ -31,8 +31,14 @@ from .market import UPGRADE_PRICE, market_price
 from . import levels
 from . import dice_casino
 from . import themes
+from . import bundles as bundles_mod
 from . import cardsfx
 from . import cases as cases_mod
+from . import daily as daily_mod
+from . import deals as deals_mod
+from . import gems as gems_mod
+from . import mega as mega_mod
+from . import packs as packs_mod
 from . import roulette as roulette_mod
 from . import upgrader
 from . import yugi
@@ -80,8 +86,10 @@ from .roulette import (
     spin_plan,
     wheel_segments,
 )
-from .shop import ShopError, catalog
+from .shop import ShopError, catalog, teachers_of_day
+from .gacha import day_key as game_day_key
 from .stocks_repo import StocksError
+from .db import _NotEnough as NotEnoughError
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +302,110 @@ def _entry_payload(entry) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# Новый магазин: акции, топ-паки, ежедневная награда, обмен кристаллов
+# --------------------------------------------------------------------------- #
+
+# Попытки выбить кристалл с моба: не чаще раза в минуту на игрока.
+# Держим в памяти процесса — воркер один, а после перезапуска кулдаун
+# обнулится, и это не страшно: награда всё равно проверяется сервером.
+_GEM_SEEN: dict[int, datetime] = {}
+GEM_COOLDOWN = gems_mod.COOLDOWN_SECONDS
+
+
+async def _shop_wallet(state, user_id: int) -> dict[str, int]:
+    return {
+        "points": int(await state.market.balance(user_id)),
+        "gems": int(await state.db.player_crystals(user_id)),
+    }
+
+
+def _deal_payload(deal: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": deal["id"],
+        "kind": deal["kind"],
+        "title": deal["title"],
+        "subtitle": deal["subtitle"],
+        "emoji": deal["emoji"],
+        "color": deal["color"],
+        "contents": deal["contents"],
+        "currency": deal["currency"],
+        "price": deal["price"],
+        "old_price": deal["old_price"],
+        "discount": deal["discount"],
+        "personal": deal["personal"],
+    }
+
+
+async def _mega_payload(state, user_id: int) -> dict[str, Any]:
+    quest = mega_mod.quest()
+    progress = await state.db.mega_progress(user_id, quest["sql"], mega_mod.week_start())
+    return {
+        "week": quest["week"],
+        "title": quest["title"],
+        "need": quest["need"],
+        "progress": min(int(quest["need"]), int(progress)),
+        "done": int(progress) >= int(quest["need"]),
+        "claimed": await state.db.mega_claimed(user_id, quest["week"]),
+        "reward_title": quest["reward_title"],
+        "reward_text": quest["reward_text"],
+        "ends_at": quest["ends_at"],
+    }
+
+
+async def _shop_payload(state, user_id: int) -> dict[str, Any]:
+    period = deals_mod.period_of()
+    all_deals = deals_mod.all_for(user_id, period)
+    bought = await state.db.shop_purchased(user_id, "deal", [d["id"] for d in all_deals])
+    packs = packs_mod.roulette(period)
+    bought_packs = await state.db.shop_purchased(user_id, "pack", [p["id"] for p in packs])
+    day = game_day_key()
+    daily = await state.db.daily_state(user_id)
+    claimed_today = daily["day"] == day
+    streak = 0 if claimed_today else (
+        int(daily["streak"]) + 1 if daily["day"] and (day - daily["day"]).days == 1 else 1
+    )
+    return {
+        "wallet": await _shop_wallet(state, user_id),
+        "deals": [
+            dict(_deal_payload(deal), bought=deal["id"] in bought)
+            for deal in all_deals
+        ],
+        "period_text": deals_mod.period_text(),
+        "packs": [
+            {
+                "id": pack["id"],
+                "title": pack["title"],
+                "subtitle": pack["subtitle"],
+                "emoji": pack["emoji"],
+                "color": pack["color"],
+                "contents": pack["contents"],
+                "currency": pack["currency"],
+                "price": pack["price"],
+                "old_price": pack["old_price"],
+                "discount": pack["discount"],
+                "bought": pack["id"] in bought_packs,
+            }
+            for pack in packs
+        ],
+        "daily": {
+            "available": not claimed_today,
+            "streak": int(daily["streak"]) if claimed_today else streak,
+            "next_streak": streak,
+            "bonus": streak >= daily_mod.STREAK_TARGET,
+            "bonus_mult": daily_mod.STREAK_BONUS,
+            "target": daily_mod.STREAK_TARGET,
+        },
+        "gems": {
+            "rate": bundles_mod.GEM_RATE,
+            "options": [1, 5, 10, 50, 180],
+        },
+        "mega": await _mega_payload(state, user_id),
+        "catalog": [_entry_payload(entry) for entry in catalog(day)],
+        "teachers_reset": "набор учителей меняется каждый день",
+    }
+
+
 @router.get("/api/shop")
 async def api_shop(request: Request) -> JSONResponse:
     state = request.app.state
@@ -301,19 +413,223 @@ async def api_shop(request: Request) -> JSONResponse:
         user = await _player(request)
     except ShopError as error:
         return JSONResponse({"error": str(error)}, status_code=401)
+    return JSONResponse(
+        await _shop_payload(state, int(user["id"])),
+        headers={"Cache-Control": "no-store"},
+    )
 
-    balance = await state.shop.balance(int(user["id"]))
-    owned = await state.shop.my_accessories(int(user["id"]))
+
+def _price_error(currency: str, need: int) -> str:
+    unit = "кристаллов" if currency == deals_mod.CURRENCY_GEMS else "очков"
+    return f"Не хватает {unit}: нужно {need}"
+
+
+@router.post("/api/shop/deal")
+async def api_shop_deal(request: Request) -> JSONResponse:
+    """Купить акцию. Одноразово: после покупки она уходит из витрины."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    period = deals_mod.period_of()
+    deal = deals_mod.find(user_id, period, str((body or {}).get("id") or ""))
+    if deal is None:
+        return JSONResponse({"error": "Такой акции нет"}, status_code=400)
+    try:
+        result = await state.db.buy_offer(
+            user_id,
+            scope="deal",
+            item_id=deal["id"],
+            period=period,
+            price=int(deal["price"]),
+            currency=str(deal["currency"]),
+            bundle=deal["bundle"],
+        )
+    except NotEnoughError as error:
+        return JSONResponse(
+            {"error": _price_error(deal["currency"], int(deal["price"]))},
+            status_code=400,
+        )
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error")}, status_code=400)
     return JSONResponse(
         {
-            "me": {
-                "id": int(user["id"]),
-                "name": user.get("first_name") or "игрок",
-                "balance": balance,
-                "accessories": owned,
-            },
-            "items": [_entry_payload(entry) for entry in catalog()],
+            "ok": True,
+            "title": deal["title"],
+            "granted": result["granted"],
+            "wallet": {"points": result["balance"], "gems": result["crystals"]},
         }
+    )
+
+
+@router.post("/api/shop/pack")
+async def api_shop_pack(request: Request) -> JSONResponse:
+    """Купить топ-пак. Только за кристаллы, каждый пак — один раз."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    period = deals_mod.period_of()
+    pack = packs_mod.find(period, str((body or {}).get("id") or ""))
+    if pack is None:
+        return JSONResponse({"error": "Такого пака нет в этой ротации"}, status_code=400)
+    try:
+        result = await state.db.buy_offer(
+            user_id,
+            scope="pack",
+            item_id=pack["id"],
+            period=period,
+            price=int(pack["price"]),
+            currency="gems",
+            bundle=pack["bundle"],
+        )
+    except NotEnoughError:
+        return JSONResponse(
+            {"error": _price_error("gems", int(pack["price"]))}, status_code=400
+        )
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error")}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "title": pack["title"],
+            "granted": result["granted"],
+            "wallet": {"points": result["balance"], "gems": result["crystals"]},
+        }
+    )
+
+
+@router.post("/api/shop/daily")
+async def api_shop_daily(request: Request) -> JSONResponse:
+    """Забрать ежедневную награду за заход в магазин."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    day = game_day_key()
+    streak = await state.db.daily_claim(user_id, day)
+    if streak is None:
+        return JSONResponse({"error": "Сегодня уже забрал — приходи завтра"}, status_code=400)
+    prize = daily_mod.roll()
+    prize = daily_mod.apply_multiplier(prize, daily_mod.streak_multiplier(streak))
+    granted = await state.db.grant_bundle(user_id, prize["bundle"])
+    return JSONResponse(
+        {
+            "ok": True,
+            "tier": prize["tier"],
+            "title": prize["title"],
+            "granted": granted,
+            "streak": streak,
+            "wallet": await _shop_wallet(state, user_id),
+        }
+    )
+
+
+@router.post("/api/shop/gems")
+async def api_shop_gems(request: Request) -> JSONResponse:
+    """Купить кристаллы за очки по курсу (180 штук — примерно 10 млн)."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        gems = int((body or {}).get("gems") or 0)
+    except (TypeError, ValueError):
+        gems = 0
+    if gems <= 0 or gems > 500:
+        return JSONResponse({"error": "Сколько кристаллов?"}, status_code=400)
+    result = await state.db.exchange_points_for_gems(
+        int(user["id"]), gems, bundles_mod.GEM_RATE
+    )
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error")}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "gems": result["gems"],
+            "price": result["price"],
+            "wallet": {"points": result["balance"], "gems": result["crystals"]},
+        }
+    )
+
+
+@router.post("/api/mega/claim")
+async def api_mega_claim(request: Request) -> JSONResponse:
+    """Забрать награду мегаквеста, если цель закрыта."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    quest = mega_mod.quest()
+    progress = await state.db.mega_progress(user_id, quest["sql"], mega_mod.week_start())
+    if int(progress) < int(quest["need"]):
+        return JSONResponse(
+            {"error": f"Ещё не всё: {progress} из {quest['need']}"}, status_code=400
+        )
+    if not await state.db.mega_claim(user_id, quest["week"]):
+        return JSONResponse({"error": "Награда уже забрана"}, status_code=400)
+    granted = await state.db.grant_bundle(user_id, quest["reward"])
+    return JSONResponse(
+        {"ok": True, "granted": granted, "title": quest["reward_title"]}
+    )
+
+
+@router.post("/api/dungeon/mob-kill")
+async def api_mob_kill(request: Request) -> JSONResponse:
+    """Моб убит: сервер сам решает, выпал ли кристалл.
+
+    Страница подтверждает убийство, а не награду: шанс и сумма считаются
+    здесь, попытки ограничены разом в минуту на игрока.
+    """
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    zone = gems_mod.clamp_zone((body or {}).get("zone"))
+    now = datetime.now(timezone.utc)
+    last = _GEM_SEEN.get(user_id)
+    if last is not None:
+        left = GEM_COOLDOWN - (now - last).total_seconds()
+        if left > 0:
+            return JSONResponse(
+                {"ok": True, "gems": 0, "cooldown": int(left)}, status_code=200
+            )
+    _GEM_SEEN[user_id] = now
+    if len(_GEM_SEEN) > 5000:
+        _GEM_SEEN.clear()
+    amount = gems_mod.roll(zone)
+    if amount <= 0:
+        return JSONResponse({"ok": True, "gems": 0, "cooldown": GEM_COOLDOWN})
+    crystals = await state.db.add_gem_drop(user_id, amount, zone)
+    return JSONResponse(
+        {"ok": True, "gems": amount, "crystals": crystals, "cooldown": GEM_COOLDOWN}
     )
 
 
@@ -349,182 +665,415 @@ PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Северо-Юг · Магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-:root{
-  --leaf:#c2410c; --leaf2:#ea580c; --bark:#7c2d12; --cream:#fffbf5;
-  --paper:#ffedd5; --ink:#43230f; --muted:#9a6b4f; --ok:#15803d; --bad:#b91c1c;
-  --line:#e7c9a9;
-}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:linear-gradient(180deg,#fffaf3 0%,#ffedd5 40%,#fcd9ae 100%);
-  background-attachment:fixed;color:var(--ink);min-height:100vh;padding-bottom:96px;
-}
-.leafbar{font-size:20px;letter-spacing:6px;text-align:center;padding:10px 0 2px;opacity:.75}
-header{padding:6px 18px 14px;text-align:center}
-h1{margin:0;font-size:21px;letter-spacing:.3px}
-h1 small{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:4px;letter-spacing:1.5px;text-transform:uppercase}
-.wallet{
-  display:inline-flex;align-items:center;gap:8px;margin-top:12px;
-  background:linear-gradient(135deg,#fff 0%,#ffedd5 100%);
-  border:1px solid var(--line);border-radius:999px;padding:9px 18px;
-  font-weight:700;font-size:17px;box-shadow:0 4px 14px rgba(194,65,12,.12)
-}
-.tabs{display:flex;gap:8px;padding:0 16px 14px;overflow-x:auto;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tab{
-  flex:0 0 auto;border:1px solid var(--line);background:var(--cream);
-  color:var(--muted);border-radius:999px;padding:9px 16px;font-size:14px;
-  font-weight:600;transition:.15s
-}
-.tab.on{background:linear-gradient(135deg,var(--leaf2),var(--leaf));color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(194,65,12,.3)}
-main{padding:0 16px}
-.card{
-  background:var(--cream);border:1px solid var(--line);border-radius:18px;
-  padding:14px 15px;margin-bottom:12px;position:relative;overflow:hidden;
-  box-shadow:0 3px 12px rgba(124,45,18,.07)
-}
-.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
-  background:linear-gradient(180deg,var(--leaf2),var(--leaf))}
-.row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.name{font-weight:700;font-size:16px;line-height:1.25}
-.rar{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
-.role{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.35}
-.stats{display:flex;gap:14px;margin-top:9px;font-size:13px;font-weight:600;color:var(--bark)}
-.price{font-weight:800;font-size:16px;color:var(--leaf);white-space:nowrap}
-.buy{
-  margin-top:12px;width:100%;border:0;border-radius:13px;padding:13px;
-  font-size:15px;font-weight:700;color:#fff;
-  background:linear-gradient(135deg,var(--leaf2),var(--leaf));
-  box-shadow:0 5px 14px rgba(194,65,12,.28);transition:.15s
-}
-.buy:active{transform:scale(.985)}
-.buy[disabled]{background:#e5d5c5;color:#a1846c;box-shadow:none}
-.pack{font-size:13px;margin-top:8px;padding-left:2px;color:var(--bark);line-height:1.6}
-.empty{text-align:center;color:var(--muted);padding:40px 20px;font-size:14px}
-#toast{
-  position:fixed;left:14px;right:14px;bottom:18px;background:var(--ink);color:#fff;
-  border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.45;
-  transform:translateY(140%);transition:.28s cubic-bezier(.2,.8,.3,1);z-index:9
-}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:96px}
+.top{position:sticky;top:0;z-index:6;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:12px 14px;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}
+.top h1{margin:0;font-size:18px;font-weight:900;letter-spacing:1.5px}
+.wallet{display:flex;gap:7px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:7px 12px;font-size:12.5px;font-weight:800;white-space:nowrap}
+.chip.pt{color:var(--acc2)}
+.chip.gm{color:#6fe3f7;background:#0e2a33;border-color:#164e63}
+.wrap{max-width:520px;margin:0 auto;padding:14px}
+.section{display:none}
+.section.on{display:block}
+.hint{font-size:12px;color:var(--muted);line-height:1.5;margin:0 2px 12px}
+.hint b{color:var(--ink)}
+
+/* Ежедневная награда */
+.daily{position:relative;overflow:hidden;border-radius:18px;padding:16px;margin-bottom:14px;
+  background:linear-gradient(135deg,#3b1d07,#1b1220 60%);border:1px solid #7c3a0d}
+.daily.ready{border-color:var(--acc);box-shadow:0 0 26px -8px var(--acc)}
+.daily .cap{font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:#f6c94a;font-weight:900}
+.daily .ttl{font-size:19px;font-weight:900;margin-top:4px}
+.daily .sub{font-size:12.5px;color:#d8c7a8;margin-top:5px;line-height:1.5}
+.daily button{margin-top:12px;width:100%;border:0;border-radius:13px;padding:15px;
+  font-size:15px;font-weight:900;font-family:inherit;background:var(--acc);color:var(--acc-ink)}
+.daily button[disabled]{background:var(--panel2);color:var(--muted)}
+.daily .streak{display:flex;gap:5px;margin-top:11px}
+.daily .streak i{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.14)}
+.daily .streak i.on{background:var(--acc)}
+
+/* Плитки акций */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{position:relative;display:flex;flex-direction:column;border-radius:16px;padding:12px;
+  background:var(--panel);border:1.5px solid var(--line);overflow:hidden}
+.tile .emoji{font-size:30px;line-height:1}
+.tile .ttl{font-size:13.5px;font-weight:900;margin-top:6px;line-height:1.2}
+.tile .cont{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;min-height:29px}
+.tile .price{margin-top:auto;padding-top:9px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.tile .now{font-size:15px;font-weight:900}
+.tile .now.gm{color:#6fe3f7}
+.tile .now.pt{color:var(--acc2)}
+.tile .old{font-size:11.5px;color:var(--muted);text-decoration:line-through}
+.tile .off{position:absolute;top:9px;right:9px;background:#e11d48;color:#fff;font-size:10.5px;
+  font-weight:900;border-radius:8px;padding:3px 6px}
+.tile .me{position:absolute;top:9px;left:9px;font-size:10px;font-weight:900;color:#f6c94a;
+  background:rgba(0,0,0,.45);border-radius:7px;padding:3px 6px}
+.tile button{margin-top:9px;border:0;border-radius:11px;padding:11px 6px;font-size:12.5px;
+  font-weight:900;font-family:inherit;background:var(--acc);color:var(--acc-ink)}
+.tile button[disabled]{background:var(--panel2);color:var(--muted)}
+.tile.bought{opacity:.62}
+
+/* Топ-паки */
+.pack{display:flex;gap:12px;align-items:center;border-radius:18px;padding:14px;margin-bottom:11px;
+  background:linear-gradient(135deg,#111827,#1b1220);border:1.5px solid #334155;position:relative;overflow:hidden}
+.pack .em{font-size:38px;flex:0 0 auto}
+.pack .body{flex:1;min-width:0}
+.pack .ttl{font-size:15px;font-weight:900;letter-spacing:.4px}
+.pack .cont{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+.pack .price{display:flex;align-items:baseline;gap:7px;margin-top:7px}
+.pack .now{font-size:17px;font-weight:900;color:#6fe3f7}
+.pack .old{font-size:12px;color:var(--muted);text-decoration:line-through}
+.pack button{margin-top:8px;width:100%;border:0;border-radius:12px;padding:12px;font-size:13px;
+  font-weight:900;font-family:inherit;background:linear-gradient(135deg,#0891b2,#155e75);color:#fff}
+.pack button[disabled]{background:var(--panel2);color:var(--muted)}
+.pack.bought{opacity:.6}
+
+/* Обмен кристаллов */
+.exchange{border-radius:16px;padding:14px;background:var(--panel);border:1px solid var(--line);margin-top:14px}
+.exchange .ttl{font-size:14px;font-weight:900}
+.exchange .sub{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
+.exchange .opts{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+.exchange .opts button{flex:1 0 28%;border:1px solid var(--line);background:transparent;
+  color:var(--muted);border-radius:11px;padding:10px 4px;font-size:12px;font-weight:800;font-family:inherit}
+.exchange .opts button.on{background:#0e2a33;color:#6fe3f7;border-color:#164e63}
+.exchange .go{margin-top:10px;width:100%;border:0;border-radius:12px;padding:13px;
+  font-size:13.5px;font-weight:900;font-family:inherit;background:#0e7490;color:#fff}
+.exchange .go[disabled]{background:var(--panel2);color:var(--muted)}
+
+/* Товары */
+.cat{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;scrollbar-width:none}
+.cat::-webkit-scrollbar{display:none}
+.cat button{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+  border-radius:999px;padding:9px 14px;font-size:12.5px;font-weight:800;font-family:inherit}
+.cat button.on{background:var(--acc);color:var(--acc-ink);border-color:transparent}
+.item{display:flex;gap:11px;align-items:center;border-radius:15px;padding:12px;margin-bottom:9px;
+  background:var(--panel);border:1px solid var(--line)}
+.item .em{font-size:27px;flex:0 0 auto;width:38px;text-align:center}
+.item .body{flex:1;min-width:0}
+.item .ttl{font-size:13.5px;font-weight:900}
+.item .sub{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item .pr{font-size:12.5px;font-weight:900;color:var(--acc2);white-space:nowrap}
+.item button{border:0;border-radius:11px;padding:10px 13px;font-size:12px;font-weight:900;
+  font-family:inherit;background:var(--acc);color:var(--acc-ink);flex:0 0 auto}
+.item button[disabled]{background:var(--panel2);color:var(--muted)}
+
+/* Нижнее меню */
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:8;display:flex;
+  background:color-mix(in srgb,var(--bg) 96%,transparent);border-top:1px solid var(--line);
+  padding:7px 6px calc(7px + env(safe-area-inset-bottom));backdrop-filter:blur(12px)}
+.nav button{flex:1;border:0;background:transparent;color:var(--muted);font-family:inherit;
+  font-size:11px;font-weight:800;padding:8px 2px;border-radius:12px;display:flex;
+  flex-direction:column;align-items:center;gap:4px}
+.nav button .ic{font-size:19px;line-height:1}
+.nav button.on{color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent)}
+.nav .dot{position:absolute;width:7px;height:7px;border-radius:50%;background:#e11d48;
+  margin:-16px 0 0 16px}
+.empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;line-height:1.6}
+#toast{position:fixed;left:14px;right:14px;bottom:96px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:40;text-align:center}
 #toast.on{transform:translateY(0)}
-#toast.ok{background:linear-gradient(135deg,#15803d,#166534)}
-#toast.bad{background:linear-gradient(135deg,#b91c1c,#991b1b)}
+.flash{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;
+  background:radial-gradient(circle at 50% 40%,rgba(255,240,200,.9),transparent 62%)}
+.flash.on{animation:__fl .8s ease-out}
+@keyframes __fl{0%{opacity:0;transform:scale(.2)}30%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.5)}}
 </style>
 </head>
 <body>
-<div class="leafbar">🍁 🍂 🍁 🍂 🍁</div>
-<header>
-  <h1>Северо-Юг<small>Школьная осень · магазин</small></h1>
-  <div class="wallet"><span id="balance">…</span></div>
-</header>
-<div class="tabs" id="tabs"></div>
-<main id="list"><div class="empty">Загружаю ассортимент…</div></main>
+<div class="top">
+  <h1>МАГАЗИН</h1>
+  <div class="wallet">
+    <div class="chip pt" id="points">…</div>
+    <div class="chip gm" id="gems">💎 …</div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="section on" id="s-deals">
+    <div id="dailyBox"></div>
+    <div class="hint" id="dealsHint">…</div>
+    <div class="grid" id="dealGrid"></div>
+    <div class="exchange" id="exchange"></div>
+  </section>
+
+  <section class="section" id="s-packs">
+    <div class="hint">Топ-паки покупаются <b>только за кристаллы</b> и меняются вместе с акциями.</div>
+    <div id="packList"></div>
+  </section>
+
+  <section class="section" id="s-daily">
+    <div id="dailyBig"></div>
+    <div class="hint">Награда выдаётся раз в игровые сутки (сброс в 12:00 по ЕКБ).
+      Семь заходов подряд дают множитель ×1.5.</div>
+  </section>
+
+  <section class="section" id="s-catalog">
+    <div class="cat" id="catTabs"></div>
+    <div id="catList"></div>
+  </section>
+</div>
+
+<nav class="nav" id="nav">
+  <button data-tab="deals" class="on"><span class="ic">🔥</span>Акции</button>
+  <button data-tab="packs"><span class="ic">🎁</span>Паки</button>
+  <button data-tab="daily"><span class="ic">📅</span>Награда</button>
+  <button data-tab="catalog"><span class="ic">🏪</span>Товары</button>
+</nav>
+
 <div id="toast"></div>
+<div class="flash" id="flash"></div>
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
-const headers = {"X-Telegram-Init-Data": tg ? tg.initData : ""};
-// Вкладка кейса идёт первой: иначе товар не видно ни в одной категории.
-const TABS = [["case_d","🏫 Кейс 7Д"],["case_ultra","🌈 Кейс Ультра"],["card","Учителя"],["pack","Наборы"],["accessory","Аксессуары"],["theme","Стили"]];
-let state = {items: [], tab: "case_d", balance: 0};
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+const CATS = [["card","Учителя дня"],["case_d","Кейсы"],["accessory","Аксессуары"],["theme","Стили"],["pack","Наборы"]];
+let S = {data: null, tab: "deals", cat: "card", busy: false, gemPick: 10};
 
-function money(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
-
-function toast(text, kind){
+function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function toast(t){
   const el = document.getElementById("toast");
-  el.textContent = text;
-  el.className = "on " + (kind || "");
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = ""; }, 3200);
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3200);
+}
+function flash(){
+  const el = document.getElementById("flash");
+  el.classList.remove("on"); void el.offsetWidth; el.classList.add("on");
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+}
+function wallet(){
+  const w = S.data.wallet || {points: 0, gems: 0};
+  document.getElementById("points").textContent = "$ " + money(w.points);
+  document.getElementById("gems").textContent = "💎 " + money(w.gems);
+}
+function priceHtml(item){
+  const gems = item.currency === "gems";
+  return '<div class="price">' +
+    '<span class="now ' + (gems ? "gm" : "pt") + '">' +
+      (gems ? "💎 " : "$ ") + money(item.price) + '</span>' +
+    '<span class="old">' + (gems ? "💎 " : "$ ") + money(item.old_price) + '</span>' +
+    '</div>';
+}
+function canAfford(item){
+  const w = S.data.wallet || {};
+  return item.currency === "gems" ? w.gems >= item.price : w.points >= item.price;
 }
 
-function renderTabs(){
-  document.getElementById("tabs").innerHTML = TABS.map(([key,title]) =>
-    '<button class="tab' + (state.tab === key ? ' on' : '') + '" data-tab="' + key + '">' + title + '</button>'
-  ).join("");
-  document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
-    state.tab = b.dataset.tab; renderTabs(); renderList();
+/* ---------- акции ---------- */
+function dealTile(deal){
+  const bought = deal.bought;
+  return '<div class="tile' + (bought ? " bought" : "") + '" style="border-color:' +
+    (deal.color || "#334155") + '33">' +
+    (deal.discount ? '<div class="off">−' + deal.discount + '%</div>' : '') +
+    (deal.personal ? '<div class="me">ДЛЯ ТЕБЯ</div>' : '') +
+    '<div class="emoji">' + deal.emoji + '</div>' +
+    '<div class="ttl">' + esc(deal.title) + '</div>' +
+    '<div class="cont">' + esc(deal.subtitle) + '</div>' +
+    priceHtml(deal) +
+    '<button data-deal="' + esc(deal.id) + '"' +
+      (bought || !canAfford(deal) ? " disabled" : "") + '>' +
+      (bought ? "КУПЛЕНО" : canAfford(deal) ? "Купить" : "Не хватает") +
+    '</button></div>';
+}
+
+/* ---------- ежедневка ---------- */
+function dailyTop(){
+  const d = S.data.daily || {};
+  const dots = [];
+  for (let i = 1; i <= (d.target || 7); i++){
+    dots.push('<i class="' + (i <= (d.streak || 0) ? "on" : "") + '"></i>');
+  }
+  return '<div class="daily' + (d.available ? " ready" : "") + '">' +
+    '<div class="cap">Ежедневная награда</div>' +
+    '<div class="ttl">' + (d.available ? "Забери свою награду" : "Сегодня уже забрано") + '</div>' +
+    '<div class="sub">' + (d.available
+      ? "Серия: " + (d.next_streak || 1) + " дн." + (d.bonus ? " · множитель ×" + d.bonus_mult : "") +
+        ". Награда случайная — от очков до джекпота."
+      : "Возвращайся завтра. Серия не рвётся, если заходить каждый день.") + '</div>' +
+    '<div class="streak">' + dots.join("") + '</div>' +
+    '<button id="dailyBtn"' + (d.available ? "" : " disabled") + '>' +
+      (d.available ? "ЗАБРАТЬ НАГРАДУ" : "УЖЕ ЗАБРАНО") + '</button></div>';
+}
+
+/* ---------- паки ---------- */
+function packCard(pack){
+  return '<div class="pack' + (pack.bought ? " bought" : "") + '" style="border-color:' +
+    (pack.color || "#334155") + '55">' +
+    '<div class="em">' + pack.emoji + '</div>' +
+    '<div class="body"><div class="ttl">' + esc(pack.title) + '</div>' +
+    '<div class="cont">' + (pack.contents || []).map(esc).join(" · ") + '</div>' +
+    '<div class="price"><span class="now">💎 ' + money(pack.price) + '</span>' +
+    '<span class="old">💎 ' + money(pack.old_price) + '</span></div>' +
+    '<button data-pack="' + esc(pack.id) + '"' +
+      (pack.bought || !canAfford(pack) ? " disabled" : "") + '>' +
+      (pack.bought ? "КУПЛЕНО" : canAfford(pack) ? "Купить за кристаллы" : "Не хватает кристаллов") +
+    '</button></div></div>';
+}
+
+/* ---------- обмен ---------- */
+function exchangeBlock(){
+  const g = S.data.gems || {rate: 55555, options: [1]};
+  return '<div class="ttl">Кристаллы за очки</div>' +
+    '<div class="sub">Курс: 1 💎 = ' + money(g.rate) + ' очков. Обратно кристаллы на очки не меняются.</div>' +
+    '<div class="opts">' + g.options.map(n =>
+      '<button data-gem="' + n + '" class="' + (n === S.gemPick ? "on" : "") + '">' +
+      n + ' 💎</button>').join("") + '</div>' +
+    '<button class="go" id="gemBuy"' +
+      ((S.data.wallet.points >= S.gemPick * g.rate) ? "" : " disabled") + '>Купить за ' +
+      money(S.gemPick * g.rate) + ' очков</button>';
+}
+
+/* ---------- товары ---------- */
+function catTabs(){
+  document.getElementById("catTabs").innerHTML = CATS.map(([key, title]) =>
+    '<button data-cat="' + key + '" class="' + (S.cat === key ? "on" : "") + '">' +
+    title + '</button>').join("");
+  document.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => {
+    S.cat = b.dataset.cat; renderCatalog();
+  });
+}
+function renderCatalog(){
+  catTabs();
+  const items = (S.data.catalog || []).filter(i => i.kind === S.cat);
+  document.getElementById("catList").innerHTML = items.length ? items.map(it =>
+    '<div class="item"><div class="em">' + (it.card ? it.card.emoji : it.icon || "🎁") + '</div>' +
+    '<div class="body"><div class="ttl">' + esc(it.title) + '</div>' +
+    '<div class="sub">' + esc(it.subtitle) + '</div>' +
+    '<div class="sub">' + money(it.price) + ' очков</div></div>' +
+    '<button data-sku="' + esc(it.sku) + '"' +
+      (S.data.wallet.points >= it.price ? "" : " disabled") + '>Купить</button></div>'
+  ).join("") : '<div class="empty">Тут пока пусто</div>';
+  document.querySelectorAll("[data-sku]").forEach(b => b.onclick = () => buySku(b));
+}
+
+function render(){
+  if (!S.data) return;
+  wallet();
+  document.getElementById("dailyBox").innerHTML = dailyTop();
+  document.getElementById("dailyBig").innerHTML = dailyTop();
+  document.getElementById("dealsHint").innerHTML =
+    'Четыре акции для всех и две личные · ' + esc(S.data.period_text || "");
+  document.getElementById("dealGrid").innerHTML = (S.data.deals || []).map(dealTile).join("");
+  document.getElementById("packList").innerHTML = (S.data.packs || []).length
+    ? S.data.packs.map(packCard).join("")
+    : '<div class="empty">В этой ротации паков нет</div>';
+  document.getElementById("exchange").innerHTML = exchangeBlock();
+  renderCatalog();
+  bind();
+}
+function bind(){
+  document.querySelectorAll("[data-deal]").forEach(b => b.onclick = () => buyDeal(b));
+  document.querySelectorAll("[data-pack]").forEach(b => b.onclick = () => buyPack(b));
+  document.querySelectorAll("[data-gem]").forEach(b => b.onclick = () => {
+    S.gemPick = Number(b.dataset.gem); render();
+  });
+  const gb = document.getElementById("gemBuy");
+  if (gb) gb.onclick = buyGems;
+  ["dailyBtn"].forEach(id => {
+    const list = document.querySelectorAll("#" + id);
+    list.forEach(b => b.onclick = claimDaily);
   });
 }
 
-function cardHtml(it){
-  const c = it.card;
-  const stats = c ? '<div class="stats"><span>❤️ ' + c.hp + '</span><span>⚔️ ' + c.atk +
-    '</span><span>✨ ' + c.ability + ' (КД ' + c.cooldown + ')' +
-    (c.effects ? ': ' + c.effects : '') + '</span></div>' : "";
-  const pack = it.pack ? '<div class="pack">' + it.pack.map(p =>
-    p.emoji + " " + p.name + " — ❤️" + p.hp + " ⚔️" + p.atk).join("<br>") + '</div>' : "";
-  const enough = state.balance >= it.price;
-  const swatch = it.theme
-    ? '<div style="display:flex;gap:5px;margin-top:9px">' +
-      ['bg','panel2','acc','acc2'].map(k =>
-        '<span style="flex:1;height:16px;border-radius:5px;background:' + it.theme[k] +
-        ';border:1px solid rgba(255,255,255,.14)"></span>').join("") + '</div>'
-    : "";
-  return '<div class="card">' +
-    '<div class="row"><div><div class="name">' + it.title + '</div>' +
-    '<div class="rar">' + (c ? c.emoji + " " + c.rarity : (it.theme ? "стиль" : "набор")) + '</div>' +
-    '<div class="role">' + it.subtitle + '</div></div>' +
-    '<div class="price">' + money(it.price) + '</div></div>' +
-    stats + pack + swatch +
-    '<button class="buy" data-sku="' + it.sku + '"' + (enough ? "" : " disabled") + '>' +
-    (enough ? "Купить" : "Не хватает очков") + '</button></div>';
+async function send(path, body){
+  const r = await fetch(path, {method: "POST", headers, body: JSON.stringify(body || {})});
+  return await r.json();
 }
-
-function renderList(){
-  const items = state.items.filter(i => i.kind === state.tab);
-  document.getElementById("list").innerHTML = items.length
-    ? items.map(cardHtml).join("")
-    : '<div class="empty">Тут пока пусто</div>';
-  document.querySelectorAll(".buy").forEach(b => b.onclick = () => buy(b));
-}
-
 async function load(){
   try{
     const r = await fetch("/api/shop", {headers});
-    const data = await r.json();
-    if(data.error){ toast(data.error, "bad"); return; }
-    state.items = data.items;
-    state.balance = data.me.balance;
-    document.getElementById("balance").textContent = "$ " + money(state.balance);
-    renderTabs(); renderList();
-  }catch(e){ toast("Не смог загрузить магазин", "bad"); }
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data = d; render();
+  }catch(e){ toast("Не смог загрузить магазин"); }
 }
-
-async function buy(btn){
-  const sku = btn.dataset.sku;
-  btn.disabled = true;
-  btn.textContent = "Покупаю…";
+async function buyDeal(btn){
+  if (S.busy) return;
+  S.busy = true; btn.disabled = true; btn.textContent = "Покупаем…";
   try{
-    const r = await fetch("/api/buy", {
-      method: "POST",
-      headers: Object.assign({"Content-Type":"application/json"}, headers),
-      body: JSON.stringify({sku})
-    });
-    const data = await r.json();
-    if(data.error){ toast(data.error, "bad"); }
-    else{
-      state.balance = data.balance;
-      document.getElementById("balance").textContent = "$ " + money(state.balance);
-      toast("🍁 " + data.title + " — твоё! Получено: " + data.granted.join(", "), "ok");
-      if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-    }
-  }catch(e){ toast("Связь потерялась, попробуй ещё", "bad"); }
-  renderList();
+    const d = await send("/api/shop/deal", {id: btn.dataset.deal});
+    if (d.error){ toast(d.error); }
+    else { flash(); toast(d.title + ": " + (d.granted || []).join(", ")); }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
 }
-
-if(tg){ tg.ready(); tg.expand(); }
+async function buyPack(btn){
+  if (S.busy) return;
+  S.busy = true; btn.disabled = true; btn.textContent = "Покупаем…";
+  try{
+    const d = await send("/api/shop/pack", {id: btn.dataset.pack});
+    if (d.error){ toast(d.error); }
+    else { flash(); toast(d.title + ": " + (d.granted || []).join(", ")); }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function claimDaily(){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await send("/api/shop/daily", {});
+    if (d.error){ toast(d.error); }
+    else {
+      flash();
+      toast("Награда: " + d.title + (d.streak > 1 ? " · серия " + d.streak + " дн." : ""));
+    }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function buyGems(){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await send("/api/shop/gems", {gems: S.gemPick});
+    if (d.error){ toast(d.error); }
+    else { flash(); toast("+" + d.gems + " кристаллов"); }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function buySku(btn){
+  if (S.busy) return;
+  S.busy = true; btn.disabled = true;
+  try{
+    const r = await fetch("/api/buy", {method: "POST", headers,
+      body: JSON.stringify({sku: btn.dataset.sku})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); }
+    else { flash(); toast(d.title + ": " + (d.granted || []).join(", ")); }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+document.querySelectorAll("#nav [data-tab]").forEach(b => b.onclick = () => {
+  S.tab = b.dataset.tab;
+  document.querySelectorAll("#nav [data-tab]").forEach(x => {
+    x.className = x.dataset.tab === S.tab ? "on" : "";
+  });
+  document.querySelectorAll(".section").forEach(sec => {
+    sec.className = "section" + (sec.id === "s-" + S.tab ? " on" : "");
+  });
+  window.scrollTo(0, 0);
+});
+if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
 </body>
 </html>
 """
-
 
 # --------------------------------------------------------------------------- #
 # Рынок — мини-аппка
@@ -5963,6 +6512,7 @@ async def api_quests(request: Request) -> JSONResponse:
                     {"need": 10, "cases": 15, "reached": streak >= 10},
                 ],
             },
+            "mega": await _mega_payload(state, uid),
         },
         # Прогресс читается из живых счётчиков: без запрета кеша браузер
         # отдавал старый список, и после выполненного квеста страница
@@ -6042,6 +6592,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   padding:11px 13px;margin-top:8px;font-size:13px}
 .step.on{border-color:#26a69a;color:#26a69a}
 .step b{font-family:'JetBrains Mono',ui-monospace,monospace}
+.mega{margin:0 0 14px;padding:14px;border-radius:16px;background:linear-gradient(135deg,#2a1607,#1a1020);
+  border:1.5px solid #b45309}
+.mega.got{opacity:.66}
+.mega .cap{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:#f6c94a;font-weight:900}
+.mega .h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:6px}
+.mega .t{font-size:14.5px;font-weight:900;line-height:1.25}
+.mega .n{font-size:12px;font-weight:800;color:#f6c94a;white-space:nowrap}
+.mega .bar{height:8px;border-radius:4px;background:rgba(255,255,255,.12);margin-top:9px;overflow:hidden}
+.mega .bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,#f59e0b,#f97316)}
+.mega .rw{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-top:10px;font-size:12px;color:var(--muted)}
+.mega .rw .claim{border:0;border-radius:10px;padding:9px 14px;font-size:12px;font-weight:900;
+  font-family:inherit;background:#f59e0b;color:#1a1205}
+.mega .rw .claim.got,.mega .rw .claim.wait{background:transparent;color:var(--muted);
+  padding:9px 2px;font-weight:800}
 #toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);
   color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
   font-size:13px;transform:translateY(220%);transition:.25s;z-index:30}
@@ -6065,6 +6630,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
     <div class="b" id="cnt">…</div>
     <div class="b ok" id="streak">…</div>
   </div>
+  <div id="mega"></div>
   <div id="list"></div>
   <div class="note">Награда за задание забирается кнопкой — один раз за каждое.</div>
   <div class="pvp" id="pvp"></div>
@@ -6101,6 +6667,32 @@ async function load(){
         '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
         '<div class="rw"><span>' + esc(q.reward_text) + '</span>' + action + '</div></div>';
     }).join("");
+    const m = d.mega;
+    if (m){
+      const pct = Math.min(100, Math.round((m.progress || 0) / (m.need || 1) * 100));
+      document.getElementById("mega").innerHTML =
+        '<div class="mega' + (m.claimed ? " got" : "") + '">' +
+        '<div class="cap">МЕГАКВЕСТ НЕДЕЛИ</div>' +
+        '<div class="h"><div class="t">' + esc(m.title) + '</div>' +
+        '<div class="n">' + m.progress + "/" + m.need + '</div></div>' +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="rw"><span>Награда: ' + esc(m.reward_text) + '</span>' +
+        (m.claimed ? '<span class="claim got">ПОЛУЧЕНО</span>'
+          : m.done ? '<button class="claim" id="megaBtn">ЗАБРАТЬ</button>'
+          : '<span class="claim wait">' + (m.need - m.progress) + ' осталось</span>') +
+        '</div></div>';
+      const mb = document.getElementById("megaBtn");
+      if (mb) mb.onclick = async function(){
+        mb.disabled = true;
+        try{
+          const r = await fetch("/api/mega/claim", {method:"POST", headers, body:"{}"});
+          const d2 = await r.json();
+          if (d2.error){ toast(d2.error); mb.disabled = false; return; }
+          toast("Мегаквест: " + (d2.granted || []).join(", "));
+          load();
+        }catch(err){ toast("Не смог забрать"); mb.disabled = false; }
+      };
+    }
     const p = d.pvp;
     document.getElementById("pvp").innerHTML =
       '<h3>⚔️ PvP-стрик</h3>' +
@@ -7728,6 +8320,22 @@ async function coopApi(path, body){
   return data;
 }
 
+/* Кристалл с моба: страница подтверждает убийство, а шанс и сумму
+   считает сервер. Опрашиваем не чаще раза в 10 секунд, сервер режет
+   до одного дропа в минуту. */
+let gemBusy = false;
+async function gemPing(zone){
+  if (gemBusy || !TG_INIT) return;
+  gemBusy = true;
+  setTimeout(function(){ gemBusy = false; }, 10000);
+  const d = await coopApi("/api/dungeon/mob-kill", {zone: Math.max(0, zone | 0)});
+  if (d && d.gems > 0){
+    toast("💎 Кристалл! +" + d.gems + " · всего " + d.crystals);
+    if (FX && FX.burstUnlocked !== false && player) FX.burst(player.x, player.y - 20, 18, "#6fe3f7", 240, 20);
+    if (tg && tg.HapticFeedback) try { tg.HapticFeedback.notificationOccurred("success"); } catch(e){}
+  }
+}
+
 function coopLog(text){
   COOP.log.unshift(text);
   COOP.log = COOP.log.slice(0, 7);
@@ -8953,6 +9561,7 @@ function killMob(m){
           " · " + loot.cls + " · урон " + loot.dmg + " · дальн. " + loot.range +
           (isNew ? " — загляни в сумку" : ""));
   }
+  gemPing(zoneIndex(m.y));
   if (mobs.length < 10) fillMobs();
   sync();
 }

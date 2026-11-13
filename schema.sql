@@ -830,3 +830,43 @@ create table if not exists player_prefs (
     prefs      jsonb not null default '{}'::jsonb,
     updated_at timestamptz not null default now()
 );
+-- ===================================================================== --
+-- Новый магазин: покупки акций и паков, ежедневная награда, мегаквест,
+-- дроп кристаллов с мобов.
+-- ===================================================================== --
+
+create table if not exists shop_purchase (
+    user_id   bigint not null references players(user_id) on delete cascade,
+    scope     text   not null,          -- deal | pack
+    item_id   text   not null,          -- id уже содержит номер периода
+    period    bigint not null,
+    price     bigint not null,
+    currency  text   not null,          -- points | gems
+    bought_at timestamptz not null default now(),
+    primary key (user_id, scope, item_id)
+);
+create index if not exists shop_purchase_user_idx
+    on shop_purchase (user_id, bought_at desc);
+
+create table if not exists daily_reward (
+    user_id    bigint primary key references players(user_id) on delete cascade,
+    day        date not null,
+    streak     integer not null default 1,
+    claimed_at timestamptz not null default now()
+);
+
+create table if not exists mega_quest (
+    user_id    bigint not null references players(user_id) on delete cascade,
+    week       text   not null,
+    claimed_at timestamptz not null default now(),
+    primary key (user_id, week)
+);
+
+create table if not exists gem_drops (
+    id         bigserial primary key,
+    user_id    bigint  not null,
+    amount     integer not null,
+    zone       integer not null default 0,
+    created_at timestamptz not null default now()
+);
+create index if not exists gem_drops_user_idx on gem_drops (user_id, created_at desc);

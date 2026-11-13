@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import logging
+import random
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import asyncpg
@@ -28,6 +30,21 @@ PACK_AUTUMN_CARDS: tuple[str, ...] = ("misya", "misha")
 PACK_AUTUMN_ACCESSORY = 1  # Сердечко
 
 ACCESSORY_PRICE = 60_000
+
+# Учителя в магазине меняются каждый день: шесть случайных из каталога.
+# Купить конкретного «по заказу» нельзя — витрина дня она и есть витрина дня.
+TEACHERS_PER_DAY = 6
+
+
+def teachers_of_day(day: date | None = None) -> list:
+    day = day or date.today()
+    pool = [
+        card
+        for card in CARDS
+        if card.rarity == "teacher" and card.card_id not in SECRET_CARD_IDS
+    ]
+    rng = random.Random(int(day.toordinal()))
+    return rng.sample(pool, k=min(TEACHERS_PER_DAY, len(pool)))
 
 
 class ShopError(Exception):
@@ -56,15 +73,10 @@ def accessory_item(item_id: int) -> Item:
     raise ShopError(f"Аксессуара {item_id} нет.")
 
 
-def catalog() -> list[ShopEntry]:
-    """Весь ассортимент. Учителя — по возрастанию цены."""
+def catalog(day: date | None = None) -> list[ShopEntry]:
+    """Ассортимент магазина. Учителя — только сегодняшние, по цене."""
     entries: list[ShopEntry] = []
-    for card in CARDS:
-        if card.rarity != "teacher":
-            continue
-        # Промо и секретные ивентовые не продаются: их выдают вручную.
-        if card.card_id in SECRET_CARD_IDS:
-            continue
+    for card in teachers_of_day(day):
         entries.append(
             ShopEntry(
                 sku=f"card:{card.card_id}",
@@ -146,11 +158,11 @@ def catalog() -> list[ShopEntry]:
     return entries
 
 
-def find(sku: str) -> ShopEntry:
-    for entry in catalog():
+def find(sku: str, day: date | None = None) -> ShopEntry:
+    for entry in catalog(day):
         if entry.sku == sku:
             return entry
-    raise ShopError("Такого товара нет в магазине.")
+    raise ShopError("Такого товара нет в магазине (учителя меняются каждый день).")
 
 
 class ShopRepo:

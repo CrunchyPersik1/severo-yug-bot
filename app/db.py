@@ -21,6 +21,16 @@ log = logging.getLogger(__name__)
 _STRIP_PARAMS = {"sslmode", "pgbouncer", "connection_limit", "ssl", "application_name"}
 
 
+class _NotEnough(Exception):
+    """Внутренний сигнал: не хватает валюты. Транзакция покупки откатится."""
+
+    def __init__(self, have: int, need: int, currency: str) -> None:
+        super().__init__(f"не хватает: есть {have}, нужно {need} ({currency})")
+        self.have = have
+        self.need = need
+        self.currency = currency
+
+
 def _json_list(value: Any) -> list[str]:
     """asyncpg отдаёт jsonb строкой — достаём список карт."""
     if not value:
@@ -610,6 +620,224 @@ class Database:
         if row is None or row["crystal_day"] != day:
             return int(free_per_day)
         return max(0, int(free_per_day) - int(row["crystal_uses"]))
+
+    # ----------------------------------------------------------------- #
+    # Новый магазин: покупки, ежедневка, мегаквест, кристаллы с мобов
+    # ----------------------------------------------------------------- #
+
+    async def shop_purchased(
+        self, user_id: int, scope: str, item_ids: list[str]
+    ) -> set[str]:
+        """Что из этого списка игрок уже покупал (акции одноразовые)."""
+        if not item_ids:
+            return set()
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select item_id from shop_purchase "
+                "where user_id = $1 and scope = $2 and item_id = any($3::text[])",
+                int(user_id),
+                str(scope),
+                [str(i) for i in item_ids],
+            )
+        return {str(row["item_id"]) for row in rows}
+
+    async def buy_offer(
+        self,
+        user_id: int,
+        *,
+        scope: str,
+        item_id: str,
+        period: int,
+        price: int,
+        currency: str,
+        bundle: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Покупка акции или пака: отметить, списать, выдать — одной транзакцией.
+
+        Возвращает {"ok", "granted", "balance", "crystals"}; при нехватке
+        валюты или повторной покупке — {"ok": False, "error"}.
+        """
+        from . import bundles as bundles_mod
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                added = await con.fetchval(
+                    """
+                    insert into shop_purchase (user_id, scope, item_id, period, price, currency)
+                    values ($1, $2, $3, $4, $5, $6)
+                    on conflict (user_id, scope, item_id) do nothing
+                    returning user_id
+                    """,
+                    int(user_id),
+                    str(scope),
+                    str(item_id),
+                    int(period),
+                    int(price),
+                    str(currency),
+                )
+                if added is None:
+                    return {"ok": False, "error": "Этот товар уже куплен"}
+
+                column = "crystals" if currency == "gems" else "bonus_points"
+                row = await con.fetchrow(
+                    f"update players set {column} = {column} - $2 "
+                    f"where user_id = $1 and {column} >= $2 "
+                    f"returning {column} as left, bonus_points, crystals",
+                    int(user_id),
+                    int(price),
+                )
+                if row is None:
+                    # транзакция откатится сама: отметка о покупке не останется
+                    have = await con.fetchval(
+                        f"select coalesce({column}, 0) from players where user_id = $1",
+                        int(user_id),
+                    )
+                    raise _NotEnough(int(have or 0), int(price), str(currency))
+                granted = await bundles_mod.grant(self, con, user_id, bundle)
+        return {
+            "ok": True,
+            "granted": granted,
+            "balance": int(row["bonus_points"]),
+            "crystals": int(row["crystals"]),
+        }
+
+    async def grant_bundle(self, user_id: int, bundle: dict[str, Any]) -> list[str]:
+        """Выдаёт набор наград отдельной транзакцией (ежедневка, мегаквест)."""
+        from . import bundles as bundles_mod
+
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                return await bundles_mod.grant(self, con, int(user_id), bundle)
+
+    async def daily_state(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select day, streak from daily_reward where user_id = $1",
+                int(user_id),
+            )
+        if row is None:
+            return {"day": None, "streak": 0}
+        return {"day": row["day"], "streak": int(row["streak"])}
+
+    async def daily_claim(self, user_id: int, day: Any) -> int | None:
+        """Забирает ежедневную награду. None — уже забирали сегодня."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select day, streak from daily_reward where user_id = $1 for update",
+                    int(user_id),
+                )
+                if row is not None and row["day"] == day:
+                    return None
+                if row is None:
+                    streak = 1
+                else:
+                    previous = row["day"]
+                    gap = (day - previous).days if previous is not None else 99
+                    streak = int(row["streak"]) + 1 if gap == 1 else 1
+                await con.execute(
+                    """
+                    insert into daily_reward (user_id, day, streak, claimed_at)
+                    values ($1, $2, $3, now())
+                    on conflict (user_id) do update
+                       set day = excluded.day,
+                           streak = excluded.streak,
+                           claimed_at = now()
+                    """,
+                    int(user_id),
+                    day,
+                    streak,
+                )
+        return streak
+
+    async def mega_claimed(self, user_id: int, week: str) -> bool:
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "select 1 from mega_quest where user_id = $1 and week = $2",
+                int(user_id),
+                str(week),
+            )
+        return value is not None
+
+    async def mega_progress(self, user_id: int, sql: str, since: Any) -> int:
+        """Сколько из цели сделано: SQL берётся из app/mega.py."""
+        async with self._p().acquire() as con:
+            value = await con.fetchval(sql, int(user_id), since)
+        return int(value or 0)
+
+    async def mega_claim(self, user_id: int, week: str) -> bool:
+        """Отмечает награду мегаквеста. False — уже забирали."""
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "insert into mega_quest (user_id, week) values ($1, $2) "
+                "on conflict (user_id, week) do nothing returning user_id",
+                int(user_id),
+                str(week),
+            )
+        return value is not None
+
+    async def last_gem_drop(self, user_id: int) -> Any:
+        async with self._p().acquire() as con:
+            return await con.fetchval(
+                "select max(created_at) from gem_drops where user_id = $1",
+                int(user_id),
+            )
+
+    async def add_gem_drop(self, user_id: int, amount: int, zone: int) -> int:
+        """Выдаёт кристаллы и пишет их в журнал (журнал же держит кулдаун)."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "insert into gem_drops (user_id, amount, zone) values ($1, $2, $3)",
+                    int(user_id),
+                    int(amount),
+                    int(zone),
+                )
+                row = await con.fetchrow(
+                    "update players set crystals = crystals + $2 where user_id = $1 "
+                    "returning crystals",
+                    int(user_id),
+                    int(amount),
+                )
+        return int(row["crystals"]) if row else 0
+
+    async def exchange_points_for_gems(
+        self, user_id: int, gems: int, rate: int
+    ) -> dict[str, Any]:
+        """Обмен очков на кристаллы по курсу. Гемы за гемы не продаются."""
+        gems = max(0, int(gems))
+        price = gems * max(1, int(rate))
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "update players set bonus_points = bonus_points - $2 "
+                    "where user_id = $1 and bonus_points >= $2 "
+                    "returning bonus_points",
+                    int(user_id),
+                    price,
+                )
+                if row is None:
+                    have = await con.fetchval(
+                        "select coalesce(bonus_points, 0) from players where user_id = $1",
+                        int(user_id),
+                    )
+                    return {
+                        "ok": False,
+                        "error": f"Не хватает очков: нужно {price}, у тебя {int(have or 0)}",
+                    }
+                crystals = await con.fetchval(
+                    "update players set crystals = crystals + $2 where user_id = $1 "
+                    "returning crystals",
+                    int(user_id),
+                    gems,
+                )
+        return {
+            "ok": True,
+            "gems": gems,
+            "price": price,
+            "balance": int(row["bonus_points"]),
+            "crystals": int(crystals or 0),
+        }
 
     async def get_prefs(self, user_id: int) -> dict[str, Any]:
         """Настройки игрока. Пусто — значит всё по умолчанию."""

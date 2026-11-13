@@ -40,17 +40,22 @@ def test_open_ultra_returns_results():
     assert 'error_text = "Кейсов «Ультра» нет"' in source
     # отдельной покупки-с-открытием больше нет
     assert '@router.post("/api/case/ultra")' not in source
-    # магазин знает новую вкладку
-    assert '["case_ultra","🌈 Кейс Ультра"]' in source
+    # новый магазин держит ультра-кейс в разделе товаров
+    assert '["case_d","Кейсы"]' in source
     assert webapp  # модуль импортируется
 
 
 def test_shop_page_css_restored():
-    """Патч биржи когда-то затёр стили магазина — держим проверку."""
+    """Патч биржи когда-то затёр стили магазина — держим проверку.
+
+    Страница переписана под акции, но правило то же: свои стили и кошелёк
+    на месте, чужих переменных нет.
+    """
     from app.webapp import PAGE
 
-    assert ".tabs{" in PAGE
+    assert ".tile{" in PAGE
     assert ".wallet{" in PAGE
+    assert ".nav{" in PAGE
     assert "--ex-bg" not in PAGE
 
 
