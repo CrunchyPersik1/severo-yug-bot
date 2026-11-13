@@ -454,6 +454,197 @@ class Database:
             )
         return int(value)
 
+    # ----------------------------------------------------------------- #
+    # Кристаллы, спины пачкой и настройки игрока
+    # ----------------------------------------------------------------- #
+
+    async def player_crystals(self, user_id: int) -> int:
+        """Баланс кристаллов."""
+        async with self._p().acquire() as con:
+            return int(
+                await con.fetchval(
+                    "select coalesce(crystals, 0) from players where user_id = $1::bigint",
+                    int(user_id),
+                )
+                or 0
+            )
+
+    async def add_crystals(self, user_id: int, amount: int) -> int:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                update players set crystals = greatest(0, crystals + $2)
+                 where user_id = $1
+                returning crystals
+                """,
+                int(user_id),
+                int(amount),
+            )
+        return int(row["crystals"]) if row else 0
+
+    async def spend_crystals(self, user_id: int, amount: int) -> bool:
+        """Списать кристаллы, только если их хватает."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "update players set crystals = crystals - $2 "
+                "where user_id = $1 and crystals >= $2 "
+                "returning crystals",
+                int(user_id),
+                int(amount),
+            )
+            return row is not None
+
+    async def claim_roulette_many(
+        self, user_id: int, day: Any, count: int, limit: int = 1
+    ) -> int | None:
+        """Атомарно тратит несколько спинов классической рулетки.
+
+        Возвращает остаток или None, если спинов не хватает на всю пачку.
+        Частичного списания нет: либо крутится всё запрошенное, либо ничего.
+        """
+        count = max(1, int(count))
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select roulette_day, roulette_uses, roulette_limit "
+                    "from players where user_id = $1 for update",
+                    int(user_id),
+                )
+                if row is None:
+                    return None
+                if row["roulette_day"] != day:
+                    uses, hard_limit = 0, int(limit)
+                else:
+                    uses = int(row["roulette_uses"])
+                    hard_limit = int(row["roulette_limit"])
+                if uses + count > hard_limit:
+                    return None
+                uses += count
+                await con.execute(
+                    """
+                    update players
+                       set roulette_day = $2,
+                           roulette_uses = $3,
+                           roulette_limit = $4,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    int(user_id),
+                    day,
+                    uses,
+                    hard_limit,
+                )
+                return hard_limit - uses
+
+    async def claim_crystal_spins(
+        self,
+        user_id: int,
+        day: Any,
+        count: int,
+        price: int,
+        free_per_day: int = 1,
+    ) -> dict[str, Any]:
+        """Спины кристальной рулетки: сначала бесплатный, потом за очки.
+
+        Всё в одной транзакции с блокировкой строки игрока: два нажатия подряд
+        не могут списать один и тот же спин или увести очки в минус.
+        """
+        count = max(1, int(count))
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "select crystal_day, crystal_uses, "
+                    "coalesce(bonus_points, 0) as points "
+                    "from players where user_id = $1 for update",
+                    int(user_id),
+                )
+                if row is None:
+                    return {"ok": False, "error": "Игрок не найден"}
+                if row["crystal_day"] != day:
+                    uses = 0
+                    free_left = int(free_per_day)
+                else:
+                    uses = int(row["crystal_uses"])
+                    free_left = max(0, int(free_per_day) - uses)
+                free_used = min(free_left, count)
+                paid = count - free_used
+                cost = paid * max(0, int(price))
+                if cost > int(row["points"]):
+                    return {
+                        "ok": False,
+                        "error": f"Не хватает очков: нужно {cost} за {paid} спин",
+                        "need": cost,
+                        "points": int(row["points"]),
+                    }
+                await con.execute(
+                    """
+                    update players
+                       set crystal_day = $2,
+                           crystal_uses = $3,
+                           bonus_points = bonus_points - $4,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    int(user_id),
+                    day,
+                    uses + count,
+                    cost,
+                )
+                return {
+                    "ok": True,
+                    "free_used": free_used,
+                    "paid": paid,
+                    "cost": cost,
+                    "free_left": max(0, int(free_per_day) - (uses + count)),
+                }
+
+    async def crystal_spins_left(
+        self, user_id: int, day: Any, free_per_day: int = 1
+    ) -> int:
+        """Сколько бесплатных спинов кристальной рулетки осталось."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select crystal_day, crystal_uses from players where user_id = $1",
+                int(user_id),
+            )
+        if row is None or row["crystal_day"] != day:
+            return int(free_per_day)
+        return max(0, int(free_per_day) - int(row["crystal_uses"]))
+
+    async def get_prefs(self, user_id: int) -> dict[str, Any]:
+        """Настройки игрока. Пусто — значит всё по умолчанию."""
+        async with self._p().acquire() as con:
+            raw = await con.fetchval(
+                "select prefs from player_prefs where user_id = $1",
+                int(user_id),
+            )
+        return as_json_dict(raw)
+
+    async def set_prefs(self, user_id: int, patch: dict[str, Any]) -> dict[str, Any]:
+        """Сливает патч с настройками игрока и возвращает целый словарь."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "insert into player_prefs (user_id) values ($1) "
+                    "on conflict (user_id) do nothing",
+                    int(user_id),
+                )
+                current = await con.fetchval(
+                    "select prefs from player_prefs where user_id = $1 for update",
+                    int(user_id),
+                )
+                merged = as_json_dict(current)
+                merged.update(
+                    {str(key): value for key, value in (patch or {}).items()}
+                )
+                await con.execute(
+                    "update player_prefs set prefs = $2::jsonb, updated_at = now() "
+                    "where user_id = $1",
+                    int(user_id),
+                    json.dumps(merged),
+                )
+        return merged
+
     async def user_cases(
         self,
         user_id: int,

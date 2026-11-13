@@ -135,3 +135,165 @@ def roll_prize(rng: random.Random | None = None) -> tuple[str, int | str]:
     if kind == PRIZE_CASE:
         return kind, "case"
     return kind, MAIN_CARD_ID
+
+# --------------------------------------------------------------------------- #
+# Виды рулеток
+# --------------------------------------------------------------------------- #
+#
+# Рулетка — не одна. Классическая (очки, кейс, Дэниэл) и кристальная
+# (кристаллы, кейсы, крупные очки). Обе крутятся по одному сбросу суток,
+# у обеих есть свой счётчик спинов, и обе умеют крутить до MAX_SPINS_AT_ONCE
+# за раз: сервер списывает столько спинов, сколько просят, одной транзакцией.
+
+KIND_CLASSIC = "classic"
+KIND_CRYSTAL = "crystal"
+KINDS: tuple[str, ...] = (KIND_CLASSIC, KIND_CRYSTAL)
+DEFAULT_KIND = KIND_CLASSIC
+
+KIND_TITLES: dict[str, str] = {
+    KIND_CLASSIC: "Классическая",
+    KIND_CRYSTAL: "Кристальная",
+}
+
+# Больше трёх за раз крутить нельзя: лента превращается в кашу.
+MAX_SPINS_AT_ONCE = 3
+
+# Кристальная: один бесплатный спин в сутки, остальные — за очки.
+CRYSTAL_SPINS_PER_DAY = 1
+CRYSTAL_SPIN_PRICE = 25_000
+
+# Очковые призы кристальной рулетки: (минимум, максимум, вес).
+CRYSTAL_POINT_TIERS: tuple[tuple[int, int, float], ...] = (
+    (1_000, 4_999, 0.50),
+    (5_000, 50_000, 0.385),
+)
+
+PRIZE_CRYSTALS = "crystals"
+PRIZE_CASE_G = "case_g"
+PRIZE_CASE_D = "case_d"
+PRIZE_CASE_ULTRA = "case_ultra"
+
+# Полная раскладка кристальной рулетки. Сумма весов ровно 1.
+CRYSTAL_WEIGHTS: dict[str, float] = {
+    "crystals_10": 0.005,
+    "crystals_5": 0.010,
+    PRIZE_CASE_ULTRA: 0.005,
+    PRIZE_CASE_D: 0.010,
+    PRIZE_CASE_G: 0.085,
+    "points_big": 0.385,
+    "points_small": 0.500,
+}
+
+CRYSTAL_TITLES: dict[str, str] = {
+    "crystals_10": "10 кристаллов",
+    "crystals_5": "5 кристаллов",
+    PRIZE_CASE_ULTRA: "Кейс «Ультра»",
+    PRIZE_CASE_D: "Кейс «7Д класс»",
+    PRIZE_CASE_G: "Кейс 7Г",
+    "points_big": "Очки 5 000–50 000",
+    "points_small": "Очки 1 000–5 000",
+}
+
+CRYSTAL_COLORS: dict[str, str] = {
+    "crystals_10": "#22d3ee",
+    "crystals_5": "#0ea5e9",
+    PRIZE_CASE_ULTRA: "#b45309",
+    PRIZE_CASE_D: "#7c3aed",
+    PRIZE_CASE_G: "#15803d",
+    "points_big": "#eab308",
+    "points_small": "#1d4ed8",
+}
+
+# Сколько кристаллов даёт приз (0 — приз не про кристаллы).
+CRYSTAL_AMOUNTS: dict[str, int] = {"crystals_10": 10, "crystals_5": 5}
+
+
+def kind_title(kind: str | None) -> str:
+    return KIND_TITLES.get(str(kind or ""), KIND_TITLES[DEFAULT_KIND])
+
+
+def is_kind(kind: str | None) -> bool:
+    return str(kind or "") in KINDS
+
+
+def clamp_count(value: Any, low: int = 1, high: int = MAX_SPINS_AT_ONCE) -> int:
+    """Сколько круток просят — в разумных пределах."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return low
+    return max(low, min(high, number))
+
+
+def spin_plan(free_left: int, count: int, price: int) -> tuple[int, int]:
+    """Сколько спинов сверх бесплатных и во сколько они обойдутся.
+
+    Сначала тратятся бесплатные, потом платные. Не хватило очков — вызывающая
+    сторона просто откажет целиком, частичного списания не бывает.
+    """
+    count = max(0, int(count))
+    free = max(0, min(int(free_left), count))
+    paid = count - free
+    return paid, paid * max(0, int(price))
+
+
+def crystal_weights() -> dict[str, float]:
+    return dict(CRYSTAL_WEIGHTS)
+
+
+def roll_crystal_points(rng: random.Random | None = None) -> int:
+    rng = rng or random
+    tiers = list(CRYSTAL_POINT_TIERS)
+    low, high, _ = rng.choices(tiers, weights=[t[2] for t in tiers], k=1)[0]
+    return rng.randint(int(low), int(high))
+
+
+def roll_crystal_prize(rng: random.Random | None = None) -> dict:
+    """Приз кристальной рулетки одним словарём.
+
+    Возвращает {"key", "kind", "amount", "label"}. kind — с чем работать
+    дальше (кристаллы, кейс какого типа или очки).
+    """
+    rng = rng or random
+    keys = list(CRYSTAL_WEIGHTS)
+    key = rng.choices(keys, weights=[CRYSTAL_WEIGHTS[k] for k in keys], k=1)[0]
+    if key in CRYSTAL_AMOUNTS:
+        amount = CRYSTAL_AMOUNTS[key]
+        return {"key": key, "kind": PRIZE_CRYSTALS, "amount": amount,
+                "label": f"💎 +{amount} кристаллов!"}
+    if key == PRIZE_CASE_G:
+        return {"key": key, "kind": PRIZE_CASE_G, "label": "📦 Кейс 7Г!"}
+    if key == PRIZE_CASE_D:
+        return {"key": key, "kind": PRIZE_CASE_D, "label": "📦 Кейс «7Д класс»!"}
+    if key == PRIZE_CASE_ULTRA:
+        return {"key": key, "kind": PRIZE_CASE_ULTRA, "label": "🎟 Кейс «Ультра»!"}
+    amount = roll_crystal_points(rng)
+    return {"key": key, "kind": PRIZE_POINTS, "amount": amount,
+            "label": f"💰 +{amount} очков!"}
+
+
+def crystal_segments() -> list[dict]:
+    """Сегменты кристального колеса — доли совпадают с реальными шансами."""
+    segments: list[dict] = []
+    for key in CRYSTAL_WEIGHTS:
+        segments.append(
+            {
+                "key": key,
+                "label": CRYSTAL_TITLES[key],
+                "color": CRYSTAL_COLORS[key],
+                "weight": CRYSTAL_WEIGHTS[key],
+            }
+        )
+    return segments
+
+
+def crystal_segment_index(key: str) -> int:
+    keys = list(CRYSTAL_WEIGHTS)
+    return keys.index(key) if key in keys else 0
+
+
+def kind_segments(kind: str | None) -> list[dict]:
+    """Сегменты колеса для вида рулетки."""
+    if str(kind or "") == KIND_CRYSTAL:
+        return crystal_segments()
+    return wheel_segments()

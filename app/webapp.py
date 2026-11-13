@@ -31,6 +31,7 @@ from .market import UPGRADE_PRICE, market_price
 from . import levels
 from . import dice_casino
 from . import themes
+from . import cardsfx
 from . import cases as cases_mod
 from . import roulette as roulette_mod
 from . import upgrader
@@ -38,6 +39,7 @@ from . import yugi
 from .cards import (
     CARDS,
     CARDS_BY_ID,
+    SORTED_RARITY_INDEX,
     UPGRADER_EXCLUDED_CARD_IDS,
     cards_sorted_for_user,
     get_card,
@@ -55,11 +57,27 @@ from .webtheme import inject
 from .items import ACCESSORIES
 from .render import describe_ability
 from .roulette import (
+    CRYSTAL_SPIN_PRICE,
+    CRYSTAL_SPINS_PER_DAY,
+    KIND_CLASSIC,
+    KIND_CRYSTAL,
+    MAX_SPINS_AT_ONCE,
+    PRIZE_CASE_D,
+    PRIZE_CASE_G,
+    PRIZE_CASE_ULTRA,
+    PRIZE_CRYSTALS,
     SPINS_PER_DAY,
+    clamp_count,
+    crystal_segment_index,
+    is_kind,
+    kind_segments,
+    kind_title,
     next_roulette_reset,
+    roll_crystal_prize,
     roll_prize,
     roulette_day_key,
     segment_index,
+    spin_plan,
     wheel_segments,
 )
 from .shop import ShopError, catalog
@@ -166,6 +184,8 @@ _ACTIONS = {
     "/api/event/claim": "забрал награду ивента",
     "/api/event/contribute": "внёс вклад в ивент",
     "/api/profile/save": "правил профиль",
+    "/api/profile/pin": "повесил карту в профиль",
+    "/api/prefs": "настроил приложение",
     "/api/collection/upgrade": "апгрейд карты",
     "/api/quests/claim": "забрал награду задания",
     "/api/dungeon/boss/join": "встал на босса",
@@ -672,12 +692,82 @@ async def _live(request: Request) -> bool:
     return value == "1"
 
 
-def _wheel_payload() -> list[dict]:
-    segments = wheel_segments()
+# --------------------------------------------------------------------------- #
+# Настройки игрока: эффекты карточек, вид рулетки, карточка в профиле
+# --------------------------------------------------------------------------- #
+
+PREFS_DEFAULTS: dict[str, Any] = {
+    "fx": True,              # анимация раскрытия карточки
+    "view_classic": "wheel",  # колесо | лента
+    "view_crystal": "wheel",
+    "pinned": "",             # card_id карточки, висящей в профиле
+}
+
+ROULETTE_VIEWS: tuple[str, ...] = ("wheel", "reel")
+
+
+def _prefs_clean(current: dict[str, Any] | None) -> dict[str, Any]:
+    """Оставляет только известные ключи и приводит их к безопасным значениям.
+
+    Настройки приходят и из базы, и из тела запроса — поэтому чистятся всегда,
+    а не только на входе: в jsonb могло остаться что угодно от старой версии.
+    """
+    prefs = dict(PREFS_DEFAULTS)
+    for key, value in (current or {}).items():
+        if str(key) in PREFS_DEFAULTS:
+            prefs[str(key)] = value
+    prefs["fx"] = bool(prefs.get("fx", True))
+    for key in ("view_classic", "view_crystal"):
+        if prefs.get(key) not in ROULETTE_VIEWS:
+            prefs[key] = "wheel"
+    pinned = str(prefs.get("pinned") or "")
+    prefs["pinned"] = pinned if pinned in CARDS_BY_ID else ""
+    return prefs
+
+
+async def _prefs(state, user_id: int) -> dict[str, Any]:
+    with contextlib.suppress(Exception):
+        return _prefs_clean(await state.db.get_prefs(user_id))
+    return _prefs_clean({})
+
+
+def _view_of(prefs: dict[str, Any], kind: str) -> str:
+    key = "view_crystal" if kind == KIND_CRYSTAL else "view_classic"
+    return str(prefs.get(key) or "wheel")
+
+
+def _wheel_payload(kind: str = KIND_CLASSIC) -> list[dict]:
+    """Сегменты колеса с углами: доли всегда совпадают с настоящими шансами."""
+    segments = kind_segments(kind)
     total = sum(float(item["weight"]) for item in segments) or 1.0
     for item in segments:
         item["angle"] = round(float(item["weight"]) / total * 360.0, 2)
     return segments
+
+
+def _roulette_payload(
+    *,
+    kind: str,
+    spins_left: int,
+    free_left: int,
+    balance: int,
+    crystals: int,
+    view: str,
+) -> dict[str, Any]:
+    """Всё состояние рулетки для страницы — одним ответом."""
+    return {
+        "kind": kind,
+        "title": kind_title(kind),
+        "segments": _wheel_payload(kind),
+        "spins_left": int(spins_left),
+        "free_left": int(free_left),
+        "price": CRYSTAL_SPIN_PRICE if kind == KIND_CRYSTAL else 0,
+        "max_at_once": MAX_SPINS_AT_ONCE,
+        "balance": int(balance),
+        "crystals": int(crystals),
+        "view": view,
+        "reset_text": _reset_text(),
+    }
 
 
 def _reset_text() -> str:
@@ -818,53 +908,266 @@ async def api_case_ultra_state(request: Request) -> JSONResponse:
     )
 
 
+def _owned_cards(counts: dict[str, int]) -> list:
+    """Карты коллекции в порядке редкости — вместе с «7Д».
+
+    cards_sorted_for_user() знает только первую коллекцию: она сделана для
+    боёв. В коллекции же должны быть видны обе, иначе игрок открывает кейс
+    «7Д», получает карту и не находит её в приложении.
+    """
+    cards = []
+    for card_id in counts:
+        try:
+            cards.append(get_card(str(card_id)))
+        except KeyError:
+            continue
+    return sorted(
+        cards,
+        key=lambda c: (-SORTED_RARITY_INDEX.get(c.rarity, 0), -c.points, c.display_name),
+    )
+
+
+async def _settle_classic_prize(state, uid: int, prize: tuple[str, Any]) -> dict[str, Any]:
+    """Выдаёт приз классической рулетки и описывает его для ленты."""
+    kind, value = prize
+    item: dict[str, Any] = {"kind": kind, "index": segment_index(prize)}
+    if kind == roulette_mod.PRIZE_POINTS:
+        await state.db.add_points(uid, int(value))
+        item.update(amount=int(value), label=f"💰 +{int(value)} очков!")
+    elif kind == roulette_mod.PRIZE_CASE:
+        await state.db.add_case(uid, "roulette")
+        item.update(label="📦 Кейс! Открывай в кейсах.")
+    else:
+        card = get_card(str(value))
+        await state.db.add_card(uid, card.card_id)
+        await state.db.add_points(uid, card.points)
+        item.update(
+            card=card.card_id,
+            name=card.display_name,
+            emoji=card.rarity_emoji,
+            label=f"🃏 Главный приз — {card.name}!",
+        )
+    return item
+
+
+async def _settle_crystal_prize(state, uid: int, prize: dict) -> dict[str, Any]:
+    """Выдаёт приз кристальной рулетки: кристаллы, кейс или очки."""
+    item: dict[str, Any] = {
+        "kind": prize["kind"],
+        "key": prize["key"],
+        "index": crystal_segment_index(prize["key"]),
+        "label": prize["label"],
+    }
+    if prize["kind"] == PRIZE_CRYSTALS:
+        amount = int(prize["amount"])
+        await state.db.add_crystals(uid, amount)
+        item.update(amount=amount, crystals=amount)
+    elif prize["kind"] == PRIZE_CASE_G:
+        await state.db.add_case(uid, "roulette")
+    elif prize["kind"] == PRIZE_CASE_D:
+        await state.db.add_case(uid, cases_mod.CASE_D_SOURCE)
+    elif prize["kind"] == PRIZE_CASE_ULTRA:
+        await state.db.add_case(uid, "ultra")
+    else:
+        amount = int(prize.get("amount") or 0)
+        await state.db.add_points(uid, amount)
+        item["amount"] = amount
+    return item
+
+
 @router.get("/api/roulette")
 async def api_roulette(request: Request) -> JSONResponse:
     state = request.app.state
     uid, error = await _games_user(request)
     if error is not None:
         return error
-    left = await state.db.roulette_left(uid, roulette_day_key(), SPINS_PER_DAY)
+    kind = request.query_params.get("kind", "")
+    if not is_kind(kind):
+        kind = KIND_CLASSIC
+    day = roulette_day_key()
+    prefs = await _prefs(state, uid)
+    classic_left = await state.db.roulette_left(uid, day, SPINS_PER_DAY)
+    free_left = await state.db.crystal_spins_left(uid, day, CRYSTAL_SPINS_PER_DAY)
     return JSONResponse(
-        {
-            "segments": _wheel_payload(),
-            "spins_left": left,
-            "balance": await state.market.balance(uid),
-            "reset_text": _reset_text(),
-        },
+        _roulette_payload(
+            kind=kind,
+            spins_left=free_left if kind == KIND_CRYSTAL else classic_left,
+            free_left=free_left,
+            balance=await state.market.balance(uid),
+            crystals=await state.db.player_crystals(uid),
+            view=_view_of(prefs, kind),
+        ),
         headers={"Cache-Control": "no-store"},
     )
 
 
 @router.post("/api/roulette/spin")
 async def api_roulette_spin(request: Request) -> JSONResponse:
+    """Крутит от одного до трёх спинов выбранной рулетки.
+
+    Пачка списывается целиком или не списывается вообще: если на три спина
+    не хватает лимита или очков, ответ — ошибка, а не «сколько получилось».
+    """
     state = request.app.state
     uid, error = await _games_user(request)
     if error is not None:
         return error
-    left = await state.db.claim_roulette(uid, roulette_day_key(), SPINS_PER_DAY)
-    if left is None:
-        return JSONResponse({"error": "Спины на сегодня кончились"}, status_code=400)
-    prize = roll_prize()
-    kind, value = prize
-    if kind == roulette_mod.PRIZE_POINTS:
-        await state.db.add_points(uid, int(value))
-        label = f"💰 +{int(value)} очков!"
-    elif kind == roulette_mod.PRIZE_CASE:
-        await state.db.add_case(uid, "roulette")
-        label = "📦 Кейс! Открывай в кейсах."
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    body = body or {}
+    kind = str(body.get("kind") or "")
+    if not is_kind(kind):
+        kind = KIND_CLASSIC
+    count = clamp_count(body.get("count", 1))
+    day = roulette_day_key()
+
+    if kind == KIND_CRYSTAL:
+        claim = await state.db.claim_crystal_spins(
+            uid, day, count, CRYSTAL_SPIN_PRICE, CRYSTAL_SPINS_PER_DAY
+        )
+        if not claim.get("ok"):
+            return JSONResponse(
+                {"error": claim.get("error") or "Спины кончились"},
+                status_code=400,
+            )
+        left = int(claim.get("free_left") or 0)
+        results = [
+            await _settle_crystal_prize(state, uid, roll_crystal_prize())
+            for _ in range(count)
+        ]
     else:
-        card = get_card(str(value))
-        await state.db.add_card(uid, card.card_id)
-        await state.db.add_points(uid, card.points)
-        label = f"🃏 Главный приз — {card.name}!"
+        left = await state.db.claim_roulette_many(uid, day, count, SPINS_PER_DAY)
+        if left is None:
+            return JSONResponse({"error": "Спины на сегодня кончились"}, status_code=400)
+        results = [
+            await _settle_classic_prize(state, uid, roll_prize())
+            for _ in range(count)
+        ]
+
+    response: dict[str, Any] = {
+        "ok": True,
+        "kind": kind,
+        "results": results,
+        "spins_left": left,
+        "balance": await state.market.balance(uid),
+        "crystals": await state.db.player_crystals(uid),
+    }
+    # Совместимость с одиночным спином: страница и старые тесты ждут index.
+    if len(results) == 1:
+        response["index"] = int(results[0].get("index") or 0)
+        response["prize_label"] = results[0]["label"]
+    return JSONResponse(response)
+
+
+@router.get("/api/prefs")
+async def api_prefs(request: Request) -> JSONResponse:
+    """Настройки игрока: эффекты карточек и вид рулетки."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    prefs = await _prefs(state, uid)
+    pinned = None
+    if prefs["pinned"]:
+        card = CARDS_BY_ID.get(prefs["pinned"])
+        if card is not None:
+            pinned = {
+                "id": card.card_id,
+                "name": card.display_name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "image": image_url(card.card_id),
+                "fx": cardsfx.payload(card.rarity),
+            }
+    return JSONResponse(
+        {
+            "prefs": prefs,
+            "pinned_card": pinned,
+            "views": list(ROULETTE_VIEWS),
+            "crystals": await state.db.player_crystals(uid),
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/prefs")
+async def api_prefs_save(request: Request) -> JSONResponse:
+    """Меняет один или несколько переключателей настроек."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    patch: dict[str, Any] = {}
+    body = body or {}
+    if "fx" in body:
+        patch["fx"] = bool(body.get("fx"))
+    for key in ("view_classic", "view_crystal"):
+        if key in body:
+            value = str(body.get(key) or "")
+            if value not in ROULETTE_VIEWS:
+                return JSONResponse({"error": "Неизвестный вид рулетки"}, status_code=400)
+            patch[key] = value
+    if "pinned" in body:
+        pinned = str(body.get("pinned") or "")
+        if pinned:
+            counts = await state.db.get_collection(uid)
+            if pinned not in counts:
+                return JSONResponse({"error": "Такой карты у тебя нет"}, status_code=400)
+        patch["pinned"] = pinned if pinned in CARDS_BY_ID else ""
+    if not patch:
+        return JSONResponse({"error": "Нечего менять"}, status_code=400)
+    prefs = await state.db.set_prefs(uid, patch)
+    return JSONResponse({"ok": True, "prefs": _prefs_clean(prefs)})
+
+
+@router.post("/api/profile/pin")
+async def api_profile_pin(request: Request) -> JSONResponse:
+    """Ставит карточку в профиль (и снимает её пустым card_id)."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    card_id = str((body or {}).get("card_id") or "")
+    if card_id:
+        if card_id not in CARDS_BY_ID:
+            return JSONResponse({"error": "Такой карты нет"}, status_code=400)
+        counts = await state.db.get_collection(uid)
+        if card_id not in counts:
+            return JSONResponse({"error": "Такой карты у тебя нет"}, status_code=400)
+    await state.db.set_prefs(uid, {"pinned": card_id})
+    card = CARDS_BY_ID.get(card_id) if card_id else None
     return JSONResponse(
         {
             "ok": True,
-            "index": segment_index(prize),
-            "prize_label": label,
-            "spins_left": left,
-            "balance": await state.market.balance(uid),
+            "pinned": card_id,
+            "card": None
+            if card is None
+            else {
+                "id": card.card_id,
+                "name": card.display_name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "image": image_url(card.card_id),
+                "fx": cardsfx.payload(card.rarity),
+            },
         }
     )
 
@@ -2404,7 +2707,7 @@ async def api_hub(request: Request) -> JSONResponse:
 
     counts = await state.db.get_collection(user_id)
     cards = []
-    for card in cards_sorted_for_user(list(counts)):
+    for card in _owned_cards(counts):
         payload = upgrader.card_payload(card, counts[card.card_id])
         payload["ref"] = f"card:{card.card_id}"
         cards.append(payload)
@@ -2423,6 +2726,7 @@ async def api_hub(request: Request) -> JSONResponse:
                 "xp": int(profile.get("xp") or 0),
                 "wins": int(profile.get("wins") or 0),
                 "cards": len(cards),
+                "crystals": await state.db.player_crystals(user_id),
             },
             "stocks": stocks,
             "collection": cards,
@@ -2506,6 +2810,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   padding:7px 12px;font-size:12.5px;font-weight:800;white-space:nowrap}
 .chip.bal{color:var(--acc2)}
 .chip.lvl{color:var(--ink)}
+.chip.cr{color:#6fe3f7;background:#0e2a33;border-color:#164e63}
 
 .wrap{padding:14px 15px 0;max-width:560px;margin:0 auto}
 
@@ -2633,6 +2938,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   <div class="brand">СЕВЕРО<i>/</i>ЮГ</div>
   <div class="chips">
     <div class="chip lvl" id="lvl">ур. …</div>
+    <div class="chip cr" id="cr">💎 …</div>
     <div class="chip bal" id="bal">…</div>
   </div>
 </div>
@@ -2909,6 +3215,7 @@ async function load(){
     if (d.error){ toast(d.error); return; }
     S.data = d;
     document.getElementById("bal").textContent = "$ " + money(d.me.balance);
+    document.getElementById("cr").textContent = "💎 " + money(d.me.crystals || 0);
     document.getElementById("lvl").textContent = "ур. " + d.me.level;
     renderTicker(); renderTiles();
   }catch(e){ toast("Не смог загрузить"); }
@@ -4558,6 +4865,23 @@ async def _profile_payload(state, user_id: int) -> dict[str, Any]:
     data = await state.db.player_profile(user_id) or {}
     name = data.get("first_name") or data.get("username") or "игрок"
     xp = int(data.get("xp") or 0)
+    prefs = await _prefs(state, user_id)
+    pinned = None
+    if prefs["pinned"]:
+        card = CARDS_BY_ID.get(str(prefs["pinned"]))
+        if card is not None:
+            pinned = {
+                "id": card.card_id,
+                "name": card.display_name,
+                "emoji": card.rarity_emoji,
+                "rarity": card.rarity,
+                "rarity_title": rarity_name(card.rarity),
+                "image": image_url(card.card_id),
+                "hp": card.hp,
+                "atk": card.atk,
+                "points": card.points,
+                "fx": cardsfx.payload(card.rarity),
+            }
     return {
         "id": int(user_id),
         "name": name,
@@ -4585,6 +4909,9 @@ async def _profile_payload(state, user_id: int) -> dict[str, Any]:
         "tags": [
             {"key": t, "label": profiles.tag_label(t)} for t in tags
         ],
+        "crystals": await state.db.player_crystals(user_id),
+        "pinned": pinned,
+        "fx_enabled": bool(prefs["fx"]),
     }
 
 
@@ -4743,6 +5070,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .save{width:100%;margin-top:14px;border:0;border-radius:13px;padding:15px;font-size:15px;
   font-weight:900;background:var(--acc);color:var(--acc-ink)}
 .empty{text-align:center;color:var(--muted);padding:40px 16px;font-size:13px;line-height:1.6}
+
+/* Витрина: карточка, которую игрок повесил в профиль (app/cardsfx.py) */
+.vitrine{margin:0 0 12px;padding:12px 14px;border-radius:16px;background:var(--panel);
+  border:1.5px solid var(--line);position:relative;overflow:hidden;--fxc:#334155}
+.vitrine.fx-l1,.vitrine.fx-l2{border-color:var(--fxc);box-shadow:0 0 16px -6px var(--fxc)}
+.vitrine.fx-l3,.vitrine.fx-l4{border-color:var(--fxc);box-shadow:0 0 22px -6px var(--fxc)}
+.vitrine.fx-l5{border:2px solid transparent;
+  background:linear-gradient(var(--panel),var(--panel)) padding-box,
+    conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#111,var(--fxc)) border-box;
+  box-shadow:0 0 26px -4px var(--fxc)}
+.vitrine .vt{font-size:10px;letter-spacing:1.4px;text-transform:uppercase;
+  color:var(--muted);font-weight:800}
+.vitrine .vrow{display:flex;gap:12px;align-items:center;margin-top:8px;position:relative;z-index:2}
+.vitrine .part{width:62px;height:62px;border-radius:12px;object-fit:cover;background:var(--panel2);
+  display:flex;align-items:center;justify-content:center;font-size:30px;flex:0 0 auto}
+.vitrine .vn{font-size:16px;font-weight:900;line-height:1.15}
+.vitrine .vr{font-size:11px;color:var(--fxc);text-transform:uppercase;letter-spacing:.8px;
+  font-weight:800;margin-top:2px}
+.vitrine .vs{font-size:12px;color:var(--muted);margin-top:3px}
+.vitrine .vs b{color:var(--ink)}
 #toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
   border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
   transform:translateY(220%);transition:.25s;z-index:30}
@@ -4770,6 +5117,22 @@ function toast(t){
   el.textContent = t; el.className = "on";
   clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2800);
 }
+function pinnedHtml(d){
+  const c = d.pinned;
+  if (!c) return "";
+  const lvl = (c.fx && c.fx.level) || 0;
+  const color = (c.fx && c.fx.color) || "#334155";
+  const art = c.image
+    ? '<img class="part" src="' + esc(c.image) + '" alt="">'
+    : '<div class="part">' + (c.emoji || "") + '</div>';
+  return '<div class="vitrine' + (lvl ? " fx-l" + lvl : "") + '" style="--fxc:' + color + '">' +
+    '<div class="vt">\uD83D\uDCCC карточка в профиле</div>' +
+    '<div class="vrow">' + art +
+      '<div><div class="vn">' + esc(c.name) + '</div>' +
+      '<div class="vr">' + esc(c.rarity_title) + '</div>' +
+      '<div class="vs"><b>' + c.hp + '</b> HP · <b>' + c.atk + '</b> атака</div></div>' +
+    '</div></div>';
+}
 function cardHtml(d){
   const tags = (d.tags || []).map(t => '<span class="tag">' + esc(t.label) + '</span>').join("");
   const rewards = (d.rewards || []).length
@@ -4784,6 +5147,7 @@ function cardHtml(d){
       '</div>' +
     '</div>' +
     '<div class="body">' +
+      pinnedHtml(d) +
       '<div class="nm">' + esc(d.name) + (d.vip ? '<span class="crown">👑</span>' : "") + tags + '</div>' +
       (d.status ? '<div class="st">' + esc(d.status) + '</div>' : '') +
       (d.bio ? '<div class="bio">' + esc(d.bio) + '</div>' : '') +
@@ -4900,8 +5264,9 @@ async def api_collection(request: Request) -> JSONResponse:
 
     user_id = int(user["id"])
     counts = await state.db.get_collection(user_id)
+    prefs = await _prefs(state, user_id)
     cards = []
-    for card in cards_sorted_for_user(list(counts)):
+    for card in _owned_cards(counts):
         cards.append(
             {
                 "id": card.card_id,
@@ -4918,6 +5283,9 @@ async def api_collection(request: Request) -> JSONResponse:
                 "ability": card.ability.name,
                 "ability_text": describe_ability(card),
                 "description": card.description or "",
+                # Оформление и анимация раскрытия — по редкости.
+                "fx": cardsfx.payload(card.rarity),
+                "pinned": prefs["pinned"] == card.card_id,
             }
         )
     upgraded = []
@@ -4943,6 +5311,9 @@ async def api_collection(request: Request) -> JSONResponse:
             "balance": await state.market.balance(user_id),
             "upgrade_price": UPGRADE_PRICE,
             "total": len(cards),
+            "crystals": await state.db.player_crystals(user_id),
+            "fx": bool(prefs["fx"]),
+            "pinned": prefs["pinned"],
         }
     )
 
@@ -5082,6 +5453,73 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .part .i{font-size:24px}
 .part .n{font-size:13.5px;font-weight:800}
 .part .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+
+/* ===== Визуальный отклик карточки: уровни 0..5 (app/cardsfx.py) ===== */
+.card{--fxc:#334155}
+.card.fx-l1{border-color:var(--fxc);box-shadow:0 0 10px -2px var(--fxc)}
+.card.fx-l2{border-color:var(--fxc);animation:__fxpulse 2.6s ease-in-out infinite}
+.card.fx-l3{border-color:var(--fxc);box-shadow:0 0 14px -3px var(--fxc),inset 0 0 22px -14px var(--fxc)}
+.card.fx-l4,.card.fx-l5{border-color:var(--fxc);box-shadow:0 0 16px -2px var(--fxc),inset 0 0 26px -16px var(--fxc)}
+.card.fx-l4::after,.card.fx-l5::after{content:"";position:absolute;inset:-40%;pointer-events:none;
+  background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.35) 50%,transparent 58%);
+  animation:__fxshine 3.6s linear infinite}
+.card .pinmark{position:absolute;z-index:6;left:4px;top:4px;font-size:11px}
+@keyframes __fxpulse{0%,100%{box-shadow:0 0 8px -3px var(--fxc)}50%{box-shadow:0 0 18px -1px var(--fxc)}}
+@keyframes __fxshine{from{transform:translateX(-60%)}to{transform:translateX(60%)}}
+
+/* Большая карточка: рамка по редкости и декор поверх шапки */
+.cvcard{--fxc:#334155;position:relative;overflow:hidden}
+.cvcard.fx-l1{border-color:var(--fxc)}
+.cvcard.fx-l2{border-color:var(--fxc);box-shadow:0 0 18px -6px var(--fxc)}
+.cvcard.fx-l3{border-color:var(--fxc);box-shadow:0 0 22px -6px var(--fxc),inset 0 0 40px -22px var(--fxc)}
+.cvcard.fx-l4{border-color:var(--fxc);box-shadow:0 0 26px -4px var(--fxc),inset 0 0 44px -20px var(--fxc)}
+.cvcard.fx-l5{border:2px solid transparent;
+  background:linear-gradient(var(--panel),var(--panel)) padding-box,
+    conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#111,var(--fxc)) border-box;
+  box-shadow:0 0 34px -4px var(--fxc)}
+.cvcard .decor{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.cvcard .decor .rays{position:absolute;left:50%;top:-60%;width:200%;height:200%;
+  transform:translateX(-50%);opacity:.16;
+  background:conic-gradient(from 0deg,transparent 0 6deg,var(--fxc) 6deg 8deg,transparent 8deg 24deg);
+  animation:__fxspin 18s linear infinite}
+.cvcard .decor .halo{position:absolute;left:50%;top:-6px;width:130px;height:26px;transform:translateX(-50%);
+  border-radius:50%;background:radial-gradient(ellipse at center,var(--fxc),transparent 70%);
+  opacity:.75;filter:blur(3px)}
+.cvcard .decor .crown{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
+  font-size:22px;line-height:1;filter:drop-shadow(0 0 6px var(--fxc))}
+.cvcard .decor .rune{position:absolute;inset:0;border:1px dashed var(--fxc);border-radius:16px;
+  margin:3px;opacity:.5}
+.cvcard .top,.cvcard .stats,.cvcard .block,.cvcard .upg,.cvcard .pin{position:relative;z-index:2}
+.cvcard .pin{margin-top:10px;width:100%;border:1px solid var(--line);background:transparent;
+  color:var(--muted);border-radius:12px;padding:11px;font-size:12.5px;font-weight:800}
+.cvcard .pin.on{color:var(--acc2);border-color:var(--acc2)}
+@keyframes __fxspin{to{transform:translateX(-50%) rotate(360deg)}}
+
+/* Оверлей раскрытия: вспышка, лучи, искры */
+.reveal{position:fixed;inset:0;z-index:9500;pointer-events:none;overflow:hidden;
+  --fxc:#334155;animation:__fxfade .22s ease both}
+.reveal.done{opacity:0;transition:opacity .3s ease}
+.reveal .rflash{position:absolute;left:50%;top:44%;width:24px;height:24px;
+  transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(circle,#fff,var(--fxc) 42%,transparent 70%);
+  animation:__fxburst .9s cubic-bezier(.2,.8,.2,1) both}
+.reveal .rrays{position:absolute;left:50%;top:44%;width:150vmax;height:150vmax;
+  transform:translate(-50%,-50%);opacity:.22;
+  background:conic-gradient(from 0deg,transparent 0 5deg,var(--fxc) 5deg 7deg,transparent 7deg 30deg);
+  animation:__fxspin 9s linear infinite}
+.reveal .rveil{position:absolute;inset:0;
+  background:radial-gradient(circle at 50% 44%,transparent 30%,rgba(4,6,10,.86) 100%)}
+.reveal .rspark{position:absolute;width:6px;height:6px;border-radius:50%;background:#fff;
+  box-shadow:0 0 10px var(--fxc);animation:__fxspark 1.1s ease-out both}
+.reveal .rburst{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);font-size:64px;
+  animation:__fxpop 1s cubic-bezier(.2,.9,.3,1.2) both;filter:drop-shadow(0 0 18px var(--fxc))}
+@keyframes __fxfade{from{opacity:0}to{opacity:1}}
+@keyframes __fxburst{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
+  35%{opacity:1}100%{transform:translate(-50%,-50%) scale(26);opacity:0}}
+@keyframes __fxpop{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+  50%{opacity:1}100%{transform:translate(-50%,-80%) scale(1.15);opacity:0}}
+@keyframes __fxspark{0%{transform:translate(0,0);opacity:1}
+  100%{transform:translate(var(--dx,0),var(--dy,-90px)) scale(.2);opacity:0}}
 #toast{position:fixed;left:14px;right:14px;bottom:16px;background:var(--panel2);color:var(--ink);
   border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
   transform:translateY(220%);transition:.25s;z-index:70}
@@ -5135,8 +5573,9 @@ function render(){
     var src = S.tab === "d" ? d.cards.filter(isD) : d.cards.filter(function(c){ return !isD(c); });
     document.getElementById("list").innerHTML = src.length
       ? '<div class="grid">' + src.map(c =>
-          '<div class="card r-' + c.rarity + '" data-c="' + c.id + '">' +
+          '<div class="card r-' + c.rarity + fxClass(c) + '" data-c="' + c.id + '"' + fxStyle(c) + '>' +
           (c.count > 1 ? '<div class="ct">\u00d7' + c.count + '</div>' : '') +
+          (c.pinned ? '<div class="pinmark">\uD83D\uDCCC</div>' : '') +
           (c.image ? '<img src="' + esc(c.image) + '" alt="">' : '<div class="ic">' + c.emoji + '</div>') +
           '<div class="nm">' + esc(c.name) + '</div>' +
           '<div class="pr">' + money(c.price) + '</div></div>').join("") + '</div>'
@@ -5154,14 +5593,67 @@ function render(){
       : '<div class="empty">Улучшенных копий пока нет.<br>Открой карту и нажми «Улучшить».</div>';
   }
 }
+function fxLevel(c){ return (c && c.fx && c.fx.level) || 0; }
+function fxClass(c){ var l = fxLevel(c); return l ? (" fx-l" + l) : ""; }
+function fxStyle(c){ return ' style="--fxc:' + ((c && c.fx && c.fx.color) || "#334155") + '"'; }
+function decorHtml(c){
+  var list = (c.fx && c.fx.decor) || [];
+  var parts = list.map(function(k){
+    if (k === "rays") return '<div class="rays"></div>';
+    if (k === "halo") return '<div class="halo"></div>';
+    if (k === "crown") return '<div class="crown">\uD83D\uDC51</div>';
+    if (k === "rune") return '<div class="rune"></div>';
+    return "";
+  }).join("");
+  return parts ? '<div class="decor">' + parts + '</div>' : "";
+}
+function haptic(level){
+  if (!tg || !tg.HapticFeedback) return;
+  try{ tg.HapticFeedback.impactOccurred(level >= 4 ? "heavy" : "medium"); }catch(e){}
+}
+/* Раскрытие карточки: редкая открывается сразу, ультра — с вспышкой,
+   лучами и тряской на весь экран. Отключается в настройках. */
+function revealCard(c, done){
+  var level = fxLevel(c);
+  if (!S.data.fx || level <= 0){ done(); return; }
+  var ms = (c.fx && c.fx.reveal_ms) || 600;
+  var ov = document.createElement("div");
+  ov.className = "reveal lv" + level;
+  ov.style.setProperty("--fxc", (c.fx && c.fx.color) || "#334155");
+  var html = '<div class="rflash"></div>';
+  if (level >= 3) html += '<div class="rveil"></div>';
+  if (level >= 4) html += '<div class="rrays"></div>';
+  if (level >= 4) html += '<div class="rburst">' + (c.fx.emoji || "") + '</div>';
+  if (level >= 2){
+    var sparks = "";
+    for (var i = 0; i < (level >= 5 ? 22 : 10); i++){
+      var dx = Math.round(Math.random() * 320 - 160);
+      var dy = Math.round(-60 - Math.random() * 180);
+      sparks += '<div class="rspark" style="left:' + (46 + Math.random() * 8) +
+        '%;top:' + (40 + Math.random() * 10) + '%;--dx:' + dx + 'px;--dy:' + dy +
+        'px;animation-delay:' + (Math.random() * 0.25).toFixed(2) + 's"></div>';
+    }
+    html += sparks;
+  }
+  ov.innerHTML = html;
+  document.body.appendChild(ov);
+  haptic(level);
+  setTimeout(function(){ ov.classList.add("done"); }, Math.max(120, ms * 0.55));
+  setTimeout(function(){ ov.remove(); done(); }, ms);
+}
 function openCard(id){
   const c = S.data.cards.find(x => x.id === id);
   if (!c) return;
+  if (fxLevel(c) > 0 && S.data.fx) revealCard(c, function(){ paintCard(c); });
+  else paintCard(c);
+}
+function paintCard(c){
   const can = S.data.balance >= S.data.upgrade_price && c.count > 0;
   var view = document.getElementById("cardView");
   view.innerHTML =
     '<button class="cvback" id="cvBack">\u2190 Назад</button>' +
-    '<div class="cvcard">' +
+    '<div class="cvcard' + fxClass(c) + '"' + fxStyle(c) + '>' +
+    decorHtml(c) +
     '<div class="top">' +
       (c.image ? '<img class="art" src="' + esc(c.image) + '" alt="">'
                : '<div class="art">' + c.emoji + '</div>') +
@@ -5179,6 +5671,9 @@ function openCard(id){
     '<div id="upgResult"></div>' +
     '<button class="upg" id="upgBtn"' + (can ? "" : " disabled") + '>Улучшить за ' +
       money(S.data.upgrade_price) + ' очк.</button>' +
+    '<button class="pin' + (c.pinned ? " on" : "") + '" id="pinBtn">' +
+      (c.pinned ? '\uD83D\uDCCC Снять из профиля' : '\uD83D\uDCCC Поставить в профиль') +
+      '</button>' +
     '</div>';
   document.getElementById("list").style.display = "none";
   var tabs = document.querySelector(".tabs");
@@ -5187,8 +5682,24 @@ function openCard(id){
   window.scrollTo(0, 0);
   const b = document.getElementById("upgBtn");
   if (b) b.onclick = () => upgrade(c.id);
+  const pin = document.getElementById("pinBtn");
+  if (pin) pin.onclick = () => pinCard(c);
   const back = document.getElementById("cvBack");
   if (back) back.onclick = closeModal;
+}
+async function pinCard(c){
+  try{
+    const r = await fetch("/api/profile/pin", {method:"POST", headers,
+      body: JSON.stringify({card_id: c.pinned ? "" : c.id})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.data.cards.forEach(function(x){ x.pinned = (x.id === d.pinned); });
+    S.data.pinned = d.pinned;
+    toast(d.pinned ? "Карточка теперь в профиле" : "Карточка убрана из профиля");
+    render();
+    const fresh = S.data.cards.find(x => x.id === c.id);
+    if (fresh) paintCard(fresh);
+  }catch(e){ toast("Связь потерялась"); }
 }
 function closeModal(){
   var v = document.getElementById("cardView");
@@ -5235,6 +5746,7 @@ async function load(){
     S.data = d; render();
   }catch(e){ toast("Не смог загрузить"); }
 }
+window.__onPrefs = function(){ if (S.data) load(); };
 document.getElementById("tabCards").onclick = () => { S.tab = "cards"; render(); };
 document.getElementById("tabD").onclick = () => { S.tab = "d"; render(); };
 document.getElementById("tabUpg").onclick = () => { S.tab = "upg"; render(); };

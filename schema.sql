@@ -807,3 +807,26 @@ create table if not exists game_log (
 );
 create index if not exists game_log_created_idx on game_log (created_at desc);
 create index if not exists game_log_user_idx on game_log (user_id, created_at desc);
+-- ===================================================================== --
+-- Кристаллы: вторая валюта. Рулетка, кейсы и всё, что владелец добавит
+-- дальше, работает через этот баланс. Отдельный счётчик спинов, потому что
+-- у кристальной рулетки свои сутки и своя цена дополнительного спина.
+-- ===================================================================== --
+
+alter table players add column if not exists crystals bigint not null default 0;
+alter table players add column if not exists crystal_day date;
+alter table players add column if not exists crystal_uses integer not null default 0;
+
+create index if not exists players_crystals_idx on players (crystals desc);
+
+-- ===================================================================== --
+-- Настройки игрока: эффекты карточек, вид рулетки, закреплённая карточка.
+-- Одна строка на игрока, внутри jsonb — чтобы новые переключатели
+-- добавлялись без миграций.
+-- ===================================================================== --
+
+create table if not exists player_prefs (
+    user_id    bigint primary key references players(user_id) on delete cascade,
+    prefs      jsonb not null default '{}'::jsonb,
+    updated_at timestamptz not null default now()
+);

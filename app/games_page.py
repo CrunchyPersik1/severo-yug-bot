@@ -341,41 +341,116 @@ ROULETTE_PAGE = r"""<!doctype html>
 :root{--bg:#0f1117;--card:#171a23;--line:#252a38;--ink:#e8ebf2;--muted:#8b93a7}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:110px}
-header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between}
-h1{margin:0;font-size:19px}
-.wallet{font-weight:700;font-size:15px;background:#1e2140;color:#c7c9ff;border-radius:999px;padding:7px 14px}
-main{padding:18px 16px 0;display:flex;flex-direction:column;align-items:center}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:120px}
+header{position:sticky;top:0;z-index:5;background:rgba(15,17,23,.94);border-bottom:1px solid var(--line);padding:14px 16px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+h1{margin:0;font-size:18px;white-space:nowrap}
+.wallet{display:flex;gap:7px;align-items:center;font-size:13px}
+.chip{background:#1e2140;color:#c7c9ff;border-radius:999px;padding:6px 11px;font-weight:800;white-space:nowrap}
+.chip.cr{background:#0e2a33;color:#6fe3f7}
+main{padding:14px 16px 0;display:flex;flex-direction:column;align-items:center}
+.kinds{display:flex;gap:8px;width:100%;margin-bottom:12px}
+.kinds button{flex:1;border:1px solid var(--line);background:#151822;color:var(--muted);border-radius:13px;padding:12px 6px;font-size:13.5px;font-weight:800;font-family:inherit}
+.kinds button.on{background:linear-gradient(135deg,#f59e0b,#b45309);color:#1a1205;border-color:transparent}
+.views{display:flex;gap:8px;width:100%;margin-bottom:14px}
+.views button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;padding:9px 0;font-size:12.5px;font-weight:800;font-family:inherit}
+.views button.on{background:#26233a;color:#f6c94a;border-color:#f59e0b}
 .stage{position:relative;display:inline-block;padding-top:14px}
+.stage.hidden{display:none}
 .pointer{position:absolute;left:50%;top:0;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:18px solid #f59e0b;z-index:4;filter:drop-shadow(0 0 6px #f59e0b)}
 canvas{display:block;border-radius:50%;box-shadow:0 0 0 4px #1b1f2b, 0 10px 30px rgba(0,0,0,.5)}
-.result{margin-top:18px;width:100%;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:15px;line-height:1.5;min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center}
-.sp{display:flex;justify-content:space-between;width:100%;margin-top:10px;font-size:13px;color:var(--muted)}
-.spin{margin-top:16px;width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#dc2626,#7f1d1d)}
+.reels{width:100%;display:none}
+.reels.on{display:block}
+.reelwrap{position:relative;overflow:hidden;padding:12px 0;background:#12141c;border-top:1px solid var(--line);border-bottom:1px solid var(--line);--tw:86px;--th:96px}
+.reelwrap+.reelwrap{border-top:0}
+.reelwrap.mini{--tw:64px;--th:74px;padding:6px 0}
+.reel{display:flex;gap:8px;will-change:transform}
+.tile{flex:0 0 var(--tw);width:var(--tw);height:var(--th);border-radius:12px;background:#1b1f2b;border:2px solid #334155;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;overflow:hidden}
+.tile .tl{font-size:11px;text-align:center;padding:0 4px;color:#e5e7eb;font-weight:800;line-height:1.15}
+.tile .pc{font-size:10px;color:#8b93a7}
+.reelwrap.mini .tile .tl{font-size:9px}
+.reelwrap.mini .tile .pc{font-size:8px}
+.marker{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#f59e0b;box-shadow:0 0 12px #f59e0b;z-index:3}
+.result{margin-top:16px;width:100%;padding:14px;border-radius:14px;background:var(--card);border:1px solid var(--line);font-size:14.5px;line-height:1.6;min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center}
+.sp{display:flex;justify-content:space-between;width:100%;margin-top:10px;font-size:12.5px;color:var(--muted);gap:10px}
+.sp b{color:var(--ink)}
+.howmany{display:flex;gap:8px;width:100%;margin-top:12px}
+.howmany button{flex:1;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:11px;padding:11px 0;font-size:13px;font-weight:800;font-family:inherit}
+.howmany button.on{background:#f59e0b;color:#1a1205;border-color:transparent}
+.spin{margin-top:12px;width:100%;border:0;border-radius:14px;padding:16px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(135deg,#dc2626,#7f1d1d);font-family:inherit}
+.spin.crystal{background:linear-gradient(135deg,#0891b2,#155e75)}
 .spin:disabled{opacity:.45}
+.hint{margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.5}
 #toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;border-radius:12px;padding:14px 16px;font-size:14px;transform:translateY(150%);transition:.26s;z-index:9}
 #toast.on{transform:translateY(0)}
 #toast.bad{background:#b91c1c}
 </style>
 </head>
 <body>
-<header><h1>🎡 Рулетка</h1><div class="wallet">🎟 <span id="spins">…</span></div></header>
+<header>
+  <h1 id="title">🎡 Рулетка</h1>
+  <div class="wallet">
+    <span class="chip" id="spins">🎟 …</span>
+    <span class="chip cr" id="crystals">💎 …</span>
+  </div>
+</header>
 <main>
-  <div class="stage"><div class="pointer"></div><canvas id="wheel"></canvas></div>
-  <div class="result" id="result">Жми «Крутить» — колесо завертится.</div>
+  <div class="kinds" id="kinds">
+    <button data-k="classic" class="on">🎡 Классическая</button>
+    <button data-k="crystal">💎 Кристальная</button>
+  </div>
+  <div class="views" id="views">
+    <button data-v="wheel" class="on">Колесо</button>
+    <button data-v="reel">Лента</button>
+  </div>
+
+  <div class="stage" id="stage"><div class="pointer"></div><canvas id="wheel"></canvas></div>
+  <div class="reels" id="reels"></div>
+
+  <div class="result" id="result">Жми «Крутить» — приз уже в колесе.</div>
   <div class="sp"><span>Баланс: <b id="balance">…</b></span><span id="reset"></span></div>
+
+  <div class="howmany" id="howmany">
+    <button data-n="1" class="on">1 спин</button>
+    <button data-n="2">2 спина</button>
+    <button data-n="3">3 спина</button>
+  </div>
   <button class="spin" id="spin">Крутить</button>
+  <div class="hint" id="hint"></div>
 </main>
 <div id="toast"></div>
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type":"application/json"};
-let segments = [], currentRot = 0, spinning = false, spinsLeft = 0;
+const SHORT = {
+  points_0: "100-500", points_1: "500-1к", points_2: "1-2.5к", points_3: "2.5-5к",
+  case: "Кейс", card: "Дэниэл",
+  crystals_10: "10 💎", crystals_5: "5 💎",
+  case_ultra: "Ультра", case_d: "7Д", case_g: "7Г",
+  points_big: "5-50к", points_small: "1-5к"
+};
+const PRICE = 25000;
+let kind = "classic", view = "wheel", count = 1, spinning = false;
+let segments = [], spinsLeft = 0, freeLeft = 0, balance = 0, crystals = 0, price = 0;
+let currentRot = 0, maxAtOnce = 3;
 const canvas = document.getElementById("wheel");
+const stage = document.getElementById("stage");
+const reelsBox = document.getElementById("reels");
 const result = document.getElementById("result");
 const spinBtn = document.getElementById("spin");
+const hint = document.getElementById("hint");
+
 function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
 function toast(t,k){ var el=document.getElementById("toast"); el.textContent=t; el.className="on "+(k||""); clearTimeout(el._t); el._t=setTimeout(function(){el.className="";},3200); }
+function shortOf(seg){ return SHORT[seg.key] || seg.label || "?"; }
+function pctOf(seg){
+  var p = Number(seg.weight||0)*100;
+  return (p < 1 ? p.toFixed(2) : (p < 10 ? p.toFixed(1) : String(Math.round(p)))) + "%";
+}
+function segAt(index){
+  return segments[index] || {key: "?", label: "?", color: "#334155", weight: 0};
+}
+
+/* ---------- колесо ---------- */
 function draw(segs){
   var size = Math.min(300, window.innerWidth - 80);
   var dpr = window.devicePixelRatio || 1;
@@ -388,13 +463,15 @@ function draw(segs){
   segs.forEach(function(s){
     var a = s.angle * Math.PI/180;
     ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R,angle,angle+a); ctx.closePath();
-    ctx.fillStyle = s.color; ctx.fill();
+    ctx.fillStyle = s.color || "#334155"; ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,.4)"; ctx.lineWidth = 1; ctx.stroke();
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle + a/2);
-    ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff"; ctx.font = "bold 11px sans-serif";
-    ctx.fillText(s.label, R - 10, 0);
-    ctx.restore();
+    if (a > 0.32){
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(angle + a/2);
+      ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff"; ctx.font = "bold 11px sans-serif";
+      ctx.fillText(shortOf(s), R - 10, 0);
+      ctx.restore();
+    }
     angle += a;
   });
   ctx.beginPath(); ctx.arc(cx,cy,11,0,Math.PI*2); ctx.fillStyle="#0f1117"; ctx.fill();
@@ -413,45 +490,186 @@ function spinTo(index){
   var delta = (want - cur + 360) % 360;
   var turns = 6 + Math.floor(Math.random()*3);
   currentRot += turns*360 + delta;
-  canvas.style.transition = "transform 5.5s cubic-bezier(.14,.74,.06,1)";
+  canvas.style.transition = "transform 5.2s cubic-bezier(.14,.74,.06,1)";
   canvas.style.transform = "rotate(" + currentRot + "deg)";
 }
-async function spin(){
-  if(spinning) return;
-  spinning = true; spinBtn.disabled = true;
-  result.textContent = "Крутим...";
-  try{
-    var r = await fetch("/api/roulette/spin", {method:"POST", headers, body:"{}"});
-    var d = await r.json();
-    if(d.error){ toast(d.error,"bad"); spinning=false; spinBtn.disabled=spinsLeft<=0; return; }
-    spinTo(d.index);
-    setTimeout(function(){
-      result.innerHTML = d.prize_label;
-      spinsLeft = d.spins_left;
-      document.getElementById("spins").textContent = spinsLeft;
-      document.getElementById("balance").textContent = money(d.balance);
-      spinning = false;
-      spinBtn.disabled = spinsLeft <= 0;
-      if(spinsLeft <= 0) spinBtn.textContent = "\u0421\u043f\u0438\u043d\u044b \u043a\u043e\u043d\u0447\u0438\u043b\u0438\u0441\u044c";
-    }, 5700);
-  }catch(e){ toast("\u0421\u0432\u044f\u0437\u044c \u043f\u043e\u0442\u0435\u0440\u044f\u043b\u0430\u0441\u044c","bad"); spinning=false; spinBtn.disabled=spinsLeft<=0; }
+
+/* ---------- лента ---------- */
+function tile(seg){
+  return '<div class="tile" style="border-color:' + (seg.color || "#334155") + '">' +
+    '<div class="tl">' + shortOf(seg) + '</div>' +
+    '<div class="pc">' + pctOf(seg) + '</div></div>';
+}
+function makeReel(winIndex, mini){
+  var wrap = document.createElement("div");
+  wrap.className = "reelwrap" + (mini ? " mini" : "");
+  var marker = document.createElement("div");
+  marker.className = "marker";
+  var el = document.createElement("div");
+  el.className = "reel";
+  wrap.appendChild(marker);
+  wrap.appendChild(el);
+  reelsBox.appendChild(wrap);
+  var tw = mini ? 64 : 86;
+  var total = mini ? 34 : 56;
+  var target = mini ? 28 : 48;
+  var html = "";
+  for (var i = 0; i < total; i++){
+    html += tile(i === target ? segAt(winIndex) : segAt(Math.floor(Math.random()*segments.length)));
+  }
+  el.innerHTML = html;
+  return {el: el, target: target, step: tw + 8, tw: tw};
+}
+function spinReel(item){
+  var center = reelsBox.clientWidth / 2 || window.innerWidth / 2;
+  var jitter = (Math.random() * 36) - 18;
+  var offset = item.target * item.step + item.tw / 2 - center + jitter;
+  setTimeout(function(){
+    item.el.style.transition = "transform 4.2s cubic-bezier(.12,.72,.06,1)";
+    item.el.style.transform = "translateX(" + (-offset) + "px)";
+  }, 30);
+}
+
+/* ---------- состояние ---------- */
+function sync(){
+  document.getElementById("spins").textContent = kind === "crystal"
+    ? ("🎟 " + freeLeft + " бонус")
+    : ("🎟 " + spinsLeft);
+  document.getElementById("crystals").textContent = "💎 " + money(crystals);
+  document.getElementById("balance").textContent = money(balance);
+  document.getElementById("title").textContent = kind === "crystal" ? "💎 Кристальная" : "🎡 Рулетка";
+  document.querySelectorAll("#kinds [data-k]").forEach(function(b){
+    b.className = b.dataset.k === kind ? "on" : "";
+  });
+  document.querySelectorAll("#views [data-v]").forEach(function(b){
+    b.className = b.dataset.v === view ? "on" : "";
+  });
+  document.querySelectorAll("#howmany [data-n]").forEach(function(b){
+    b.className = Number(b.dataset.n) === count ? "on" : "";
+  });
+  stage.className = "stage" + (view === "wheel" ? "" : " hidden");
+  reelsBox.className = "reels" + (view === "reel" ? " on" : "");
+
+  spinBtn.className = "spin" + (kind === "crystal" ? " crystal" : "");
+  var paid = 0;
+  if (kind === "crystal"){
+    var free = Math.min(freeLeft, count);
+    paid = Math.max(0, count - free);
+  }
+  var enough = kind === "crystal" ? balance >= paid * PRICE : spinsLeft >= count;
+  spinBtn.disabled = spinning || !enough;
+  var suffix = kind === "crystal"
+    ? (paid > 0 ? (" · " + money(paid * PRICE) + " очков") : " · бесплатно")
+    : "";
+  spinBtn.textContent = count > 1
+    ? ("Крутить " + count + " раза" + suffix)
+    : ("Крутить" + suffix);
+
+  if (kind === "crystal"){
+    hint.textContent = "Бесплатный спин — 1 в сутки. Каждый следующий — " + money(PRICE) + " очков.";
+  } else {
+    hint.textContent = "Одна крутка в сутки, ещё пять даёт VIP.";
+  }
+  if (!enough){
+    hint.textContent = kind === "crystal"
+      ? ("Не хватает очков: нужно " + money(paid * PRICE))
+      : "Спины на сегодня кончились — жди сброса.";
+  }
+}
+function showResult(list){
+  result.innerHTML = list.map(function(item){ return item.label || "—"; }).join("<br>");
 }
 async function load(){
   try{
-    var r = await fetch("/api/roulette", {headers});
+    var r = await fetch("/api/roulette?kind=" + kind, {headers});
     var d = await r.json();
-    if(d.error){ result.textContent = d.error; return; }
-    prep(d.segments || []);
+    if (d.error){ result.textContent = d.error; return; }
+    if (d.kind) kind = d.kind;
+    if (d.view) view = d.view;
+    if (d.max_at_once) maxAtOnce = d.max_at_once;
     spinsLeft = d.spins_left || 0;
-    document.getElementById("spins").textContent = spinsLeft;
-    document.getElementById("balance").textContent = money(d.balance);
+    freeLeft = d.free_left || 0;
+    balance = d.balance || 0;
+    crystals = d.crystals || 0;
+    price = d.price || 0;
+    count = Math.min(count, maxAtOnce);
     document.getElementById("reset").textContent = d.reset_text || "";
-    spinBtn.disabled = spinsLeft <= 0;
-    if(spinsLeft <= 0) spinBtn.textContent = "\u0421\u043f\u0438\u043d\u044b \u043a\u043e\u043d\u0447\u0438\u043b\u0438\u0441\u044c";
-  }catch(e){ result.textContent = "\u041d\u0435 \u0441\u043c\u043e\u0433 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0440\u0443\u043b\u0435\u0442\u043a\u0443"; }
+    prep(d.segments || []);
+    if (view === "reel"){
+      if (!reelsBox.children.length){
+        makeReel(Math.floor(Math.random() * (d.segments || []).length), false);
+      }
+    } else {
+      reelsBox.innerHTML = "";
+    }
+    sync();
+  }catch(e){ result.textContent = "Не смог загрузить рулетку"; }
 }
+async function saveView(v){
+  view = v;
+  sync();
+  try{
+    var patch = {};
+    patch[kind === "crystal" ? "view_crystal" : "view_classic"] = v;
+    await fetch("/api/prefs", {method:"POST", headers, body: JSON.stringify(patch)});
+  }catch(e){}
+}
+async function spin(){
+  if (spinning) return;
+  spinning = true; sync();
+  result.textContent = "Крутим…";
+  try{
+    var r = await fetch("/api/roulette/spin", {
+      method:"POST", headers,
+      body: JSON.stringify({kind: kind, count: count})
+    });
+    var d = await r.json();
+    if (d.error){ toast(d.error, "bad"); spinning = false; sync(); return; }
+    var items = d.results || [];
+    spinsLeft = kind === "crystal" ? (d.spins_left || 0) : (d.spins_left || 0);
+    freeLeft = d.spins_left || 0;
+    balance = d.balance || 0;
+    crystals = d.crystals || 0;
+
+    reelsBox.innerHTML = "";
+    if (view === "wheel" && items.length === 1){
+      spinTo(items[0].index || 0);
+      setTimeout(function(){
+        showResult(items);
+        spinning = false;
+        sync();
+        load();
+      }, 5400);
+      return;
+    }
+    var mini = items.length > 1;
+    var created = items.map(function(item){ return makeReel(item.index || 0, mini); });
+    void reelsBox.offsetWidth;
+    created.forEach(spinReel);
+    setTimeout(function(){
+      showResult(items);
+      spinning = false;
+      sync();
+      load();
+    }, 4600);
+  }catch(e){
+    toast("Связь потерялась", "bad");
+    spinning = false; sync();
+  }
+}
+document.querySelectorAll("#kinds [data-k]").forEach(function(b){
+  b.onclick = function(){ if (spinning) return; kind = b.dataset.k; chooseCount(); load(); };
+});
+document.querySelectorAll("#views [data-v]").forEach(function(b){
+  b.onclick = function(){ if (spinning) return; reelsBox.innerHTML = ""; saveView(b.dataset.v); };
+});
+document.querySelectorAll("#howmany [data-n]").forEach(function(b){
+  b.onclick = function(){ if (spinning) return; count = Number(b.dataset.n) || 1; sync(); };
+});
+function chooseCount(){ count = Math.min(count, 3); }
+window.__onPrefs = function(){ load(); };
 spinBtn.onclick = spin;
-if(tg){ tg.ready(); tg.expand(); }
+if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
 </body>

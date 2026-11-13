@@ -209,6 +209,42 @@ POLISH = r"""<style>
     flex:1;text-align:right;font-size:11.5px;color:var(--muted);
     letter-spacing:1.2px;text-transform:uppercase;font-weight:800;
   }
+
+  /* Настройки приложения: кнопка и модалка (одна на все страницы) */
+  #__gear{
+    position:fixed;right:14px;bottom:18px;z-index:9400;width:46px;height:46px;padding:0!important;
+    border-radius:50%!important;border:1px solid var(--line)!important;
+    background:var(--panel)!important;color:var(--ink)!important;font-size:20px!important;
+    line-height:1!important;box-shadow:0 8px 22px rgba(0,0,0,.45)!important;
+  }
+  body #__gear:active{ transform:scale(.93)!important }
+  .__ov{position:fixed;inset:0;z-index:9600;background:rgba(6,8,12,.74);
+    display:none;align-items:flex-end;justify-content:center}
+  .__ov.on{display:flex;animation:__fadeIn .2s ease both}
+  .__sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+    border-radius:20px 20px 0 0;padding:16px 16px 26px;max-height:82vh;overflow-y:auto;
+    animation:__zoomIn .26s cubic-bezier(.2,.9,.3,1.05) both}
+  .__hd{display:flex;justify-content:space-between;align-items:center;
+    font-size:16px;font-weight:900;margin-bottom:8px}
+  .__hd button{width:34px;height:34px;padding:0!important;border-radius:10px!important;
+    background:var(--panel2)!important;color:var(--ink)!important;
+    border:1px solid var(--line)!important;font-size:17px!important;box-shadow:none!important}
+  .__row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:12px 0;border-top:1px solid var(--line)}
+  .__row .__t{font-size:13.5px;font-weight:800}
+  .__row .__s{font-size:11.5px;color:var(--muted);margin-top:2px;max-width:190px;line-height:1.35}
+  .__seg{display:flex;gap:6px;flex:0 0 auto}
+  .__seg button{border:1px solid var(--line)!important;background:transparent!important;
+    color:var(--muted)!important;border-radius:10px!important;padding:8px 11px!important;
+    font-size:12px!important;font-weight:800!important;box-shadow:none!important}
+  .__seg button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
+  .__sw{border:1px solid var(--line)!important;background:var(--panel2)!important;
+    color:var(--muted)!important;border-radius:999px!important;padding:9px 16px!important;
+    font-size:12.5px!important;font-weight:800!important;box-shadow:none!important}
+  .__sw.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
+  .__note{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
 </style>
 """
 
@@ -285,7 +321,122 @@ BOOTSTRAP = POLISH + r"""<script>
     if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
   }, {passive:true});
 
+
+  /* ---------- Настройки приложения ---------- */
+  var PREFS = null;
+  var GEAR_SKIP = ["/proto_dungeon", "/proto_yugi"];
+
+  function prefsRequest(method, body, done){
+    var opts = {method: method, headers: headers};
+    if (body){
+      opts.headers = {"X-Telegram-Init-Data": headers["X-Telegram-Init-Data"],
+                      "Content-Type": "application/json"};
+      opts.body = JSON.stringify(body);
+    }
+    fetch("/api/prefs", opts).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.prefs){ PREFS = d; }
+      if (done) done(d || {});
+    }).catch(function(){ if (done) done({}); });
+  }
+
+  function gearButton(){
+    if (document.getElementById("__gear")) return;
+    if (GEAR_SKIP.indexOf(location.pathname) >= 0) return;
+    prefsRequest("GET", null, function(d){
+      if (!d || !d.prefs) return;
+      PREFS = d;
+      var btn = document.createElement("button");
+      btn.id = "__gear";
+      btn.type = "button";
+      btn.textContent = "\u2699";
+      btn.setAttribute("aria-label", "Настройки");
+      btn.onclick = openSettings;
+      document.body.appendChild(btn);
+    });
+  }
+
+  function segRow(key, title, sub, value){
+    return '<div class="__row"><div><div class="__t">' + title + '</div>' +
+      '<div class="__s">' + sub + '</div></div><div class="__seg" data-key="' + key + '">' +
+      '<button data-v="wheel" class="' + (value === "wheel" ? "on" : "") + '">Колесо</button>' +
+      '<button data-v="reel" class="' + (value === "reel" ? "on" : "") + '">Лента</button>' +
+      '</div></div>';
+  }
+
+  function paintSettings(ov){
+    var d = PREFS || {};
+    var p = d.prefs || {fx: true, view_classic: "wheel", view_crystal: "wheel", pinned: ""};
+    var pin = d.pinned_card;
+    ov.innerHTML = '<div class="__sheet">' +
+      '<div class="__hd"><span>\u2699 Настройки</span>' +
+      '<button id="__gear-x">\u00d7</button></div>' +
+      '<div class="__row"><div><div class="__t">Эффекты карточек</div>' +
+      '<div class="__s">Вспышка, лучи и обводка при открытии редкой карты</div></div>' +
+      '<button class="__sw' + (p.fx ? " on" : "") + '" id="__sw-fx">' +
+      (p.fx ? "Вкл" : "Выкл") + '</button></div>' +
+      segRow("view_classic", "Классическая рулетка", "Как показывать приз",
+             p.view_classic || "wheel") +
+      segRow("view_crystal", "Кристальная рулетка", "Колесо или лента",
+             p.view_crystal || "wheel") +
+      '<div class="__row"><div><div class="__t">Карточка в профиле</div>' +
+      '<div class="__s">' +
+      (pin ? ("Сейчас: " + pin.name) : "Витрина пуста — повесь карту из коллекции") +
+      '</div></div>' +
+      (pin ? '<button class="__sw" id="__pin-clear">Снять</button>' : "") +
+      '</div>' +
+      '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
+      'во всех мини-аппках.</div></div>';
+    var x = document.getElementById("__gear-x");
+    if (x) x.onclick = function(){ ov.classList.remove("on"); };
+    var fxBtn = document.getElementById("__sw-fx");
+    if (fxBtn) fxBtn.onclick = function(){
+      var next = !p.fx;
+      fxBtn.className = "__sw" + (next ? " on" : "");
+      fxBtn.textContent = next ? "Вкл" : "Выкл";
+      p.fx = next;
+      prefsRequest("POST", {fx: next}, function(saved){
+        if (saved && saved.prefs) p.fx = saved.prefs.fx;
+        if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
+      });
+    };
+    ov.querySelectorAll(".__seg").forEach(function(box){
+      var key = box.dataset.key;
+      box.querySelectorAll("button").forEach(function(b){
+        b.onclick = function(){
+          box.querySelectorAll("button").forEach(function(o){ o.className = ""; });
+          b.className = "on";
+          var patch = {};
+          patch[key] = b.dataset.v;
+          prefsRequest("POST", patch, function(saved){
+            if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
+          });
+        };
+      });
+    });
+    var clear = document.getElementById("__pin-clear");
+    if (clear) clear.onclick = function(){
+      prefsRequest("POST", {pinned: ""}, function(){
+        ov.classList.remove("on");
+        if (window.__onPrefs) window.__onPrefs(null);
+      });
+    };
+  }
+
+  function openSettings(){
+    var ov = document.getElementById("__gear-ov");
+    if (!ov){
+      ov = document.createElement("div");
+      ov.id = "__gear-ov";
+      ov.className = "__ov";
+      ov.onclick = function(e){ if (e.target === ov) ov.classList.remove("on"); };
+      document.body.appendChild(ov);
+    }
+    ov.classList.add("on");
+    prefsRequest("GET", null, function(){ paintSettings(ov); });
+  }
+
   backBar();
+  gearButton();
   fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
     if (d && d.vars) apply(d.vars);
     particles(d && d.particles);

@@ -184,11 +184,18 @@ async def lifespan(app: FastAPI):
         boss_repo=boss_repo,
     )
 
+    # Локальный запуск без Telegram: из-за блокировок api.telegram.org
+    # недоступен, и пять попыток по 25 секунд задерживают старт на две минуты.
+    # С SKIP_TELEGRAM=1 поднимаемся сразу — мини-аппки и ручки работают.
+    skip_telegram = (os.getenv("SKIP_TELEGRAM") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
     # Telegram иногда не отвечает минутами. Раньше из-за этого падал ВЕСЬ
     # сервис и деплой откатывался: мини-аппки не обновлялись. Теперь просто
     # поднимаемся без меню команд, а / и аппки работают как обычно.
     me = None
-    for attempt in range(1, 6):
+    for attempt in range(1, 1 if skip_telegram else 6):
         try:
             me = await bot.get_me()
             break
@@ -199,6 +206,8 @@ async def lifespan(app: FastAPI):
         log.info("Бот: @%s (%s)", me.username, me.id)
 
     try:
+        if skip_telegram:
+            raise RuntimeError("SKIP_TELEGRAM=1 — настройку Telegram пропускаю")
         await setup_commands(bot)
 
         url = settings.webhook_url()
@@ -217,8 +226,11 @@ async def lifespan(app: FastAPI):
                 log.info("Webhook уже настроен: %s", url)
         else:
             log.warning("PUBLIC_URL/RENDER_EXTERNAL_URL не задан — вебхук не установлен")
-    except Exception:  # noqa: BLE001
-        log.exception("Не настроил Telegram — сервис всё равно поднимается")
+    except Exception as error:  # noqa: BLE001
+        if skip_telegram:
+            log.info("Telegram пропущен по SKIP_TELEGRAM: %s", error)
+        else:
+            log.exception("Не настроил Telegram — сервис всё равно поднимается")
 
     base = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
     if base:
