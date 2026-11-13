@@ -27,6 +27,7 @@ class Theme:
     particles: str
     personal: bool = False   # личная тема: не продаётся, выдаётся вручную
     light: bool = False      # светлая: тёмный текст на светлом фоне
+    vip: bool = False        # только для VIP-подписчиков
 
     @property
     def vars(self) -> dict[str, str]:
@@ -74,6 +75,13 @@ THEMES: tuple[Theme, ...] = (
         "clay", "Терракота", 0,
         "#1e1613", "#2a1e19", "#362621", "#4a362e",
         "#f7ece4", "#bfa08c", "#c4713e", "#eba679", "#20100a", "ember",
+    ),
+    # Премиум-снежная: только VIP, максимум эффектов.
+    Theme(
+        "snowvip", "Аурора", 0,
+        "#070d1c", "#0d1730", "#132142", "#1f335f",
+        "#f2f8ff", "#8fa8d6", "#5ec8ff", "#b9e6ff", "#03101f", "snow",
+        vip=True,
     ),
     # Личная тема Трофима: чистый чёрный и белый, без оттенков.
     Theme(
@@ -145,7 +153,11 @@ def shop_entries() -> list[Theme]:
 
 def is_free(theme: Theme) -> bool:
     """Бесплатная — значит доступна всем сразу, без покупки."""
-    return theme.price <= 0 and not theme.personal
+    return theme.price <= 0 and not theme.personal and not theme.vip
+
+
+def vip_only(theme: Theme) -> bool:
+    return bool(theme.vip)
 
 
 def granted_only(theme: Theme) -> bool:

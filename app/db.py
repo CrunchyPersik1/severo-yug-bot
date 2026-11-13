@@ -790,6 +790,307 @@ class Database:
             )
         return {int(row["chat_id"]) for row in rows}
 
+    # ----------------------------------------------------------------- #
+    # Питомцы, инкубатор и ивент Санты
+    # ----------------------------------------------------------------- #
+
+    async def pets_owned(self, user_id: int) -> list[dict[str, Any]]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select pet_id, level, equipped from pets_owned "
+                "where user_id = $1 order by level desc, pet_id",
+                int(user_id),
+            )
+        return [
+            {"pet_id": str(r["pet_id"]), "level": int(r["level"]), "equipped": bool(r["equipped"])}
+            for r in rows
+        ]
+
+    async def add_pet(self, user_id: int, pet_id: str, level: int = 1, source: str = "egg") -> bool:
+        """Выдаёт пета. False — он уже есть (тогда поднимаем уровень)."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                insert into pets_owned (user_id, pet_id, level, source)
+                values ($1, $2, $3, $4)
+                on conflict (user_id, pet_id) do update
+                   set level = greatest(pets_owned.level, excluded.level)
+                returning (xmax = 0) as fresh
+                """,
+                int(user_id),
+                str(pet_id),
+                max(1, int(level)),
+                str(source),
+            )
+        return bool(row["fresh"]) if row else False
+
+    async def equip_pet(self, user_id: int, pet_id: str | None) -> bool:
+        """Надеть одного пета (или снять всех пустым id)."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                await con.execute(
+                    "update pets_owned set equipped = false where user_id = $1",
+                    int(user_id),
+                )
+                if not pet_id:
+                    return True
+                row = await con.fetchrow(
+                    "update pets_owned set equipped = true "
+                    "where user_id = $1 and pet_id = $2 returning pet_id",
+                    int(user_id),
+                    str(pet_id),
+                )
+                return row is not None
+
+    async def equipped_pet(self, user_id: int) -> dict[str, Any] | None:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select pet_id, level from pets_owned "
+                "where user_id = $1 and equipped order by pet_id limit 1",
+                int(user_id),
+            )
+        if row is None:
+            return None
+        return {"pet_id": str(row["pet_id"]), "level": int(row["level"])}
+
+    async def add_eggs(self, user_id: int, egg_id: str, count: int = 1) -> int:
+        count = max(0, int(count))
+        if count <= 0:
+            return 0
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into eggs_owned (user_id, egg_id) "
+                "select $1, $2 from generate_series(1, $3::integer)",
+                int(user_id),
+                str(egg_id),
+                count,
+            )
+            return int(
+                await con.fetchval(
+                    "select count(*) from eggs_owned where user_id = $1 and not used",
+                    int(user_id),
+                )
+                or 0
+            )
+
+    async def egg_count(self, user_id: int, egg_id: str | None = None) -> int:
+        sql = "select count(*) from eggs_owned where user_id = $1 and not used"
+        args: list[Any] = [int(user_id)]
+        if egg_id:
+            sql += " and egg_id = $2"
+            args.append(str(egg_id))
+        async with self._p().acquire() as con:
+            return int(await con.fetchval(sql, *args) or 0)
+
+    async def take_egg(self, user_id: int, egg_id: str) -> bool:
+        """Списывает одно яйцо из инвентаря под инкубацию."""
+        async with self._p().acquire() as con:
+            row = await con.fetchval(
+                "update eggs_owned set used = true where id = ("
+                "  select id from eggs_owned where user_id = $1 and egg_id = $2 and not used "
+                "  order by id limit 1 for update skip locked"
+                ") returning id",
+                int(user_id),
+                str(egg_id),
+            )
+        return row is not None
+
+    async def incubator(self, user_id: int) -> list[dict[str, Any]]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select slot, egg_id, started_at, ready_at, hatched from incubator "
+                "where user_id = $1 order by slot",
+                int(user_id),
+            )
+        return [
+            {
+                "slot": int(r["slot"]),
+                "egg_id": str(r["egg_id"]),
+                "started_at": r["started_at"],
+                "ready_at": r["ready_at"],
+                "hatched": bool(r["hatched"]),
+            }
+            for r in rows
+        ]
+
+    async def incubator_put(self, user_id: int, slot: int, egg_id: str, seconds: int) -> bool:
+        """Ставит яйцо в клетку. False — клетка занята."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                """
+                insert into incubator (user_id, slot, egg_id, ready_at)
+                values ($1, $2, $3, now() + make_interval(secs => $4))
+                on conflict (user_id, slot) do update
+                   set egg_id = excluded.egg_id,
+                       started_at = now(),
+                       ready_at = excluded.ready_at,
+                       hatched = false
+                 where incubator.hatched
+                returning slot
+                """,
+                int(user_id),
+                int(slot),
+                str(egg_id),
+                int(seconds),
+            )
+        return row is not None
+
+    async def incubator_hatch(self, user_id: int, slot: int) -> bool:
+        """Забирает готовое яйцо. False — ещё не готово."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "update incubator set hatched = true "
+                "where user_id = $1 and slot = $2 and not hatched and ready_at <= now() "
+                "returning slot",
+                int(user_id),
+                int(slot),
+            )
+        return row is not None
+
+    async def incubator_upgrades(self, user_id: int) -> dict[str, int]:
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select kind, level from incubator_upgrades where user_id = $1",
+                int(user_id),
+            )
+        return {str(r["kind"]): int(r["level"]) for r in rows}
+
+    async def incubator_upgrade(self, user_id: int, kind: str, price: int, max_level: int) -> int | None:
+        """Покупает уровень прокачки клетки. None — нет денег или максимум."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                current = await con.fetchval(
+                    "select coalesce(level, 0) from incubator_upgrades "
+                    "where user_id = $1 and kind = $2",
+                    int(user_id),
+                    str(kind),
+                )
+                level = int(current or 0)
+                if level >= int(max_level):
+                    return None
+                row = await con.fetchrow(
+                    "update players set bonus_points = bonus_points - $2 "
+                    "where user_id = $1 and bonus_points >= $2 returning user_id",
+                    int(user_id),
+                    int(price),
+                )
+                if row is None:
+                    return None
+                await con.execute(
+                    "insert into incubator_upgrades (user_id, kind, level) values ($1, $2, 1) "
+                    "on conflict (user_id, kind) do update set level = incubator_upgrades.level + 1",
+                    int(user_id),
+                    str(kind),
+                )
+        return level + 1
+
+    async def santa_progress(self, user_id: int) -> dict[str, Any]:
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select story_done, choice, levels_done from santa_progress where user_id = $1",
+                int(user_id),
+            )
+            cleared = await con.fetch(
+                "select level from santa_levels where user_id = $1 order by level",
+                int(user_id),
+            )
+        if row is None:
+            return {"story_done": False, "choice": None, "levels_done": 0,
+                    "cleared": [int(r["level"]) for r in cleared]}
+        return {
+            "story_done": bool(row["story_done"]),
+            "choice": row["choice"],
+            "levels_done": int(row["levels_done"]),
+            "cleared": [int(r["level"]) for r in cleared],
+        }
+
+    async def santa_choose(self, user_id: int, choice_id: str) -> bool:
+        """Записывает решение из сюжетки. False — уже выбирал."""
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                current = await con.fetchval(
+                    "select choice from santa_progress where user_id = $1 for update",
+                    int(user_id),
+                )
+                if current is not None:
+                    return False
+                await con.execute(
+                    """
+                    insert into santa_progress (user_id, story_done, choice)
+                    values ($1, true, $2)
+                    on conflict (user_id) do update
+                       set story_done = true, choice = $2, updated_at = now()
+                    """,
+                    int(user_id),
+                    str(choice_id),
+                )
+        return True
+
+    async def santa_clear_level(self, user_id: int, level: int) -> bool:
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    "insert into santa_levels (user_id, level) values ($1, $2) "
+                    "on conflict (user_id, level) do nothing returning level",
+                    int(user_id),
+                    int(level),
+                )
+                if row is None:
+                    return False
+                await con.execute(
+                    "update santa_progress set levels_done = levels_done + 1, updated_at = now() "
+                    "where user_id = $1",
+                    int(user_id),
+                )
+        return True
+
+    async def santa_bought(self, user_id: int, season: int, item_ids: list[str]) -> set[str]:
+        if not item_ids:
+            return set()
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select item_id from santa_bought "
+                "where user_id = $1 and season = $2 and item_id = any($3::text[])",
+                int(user_id),
+                int(season),
+                [str(i) for i in item_ids],
+            )
+        return {str(r["item_id"]) for r in rows}
+
+    async def santa_buy(
+        self, user_id: int, season: int, item_id: str, price: int, currency: str
+    ) -> dict[str, Any]:
+        """Покупка у Санты: отметить, списать, выдать — одной транзакцией."""
+        column = "crystals" if currency == "gems" else "bonus_points"
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                added = await con.fetchval(
+                    "insert into santa_bought (user_id, season, item_id, price, currency) "
+                    "values ($1, $2, $3, $4, $5) "
+                    "on conflict (user_id, season, item_id) do nothing returning user_id",
+                    int(user_id),
+                    int(season),
+                    str(item_id),
+                    int(price),
+                    str(currency),
+                )
+                if added is None:
+                    return {"ok": False, "error": "Этот товар уже куплен в этом сезоне"}
+                row = await con.fetchrow(
+                    f"update players set {column} = {column} - $2 "
+                    f"where user_id = $1 and {column} >= $2 "
+                    f"returning bonus_points, crystals",
+                    int(user_id),
+                    int(price),
+                )
+                if row is None:
+                    raise _NotEnough(0, int(price), str(currency))
+        return {
+            "ok": True,
+            "points": int(row["bonus_points"]),
+            "gems": int(row["crystals"]),
+        }
+
     async def grant_bundle(self, user_id: int, bundle: dict[str, Any]) -> list[str]:
         """Выдаёт набор наград отдельной транзакцией (ежедневка, мегаквест)."""
         from . import bundles as bundles_mod

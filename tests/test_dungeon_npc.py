@@ -30,7 +30,7 @@ def test_quest_panel_pauses_the_world():
     assert "let questShown = false;" in DUNGEON_PAGE
     assert "questShown = true;" in DUNGEON_PAGE
     assert "questShown = false;" in DUNGEON_PAGE
-    assert "COOP.open || questShown){ render(dt); return; }" in DUNGEON_PAGE
+    assert "COOP.open || questShown){ render(dt); petDraw(); return; }" in DUNGEON_PAGE
 
 
 def test_quest_panel_has_money_helper():

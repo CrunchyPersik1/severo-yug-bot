@@ -39,8 +39,11 @@ from . import daily as daily_mod
 from . import deals as deals_mod
 from . import gems as gems_mod
 from . import mega as mega_mod
+from . import eggs as eggs_mod
 from . import packs as packs_mod
+from . import pets as pets_mod
 from . import reveal as reveal_mod
+from . import santa as santa_mod
 from . import roulette as roulette_mod
 from . import upgrader
 from . import yugi
@@ -1496,6 +1499,451 @@ async def api_drop(request: Request) -> JSONResponse:
     payload = _card_reveal(card)
     payload["is_new"] = is_new
     return JSONResponse({"ok": True, "card": payload, "left": int(left)})
+
+
+# --------------------------------------------------------------------------- #
+# Питомцы: питомник, инкубатор и ивент Санты
+# --------------------------------------------------------------------------- #
+
+SANTA_PAGE_LIMIT = 6
+
+
+def _pet_payload(pet: pets_mod.Pet, level: int = 1, owned: bool = False) -> dict[str, Any]:
+    return {
+        "id": pet.id,
+        "name": pet.name,
+        "emoji": pet.emoji,
+        "title": pet.title,
+        "note": pet.note,
+        "kind": pet.kind,
+        "level": int(level),
+        "effect": pet.effect(level),
+        "owned": bool(owned),
+        "rare": pet.rare,
+        "price": int(pet.price),
+        "currency": pet.currency,
+        "fx": cardsfx.payload("premium"),
+    }
+
+
+def _pet_reveal(pet: pets_mod.Pet, level: int = 1) -> dict[str, Any]:
+    """Карточка для общего оверлея получения."""
+    return {
+        "id": pet.id,
+        "name": pet.name,
+        "emoji": pet.emoji,
+        "rarity": "premium",
+        "rarity_title": "Премиум",
+        "hp": 0,
+        "atk": 0,
+        "points": 0,
+        "ability": pet.title,
+        "ability_text": pet.note,
+        "description": f"Уровень {level} · эффект ×{pet.effect(level):g}",
+        "is_new": True,
+        "fx": cardsfx.payload("premium"),
+    }
+
+
+async def _pets_state(state, user_id: int) -> dict[str, Any]:
+    owned = await state.db.pets_owned(user_id)
+    by_pet = {row["pet_id"]: row for row in owned}
+    equipped = next((row["pet_id"] for row in owned if row["equipped"]), None)
+    upgrades = await state.db.incubator_upgrades(user_id)
+    speed_levels = int(upgrades.get("speed", 0))
+    chance_levels = int(upgrades.get("chance", 0))
+    hatch = eggs_mod.hatch_seconds(
+        "cats", speed_levels, pets_mod.effect("lucy") if "lucy" in by_pet else 0.0
+    )
+    slots = []
+    rows = {row["slot"]: row for row in await state.db.incubator(user_id)}
+    now = datetime.now(timezone.utc)
+    for number in range(1, eggs_mod.slots() + 1):
+        row = rows.get(number)
+        if row is None or row["hatched"]:
+            slots.append({"slot": number, "busy": False})
+            continue
+        left = int((row["ready_at"] - now).total_seconds())
+        slots.append(
+            {
+                "slot": number,
+                "busy": True,
+                "egg_id": row["egg_id"],
+                "left": max(0, left),
+                "ready": left <= 0,
+            }
+        )
+    return {
+        "pets": [
+            _pet_payload(pet, by_pet[pet.id]["level"], owned=True)
+            for pet in pets_mod.PETS
+            if pet.id in by_pet
+        ],
+        "catalog": [_pet_payload(pet) for pet in pets_mod.PETS],
+        "equipped": equipped,
+        "effects": {row_id: pets_mod.effect(row_id, row["level"])
+                    for row_id, row in by_pet.items()},
+        "eggs": {
+            "owned": await state.db.egg_count(user_id),
+            "list": eggs_mod.payload(),
+            "hatch_seconds": hatch,
+        },
+        "incubator": {
+            "slots": slots,
+            "upgrades": {
+                kind: {
+                    "level": int(upgrades.get(kind, 0)),
+                    "next_price": eggs_mod.upgrade_price(kind, int(upgrades.get(kind, 0))),
+                    "can": eggs_mod.can_upgrade(kind, int(upgrades.get(kind, 0))),
+                    "info": dict(eggs_mod.UPGRADES[kind]),
+                }
+                for kind in eggs_mod.UPGRADES
+            },
+            "chance_levels": chance_levels,
+            "speed_levels": speed_levels,
+        },
+        "wallet": {
+            "points": int(await state.market.balance(user_id)),
+            "gems": int(await state.db.player_crystals(user_id)),
+        },
+    }
+
+
+@router.get("/api/pets")
+async def api_pets(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    return JSONResponse(
+        await _pets_state(state, int(user["id"])),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/pets/equip")
+async def api_pets_equip(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    pet_id = str((body or {}).get("pet_id") or "")
+    if pet_id and pets_mod.get(pet_id) is None:
+        return JSONResponse({"error": "Такого пета нет"}, status_code=400)
+    ok = await state.db.equip_pet(int(user["id"]), pet_id or None)
+    if not ok:
+        return JSONResponse({"error": "Этого пета у тебя нет"}, status_code=400)
+    return JSONResponse({"ok": True, "equipped": pet_id or None})
+
+
+@router.post("/api/pets/incubator/put")
+async def api_pets_put(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        slot = int((body or {}).get("slot") or 0)
+    except (TypeError, ValueError):
+        slot = 0
+    if not 1 <= slot <= eggs_mod.slots():
+        return JSONResponse({"error": "Нет такой клетки"}, status_code=400)
+    egg_id = str((body or {}).get("egg_id") or eggs_mod.EGG_CATS)
+    if egg_id not in eggs_mod.EGGS:
+        return JSONResponse({"error": "Таких яиц нет"}, status_code=400)
+    if await state.db.egg_count(uid, egg_id) <= 0:
+        return JSONResponse(
+            {"error": "Яиц нет — купи у Санты"}, status_code=400
+        )
+    upgrades = await state.db.incubator_upgrades(uid)
+    owned = {row["pet_id"] for row in await state.db.pets_owned(uid)}
+    seconds = eggs_mod.hatch_seconds(
+        egg_id,
+        int(upgrades.get("speed", 0)),
+        pets_mod.effect("lucy") if "lucy" in owned else 0.0,
+    )
+    if not await state.db.take_egg(uid, egg_id):
+        return JSONResponse({"error": "Яйцо не нашлось"}, status_code=400)
+    if not await state.db.incubator_put(uid, slot, egg_id, seconds):
+        return JSONResponse({"error": "Клетка занята"}, status_code=400)
+    return JSONResponse({"ok": True, "slot": slot, "seconds": seconds})
+
+
+@router.post("/api/pets/incubator/hatch")
+async def api_pets_hatch(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        slot = int((body or {}).get("slot") or 0)
+    except (TypeError, ValueError):
+        slot = 0
+    if not await state.db.incubator_hatch(uid, slot):
+        return JSONResponse({"error": "Ещё не готово"}, status_code=400)
+    upgrades = await state.db.incubator_upgrades(uid)
+    owned = {row["pet_id"] for row in await state.db.pets_owned(uid)}
+    pet_id = eggs_mod.roll_pet(
+        int(upgrades.get("chance", 0)),
+        pets_mod.effect("yaichko") if "yaichko" in owned else 0.0,
+    )
+    pet = pets_mod.get(pet_id)
+    if pet is None:
+        return JSONResponse({"error": "Пусто"}, status_code=400)
+    fresh = await state.db.add_pet(uid, pet.id, 1, "egg")
+    reveal = _pet_reveal(pet)
+    reveal["is_new"] = fresh
+    return JSONResponse(
+        {
+            "ok": True,
+            "pet": _pet_payload(pet, 1, owned=True),
+            "reveal": reveal,
+            "is_new": fresh,
+        }
+    )
+
+
+@router.post("/api/pets/upgrade")
+async def api_pets_upgrade(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    kind = str((body or {}).get("kind") or "")
+    info = eggs_mod.UPGRADES.get(kind)
+    if info is None:
+        return JSONResponse({"error": "Нет такой прокачки"}, status_code=400)
+    uid = int(user["id"])
+    levels = await state.db.incubator_upgrades(uid)
+    level = int(levels.get(kind, 0))
+    if not eggs_mod.can_upgrade(kind, level):
+        return JSONResponse({"error": "Максимальный уровень"}, status_code=400)
+    price = eggs_mod.upgrade_price(kind, level)
+    new_level = await state.db.incubator_upgrade(uid, kind, price, int(info["max"]))
+    if new_level is None:
+        return JSONResponse(
+            {"error": f"Не хватает очков: нужно {price}"}, status_code=400
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "kind": kind,
+            "level": new_level,
+            "state": await _pets_state(state, uid),
+        }
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Ивент «Санта Егор»
+# --------------------------------------------------------------------------- #
+
+
+async def _santa_state(state, user_id: int) -> dict[str, Any]:
+    progress = await state.db.santa_progress(user_id)
+    day = santa_mod.today_ekb()
+    choice = progress.get("choice")
+    shop = santa_mod.payload(day, choice)
+    bought = await state.db.santa_bought(user_id, int(shop["season"]),
+                                         [item["id"] for item in shop["stock"]])
+    levels = []
+    for elf in santa_mod.levels():
+        levels.append(
+            dict(
+                elf,
+                cleared=int(elf["level"]) in progress["cleared"],
+                unlocked=progress["story_done"]
+                and int(elf["level"]) <= progress["levels_done"] + 1,
+            )
+        )
+    return {
+        "story_done": bool(progress["story_done"]),
+        "choice": choice,
+        "levels_done": int(progress["levels_done"]),
+        "levels": levels,
+        "choices": [dict(item) for item in santa_mod.CHOICES],
+        "story": {
+            "title": "Санта Егор попал в беду",
+            "intro": (
+                "На пути в Уфу Санту окружили эльфы-амиры. Они недовольны "
+                "его правлением: слишком строго, ни добра, ни любви. "
+                "Помоги Санте решить, что делать — и он откроет магазин с петами."
+            ),
+            "elfs": len(santa_mod.levels()),
+        },
+        "shop": dict(shop, bought=sorted(bought)),
+        "eggs_owned": await state.db.egg_count(user_id),
+        "wallet": {
+            "points": int(await state.market.balance(user_id)),
+            "gems": int(await state.db.player_crystals(user_id)),
+        },
+    }
+
+
+@router.get("/api/santa")
+async def api_santa(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    return JSONResponse(
+        await _santa_state(state, int(user["id"])),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/santa/story")
+async def api_santa_story(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    choice = santa_mod.choice(str((body or {}).get("choice") or ""))
+    if choice is None:
+        return JSONResponse({"error": "Нет такого варианта"}, status_code=400)
+    progress = await state.db.santa_progress(uid)
+    if progress["story_done"]:
+        return JSONResponse({"error": "Ты уже выбрал решение"}, status_code=400)
+    await state.db.santa_choose(uid, choice["id"])
+    return JSONResponse(
+        {
+            "ok": True,
+            "choice": choice["id"],
+            "story": choice["story"],
+            "state": await _santa_state(state, uid),
+        }
+    )
+
+
+@router.post("/api/santa/level")
+async def api_santa_level(request: Request) -> JSONResponse:
+    """Эльф повержен: выдаём награду уровня."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        number = int((body or {}).get("level") or 0)
+    except (TypeError, ValueError):
+        number = 0
+    elf = santa_mod.level(number)
+    if elf is None:
+        return JSONResponse({"error": "Нет такого уровня"}, status_code=400)
+    progress = await state.db.santa_progress(uid)
+    if not progress["story_done"]:
+        return JSONResponse({"error": "Сначала пройди сюжетку"}, status_code=400)
+    if number > int(progress["levels_done"]) + 1:
+        return JSONResponse({"error": "Этот эльф ещё закрыт"}, status_code=400)
+    if not await state.db.santa_clear_level(uid, number):
+        return JSONResponse({"error": "Уровень уже пройден"}, status_code=400)
+    reward = dict(elf["reward"])
+    granted: list[str] = []
+    if reward.get("eggs"):
+        count = int(reward["eggs"])
+        await state.db.add_eggs(uid, eggs_mod.EGG_CATS, count)
+        granted.append(f"{count} " + bundles_mod.plural(count, "яйцо", "яйца", "яиц"))
+    if reward.get("gems"):
+        await state.db.add_crystals(uid, int(reward["gems"]))
+        granted.append(f"{reward['gems']} кристаллов")
+    return JSONResponse(
+        {
+            "ok": True,
+            "level": number,
+            "granted": granted,
+            "state": await _santa_state(state, uid),
+        }
+    )
+
+
+@router.post("/api/santa/buy")
+async def api_santa_buy(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    item_id = str((body or {}).get("id") or "")
+    progress = await state.db.santa_progress(uid)
+    if not progress["story_done"]:
+        return JSONResponse({"error": "Сначала помоги Санте"}, status_code=400)
+    day = santa_mod.today_ekb()
+    if not santa_mod.shop_open(day, progress["choice"]):
+        return JSONResponse(
+            {"error": "Санта уехал — вернётся позже"}, status_code=400
+        )
+    item = santa_mod.find_item(day, progress["choice"], item_id)
+    if item is None:
+        return JSONResponse({"error": "Нет такого товара в стоке"}, status_code=400)
+    season = int(santa_mod.season(day, progress["choice"]))
+    try:
+        result = await state.db.santa_buy(
+            uid, season, item["id"], int(item["price"]), str(item["currency"])
+        )
+    except NotEnoughError:
+        unit = "кристаллов" if item["currency"] == "gems" else "очков"
+        return JSONResponse(
+            {"error": f"Не хватает {unit}: нужно {item['price']}"}, status_code=400
+        )
+    if not result.get("ok"):
+        return JSONResponse({"error": result.get("error")}, status_code=400)
+    granted: list[str] = []
+    if item["kind"] == "egg":
+        await state.db.add_eggs(uid, eggs_mod.EGG_CATS, 1)
+        granted.append("яйцо «Коты»")
+    else:
+        pet = pets_mod.get(item["id"])
+        if pet is not None:
+            await state.db.add_pet(uid, pet.id, 1, "santa")
+            granted.append(pet.name)
+    return JSONResponse(
+        {
+            "ok": True,
+            "granted": granted,
+            "wallet": {"points": result["points"], "gems": result["gems"]},
+            "state": await _santa_state(state, uid),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -3398,7 +3846,9 @@ load();
 # --------------------------------------------------------------------------- #
 
 
-def _theme_payload(user_id: int, current: str, owned: list[str]) -> dict[str, Any]:
+def _theme_payload(
+    user_id: int, current: str, owned: list[str], vip: bool = False
+) -> dict[str, Any]:
     active = themes.get(current)
     return {
         "theme": active.id,
@@ -3415,8 +3865,10 @@ def _theme_payload(user_id: int, current: str, owned: list[str]) -> dict[str, An
                 "acc": theme.acc,
                 "bg": theme.bg,
                 "panel": theme.panel,
-                "owned": themes.is_free(theme) or theme.id in owned,
+                "owned": themes.is_free(theme) or (themes.vip_only(theme) and vip)
+                         or theme.id in owned,
                 "personal": themes.granted_only(theme),
+                "vip": themes.vip_only(theme),
                 "light": bool(getattr(theme, "light", False)),
                 "active": theme.id == active.id,
             }
@@ -3437,7 +3889,8 @@ async def api_theme(request: Request) -> JSONResponse:
     user_id = int(user["id"])
     owned = await state.db.owned_themes(user_id)
     current = await state.db.current_theme(user_id)
-    return JSONResponse(_theme_payload(user_id, current, owned))
+    vip = await state.db.vip_active(user_id)
+    return JSONResponse(_theme_payload(user_id, current, owned, vip))
 
 
 @router.post("/api/theme/set")
@@ -3456,6 +3909,10 @@ async def api_theme_set(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Такого стиля нет."}, status_code=400)
 
     owned = await state.db.owned_themes(user_id)
+    if themes.vip_only(theme) and not await state.db.vip_active(user_id):
+        return JSONResponse(
+            {"error": f"Стиль «{theme.name}» только для VIP."}, status_code=400
+        )
     if themes.granted_only(theme) and theme.id not in owned:
         return JSONResponse(
             {"error": f"Стиль «{theme.name}» личный — его выдаёт только админ."},
@@ -3475,6 +3932,8 @@ async def api_theme_set(request: Request) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 
 HUB_SECTIONS: tuple[dict[str, Any], ...] = (
+    {"id": "santa", "title": "Ивент · Санта Егор", "note": "эльфы, сюжет и петы", "kind": "app", "path": "/santa"},
+    {"id": "pets", "title": "Питомник", "note": "яйца и инкубатор", "kind": "app", "path": "/pets"},
     {"id": "drop", "title": "Карта дня", "note": "северо-юг и западо-восток", "kind": "app", "path": "/drop"},
     {"id": "collection", "title": "Коллекция", "note": "все твои карты", "kind": "app", "path": "/collection"},
     {"id": "market", "title": "Рынок", "note": "лоты игроков", "kind": "app", "path": "/market"},
@@ -5815,6 +6274,590 @@ async def api_profile_save(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "profile": payload})
 
 
+SANTA_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Санта Егор</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh}
+.wrap{padding:14px 14px 40px;max-width:560px;margin:0 auto}
+h1{margin:0 0 4px;font-size:19px;font-weight:900}
+.sub{font-size:12px;color:var(--muted);line-height:1.55}
+.wallet{display:flex;gap:7px;margin:10px 0 14px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:7px 12px;font-size:12.5px;font-weight:800}
+/* карта: пиксельная подложка рисуется CSS, без картинок */
+.map{position:relative;height:320px;border-radius:18px;overflow:hidden;margin:12px 0;
+  border:1px solid var(--line);
+  background:
+    radial-gradient(120% 60% at 50% 0%, #16233a 0%, #0b1220 60%),
+    linear-gradient(#0b1220, #0a1526)}
+.map::before{content:"";position:absolute;inset:0;opacity:.5;
+  background:
+    radial-gradient(2px 2px at 12% 22%, #cfe6ff 50%, transparent 51%),
+    radial-gradient(2px 2px at 78% 14%, #cfe6ff 50%, transparent 51%),
+    radial-gradient(2px 2px at 34% 8%, #9fc7ff 50%, transparent 51%),
+    radial-gradient(2px 2px at 62% 30%, #9fc7ff 50%, transparent 51%),
+    radial-gradient(2px 2px at 88% 46%, #cfe6ff 50%, transparent 51%)}
+.map::after{content:"";position:absolute;left:0;right:0;bottom:0;height:44%;opacity:.55;
+  background:
+    linear-gradient(135deg, transparent 48%, #1c3557 49%, #1c3557 51%, transparent 52%),
+    linear-gradient(45deg, transparent 48%, #223d63 49%, #223d63 51%, transparent 52%);
+  background-size:44px 44px, 60px 60px}
+.node{position:absolute;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;
+  border:2px solid #334b6b;background:#0f1b2e;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;gap:0;font-family:inherit;color:#93a6c4;z-index:2;padding:0}
+.node .lvl{font-size:10px;font-weight:900;line-height:1}
+.node .em{font-size:19px;line-height:1.1}
+.node.done{border-color:#3fae6a;color:#9fe3b8;box-shadow:0 0 14px -4px #3fae6a}
+.node.open{border-color:var(--acc);color:#fff;box-shadow:0 0 18px -2px var(--acc);animation:__pulse 1.8s infinite}
+.node.locked{opacity:.45}
+@keyframes __pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.paths{position:absolute;inset:0;z-index:1}
+/* сюжетка */
+.scene{position:relative;border-radius:16px;padding:14px;margin:12px 0;
+  background:linear-gradient(160deg,#12233a,#0a131f);border:1px solid #243350}
+.scene .who{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.scene .ava{width:38px;height:38px;border-radius:11px;background:#1b2c46;display:flex;
+  align-items:center;justify-content:center;font-size:22px;border:1px solid #2c4566}
+.scene .nm{font-size:12px;font-weight:900;color:#9fc7ff}
+.scene .tx{font-size:13px;line-height:1.55;color:#dbe9ff}
+.choices{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.choices button{text-align:left;border:1px solid #2c4566;background:#0f1b2e;color:#dbe9ff;
+  border-radius:12px;padding:11px 13px;font-family:inherit;font-size:12.5px;font-weight:700;line-height:1.4}
+.choices button.sel{border-color:var(--acc);background:#1c2b45}
+/* бой */
+.fight{position:fixed;inset:0;z-index:9600;background:#060a12;display:none;flex-direction:column}
+.fight.on{display:flex}
+.hpbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;
+  font-size:12px;font-weight:900}
+.hpbar .bar{flex:1;height:10px;border-radius:5px;background:#1b2233;overflow:hidden}
+.hpbar .bar i{display:block;height:100%;width:100%;background:#3fae6a}
+.hpbar .bar.foe i{background:#e11d48}
+canvas{flex:1;display:block;width:100%;touch-action:none}
+.fight .hint2{text-align:center;font-size:11.5px;color:#8b93a7;padding:8px 12px 14px}
+/* магазин */
+.shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
+.shop .cap{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#f6c94a;font-weight:900}
+.shop .when{font-size:11.5px;color:var(--muted);margin-top:5px}
+.item{display:flex;gap:11px;align-items:center;border-radius:13px;padding:10px;
+  background:var(--panel2);border:1px solid var(--line);margin-top:8px}
+.item .em{font-size:24px;width:30px;text-align:center}
+.item .b{flex:1;min-width:0}
+.item .t{font-size:13px;font-weight:900}
+.item .s{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.3}
+.item button{border:0;border-radius:10px;padding:9px 11px;font-size:11.5px;font-weight:900;
+  font-family:inherit;background:var(--acc);color:var(--acc-ink);white-space:nowrap}
+.item button[disabled]{background:var(--panel);color:var(--muted)}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:9700}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎅 Санта Егор</h1>
+  <div class="sub" id="intro">Загружаю…</div>
+  <div class="wallet">
+    <div class="chip" id="pts">…</div>
+    <div class="chip" id="gms">💎 …</div>
+    <div class="chip" id="eggs">🥚 …</div>
+  </div>
+  <div id="storyBox"></div>
+  <div class="map" id="map"><svg class="paths" id="paths"></svg></div>
+  <div id="shopBox"></div>
+</div>
+
+<div class="fight" id="fight">
+  <div class="hpbar">
+    <span>🧙 ты</span><div class="bar"><i id="php"></i></div>
+    <span id="phpTxt">100</span>
+  </div>
+  <div class="hpbar">
+    <span id="foeName">эльф</span><div class="bar foe"><i id="fhp"></i></div>
+    <span id="fhpTxt">100</span>
+  </div>
+  <canvas id="cv"></canvas>
+  <div class="hint2" id="fightHint">Тапай по эльфу, чтобы бить. Веди пальцем — двигаться. Уворачивайся.</div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = null, busy = false, pick = null;
+
+function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3400);
+}
+function renderWallet(){
+  document.getElementById("pts").textContent = "$ " + money(S.wallet.points);
+  document.getElementById("gms").textContent = "💎 " + money(S.wallet.gems);
+  document.getElementById("eggs").textContent = "🥚 " + S.eggs_owned;
+}
+function renderStory(){
+  const box = document.getElementById("storyBox");
+  if (S.story_done){
+    const ch = (S.choices || []).find(c => c.id === S.choice);
+    box.innerHTML = '<div class="scene"><div class="who"><div class="ava">🎅</div>' +
+      '<div class="nm">Санта Егор</div></div><div class="tx">' +
+      esc(ch ? ch.story : "Санта кивает: дело сделано.") + '</div></div>';
+    return;
+  }
+  box.innerHTML = '<div class="scene"><div class="who"><div class="ava">🎅</div>' +
+    '<div class="nm">Санта Егор</div></div>' +
+    '<div class="tx">' + esc(S.story.intro) + '</div></div>' +
+    '<div class="choices" id="choices">' + (S.choices || []).map(c =>
+      '<button data-ch="' + c.id + '">' + esc(c.title) + '<br><span class="sub">' +
+      esc(c.note) + '</span></button>').join("") + '</div>';
+  document.querySelectorAll("[data-ch]").forEach(b => b.onclick = () => choose(b.dataset.ch));
+}
+function renderMap(){
+  const map = document.getElementById("map");
+  const nodes = document.querySelectorAll(".node");
+  nodes.forEach(n => n.remove());
+  const levels = S.levels || [];
+  levels.forEach(function(lv, i){
+    const x = 14 + (i % 3) * 32 + (i > 2 ? 6 : 0);
+    const y = 18 + Math.floor(i / 3) * 46 + (i > 2 ? 8 : 0);
+    const el = document.createElement("button");
+    el.className = "node " + (lv.cleared ? "done" : lv.unlocked ? "open" : "locked");
+    el.style.cssText = "left:" + x + "%;top:" + y + "%";
+    el.innerHTML = '<div class="em">' + (lv.cleared ? "✅" : "🧝") + '</div>' +
+      '<div class="lvl">' + lv.level + '</div>';
+    el.onclick = function(){
+      if (!lv.unlocked && !lv.cleared){ toast("Сначала пройди предыдущего эльфа"); return; }
+      if (lv.cleared){ toast("Уровень уже пройден"); return; }
+      startFight(lv);
+    };
+    map.appendChild(el);
+  });
+  drawPaths(levels);
+}
+function drawPaths(levels){
+  const svg = document.getElementById("paths");
+  const parts = [];
+  for (let i = 0; i + 1 < levels.length; i++){
+    const a = nodesPos(i), b = nodesPos(i + 1);
+    parts.push('<line x1="' + a.x + '%" y1="' + a.y + '%" x2="' + b.x + '%" y2="' + b.y +
+      '" stroke="#1e3350" stroke-width="2.5" stroke-dasharray="5 5"/>');
+  }
+  svg.innerHTML = parts.join("");
+}
+function nodesPos(i){
+  const x = 14 + (i % 3) * 32 + (i > 2 ? 6 : 0);
+  const y = 18 + Math.floor(i / 3) * 46 + (i > 2 ? 8 : 0);
+  return {x: x + 2, y: y + 1};
+}
+function renderShop(){
+  const shop = S.shop || {};
+  const box = document.getElementById("shopBox");
+  if (!S.story_done){
+    box.innerHTML = '<div class="shop"><div class="cap">Магазин Санты</div>' +
+      '<div class="when">Откроется, когда поможешь Санте с эльфами.</div></div>';
+    return;
+  }
+  if (!shop.open){
+    box.innerHTML = '<div class="shop"><div class="cap">Санта уехал</div>' +
+      '<div class="when">Вернётся через ' + shop.opens_in_days + ' дн. ' +
+      'Он появляется не каждый день.</div></div>';
+    return;
+  }
+  const disc = Math.round((shop.discount || 0) * 100);
+  box.innerHTML = '<div class="shop"><div class="cap">Магазин Санты</div>' +
+    '<div class="when">' + (disc > 0 ? "Скидка " + disc + "%" : disc < 0 ? "Наценка " + Math.abs(disc) + "%" : "Без скидки") +
+    ' · сезон ' + shop.season + ' · 5 петов и яйцо</div>' +
+    (shop.stock || []).map(function(it){
+      const bought = (shop.bought || []).indexOf(it.id) >= 0;
+      return '<div class="item"><div class="em">' + it.emoji + '</div>' +
+        '<div class="b"><div class="t">' + esc(it.title) + '</div>' +
+        '<div class="s">' + esc(it.note) + '</div></div>' +
+        '<button data-buy="' + it.id + '"' + (bought ? " disabled" : "") + '>' +
+        (bought ? "куплено" : (it.currency === "gems" ? "💎 " : "$ ") + money(it.price)) + '</button></div>';
+    }).join("") + '</div>';
+  document.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => buy(b.dataset.buy));
+}
+function render(){
+  renderWallet(); renderStory(); renderMap(); renderShop();
+}
+async function load(){
+  try{
+    const r = await fetch("/api/santa", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S = d; render();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+async function post(path, body){
+  const r = await fetch(path, {method: "POST", headers, body: JSON.stringify(body || {})});
+  return await r.json();
+}
+async function choose(id){
+  if (busy) return;
+  busy = true;
+  const d = await post("/api/santa/story", {choice: id});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  S = d.state; render();
+  toast(d.story);
+}
+async function buy(id){
+  if (busy) return;
+  busy = true;
+  const d = await post("/api/santa/buy", {id: id});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  S = d.state; render();
+  toast("Куплено: " + (d.granted || []).join(", "));
+}
+/* ------------------------- бой с эльфом ------------------------- */
+let G = null, raf = 0;
+function startFight(lv){
+  const fight = document.getElementById("fight");
+  fight.classList.add("on");
+  document.getElementById("foeName").textContent = "🧝 " + lv.name;
+  const cv = document.getElementById("cv");
+  const rect = cv.getBoundingClientRect();
+  cv.width = Math.floor(rect.width * (window.devicePixelRatio || 1));
+  cv.height = Math.floor(rect.height * (window.devicePixelRatio || 1));
+  const dpr = window.devicePixelRatio || 1;
+  G = {
+    lv: lv, dpr: dpr, w: cv.width / dpr, h: cv.height / dpr,
+    p: {x: 60, y: 0, hp: 120, max: 120, atkCd: 0},
+    e: {x: 0, y: 0, hp: lv.hp, max: lv.hp, shootCd: 900, dashCd: 2200, dodgeCd: 1200, vx: 0, vy: 0},
+    arrows: [], over: false, t: 0
+  };
+  G.p.y = G.h - 70;
+  G.e.x = G.w - 80; G.e.y = G.h / 2;
+  cv.onpointerdown = onPointer;
+  cv.onpointermove = onPointer;
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(loop);
+}
+function onPointer(ev){
+  if (!G || G.over) return;
+  const cv = document.getElementById("cv");
+  const r = cv.getBoundingClientRect();
+  const x = ev.clientX - r.left, y = ev.clientY - r.top;
+  const dx = G.e.x - x, dy = G.e.y - y;
+  if (Math.hypot(dx, dy) < 64){
+    // удар по эльфу
+    if (G.p.atkCd <= 0){
+      G.e.hp -= 10 + Math.floor(Math.random() * 5);
+      G.p.atkCd = 380;
+      G.e.dodgeCd = Math.min(G.e.dodgeCd, 260);
+    }
+  } else {
+    // идём к точке
+    G.p.tx = x; G.p.ty = y;
+  }
+}
+function loop(){
+  raf = requestAnimationFrame(loop);
+  if (!G || G.over) return;
+  const dt = 1 / 60;
+  G.t += dt;
+  const cv = document.getElementById("cv");
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
+  ctx.clearRect(0, 0, G.w, G.h);
+  // фон
+  ctx.fillStyle = "#0a1220"; ctx.fillRect(0, 0, G.w, G.h);
+  ctx.fillStyle = "#0f1b2e";
+  for (let i = 0; i < 40; i++){
+    ctx.fillRect((i * 97) % G.w, (i * 61) % G.h, 3, 3);
+  }
+  // игрок
+  G.p.atkCd = Math.max(0, G.p.atkCd - dt);
+  if (G.p.tx != null){
+    const dx = G.p.tx - G.p.x, dy = G.p.ty - G.p.y, d = Math.hypot(dx, dy);
+    if (d > 6){ G.p.x += dx / d * 180 * dt; G.p.y += dy / d * 180 * dt; }
+  }
+  // эльф: держит дистанцию, стреляет, уклоняется рывком
+  const ex = G.p.x - G.e.x, ey = G.p.y - G.e.y, dist = Math.hypot(ex, ey) || 1;
+  const want = 170;
+  const speed = 55 * (G.lv.speed || 1);
+  if (dist < want - 20){ G.e.x -= ex / dist * speed * dt; G.e.y -= ey / dist * speed * dt; }
+  if (dist > want + 40){ G.e.x += ex / dist * speed * dt * 0.6; G.e.y += ey / dist * speed * dt * 0.6; }
+  G.e.x = Math.max(30, Math.min(G.w - 30, G.e.x));
+  G.e.y = Math.max(30, Math.min(G.h - 30, G.e.y));
+  G.e.shootCd -= dt * 1000;
+  if (G.e.shootCd <= 0){
+    G.e.shootCd = 1400 - 300 * (G.lv.aim || 0.4);
+    const a = Math.atan2(G.p.y - G.e.y, G.p.x - G.e.x);
+    G.arrows.push({x: G.e.x, y: G.e.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260});
+  }
+  G.e.dodgeCd -= dt * 1000;
+  if (G.e.dodgeCd <= 0 && dist < 90){
+    G.e.dodgeCd = 1400;
+    G.e.y += (Math.random() < 0.5 ? -1 : 1) * 60;
+    G.e.x += (Math.random() < 0.5 ? -1 : 1) * 70;
+  }
+  // стрелы
+  G.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; });
+  G.arrows = G.arrows.filter(function(a){
+    if (Math.hypot(a.x - G.p.x, a.y - G.p.y) < 22){
+      G.p.hp -= 8 + Math.floor(Math.random() * 6);
+      return false;
+    }
+    return a.x > -20 && a.x < G.w + 20 && a.y > -20 && a.y < G.h + 20;
+  });
+  // отрисовка
+  ctx.fillStyle = "#8fd0ff"; ctx.beginPath();
+  ctx.arc(G.p.x, G.p.y, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "22px serif"; ctx.fillText("🎅", G.p.x - 11, G.p.y + 8);
+  ctx.beginPath(); ctx.arc(G.e.x, G.e.y, 18, 0, Math.PI * 2);
+  ctx.fillStyle = "#e11d48"; ctx.fill();
+  ctx.font = "22px serif"; ctx.fillText("🧝", G.e.x - 11, G.e.y + 8);
+  ctx.fillStyle = "#ffd166";
+  G.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.fill(); });
+  // полосы
+  document.getElementById("php").style.width = Math.max(0, G.p.hp / G.p.max * 100) + "%";
+  document.getElementById("phpTxt").textContent = Math.max(0, Math.round(G.p.hp));
+  document.getElementById("fhp").style.width = Math.max(0, G.e.hp / G.e.max * 100) + "%";
+  document.getElementById("fhpTxt").textContent = Math.max(0, Math.round(G.e.hp));
+  // исход
+  if (G.e.hp <= 0) return finishFight(true);
+  if (G.p.hp <= 0) return finishFight(false);
+}
+async function finishFight(win){
+  if (!G || G.over) return;
+  G.over = true;
+  cancelAnimationFrame(raf);
+  const fight = document.getElementById("fight");
+  if (!win){
+    toast("Эльф сильнее. Попробуй ещё раз!");
+    setTimeout(function(){ fight.classList.remove("on"); }, 900);
+    return;
+  }
+  const d = await post("/api/santa/level", {level: G.lv.level});
+  if (d.error){ toast(d.error); fight.classList.remove("on"); return; }
+  S = d.state;
+  fight.classList.remove("on");
+  render();
+  toast("Эльф повержен! " + (d.granted || []).join(", "));
+}
+if (tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""
+
+PETS_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Питомник</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);padding:14px 14px 40px;min-height:100vh}
+h1{margin:0 0 4px;font-size:19px;font-weight:900}
+.sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px}
+.wallet{display:flex;gap:7px;margin-bottom:14px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:7px 12px;font-size:12.5px;font-weight:800}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:16px}
+.cell{position:relative;border-radius:14px;background:var(--panel);border:1.5px solid var(--line);
+  padding:10px 6px;text-align:center;min-height:92px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px}
+.cell.ready{border-color:var(--acc);box-shadow:0 0 18px -8px var(--acc)}
+.cell .n{font-size:10px;color:var(--muted);font-weight:800}
+.cell .e{font-size:26px;line-height:1}
+.cell .t{font-size:10.5px;font-weight:800;color:var(--acc2)}
+.pet{display:flex;gap:11px;align-items:center;border-radius:15px;padding:11px;
+  background:var(--panel);border:1px solid var(--line);margin-bottom:8px}
+.pet .em{font-size:26px;width:34px;text-align:center}
+.pet .b{flex:1;min-width:0}
+.pet .t{font-size:13.5px;font-weight:900}
+.pet .s{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.35}
+.pet button{border:0;border-radius:10px;padding:9px 12px;font-size:11.5px;font-weight:900;
+  font-family:inherit;background:var(--acc);color:var(--acc-ink)}
+.pet.on{border-color:var(--acc)}
+.pet.on button{background:var(--panel2);color:var(--muted)}
+.up{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  border-radius:14px;padding:12px;background:var(--panel);border:1px solid var(--line);
+  margin-bottom:8px}
+.up .b{flex:1;min-width:0}
+.up .t{font-size:13px;font-weight:900}
+.up .s{font-size:11px;color:var(--muted);margin-top:2px}
+.up button{border:0;border-radius:10px;padding:10px 12px;font-size:11.5px;font-weight:900;
+  font-family:inherit;background:var(--acc);color:var(--acc-ink);white-space:nowrap}
+.up button[disabled]{background:var(--panel2);color:var(--muted)}
+.sect{font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);
+  font-weight:900;margin:16px 0 8px}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:40}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<h1>🐾 Питомник</h1>
+<div class="sub">Петы живут в инкубаторе: кладёшь яйцо в клетку, ждёшь таймер, забираешь питомца.
+Клетки прокачиваются. Надеть можно одного пета.</div>
+<div class="wallet">
+  <div class="chip" id="pts">…</div>
+  <div class="chip" id="gms">💎 …</div>
+  <div class="chip" id="eggs">🥚 …</div>
+</div>
+
+<div class="sect">Инкубатор</div>
+<div class="grid" id="slots"></div>
+
+<div class="sect">Прокачка клеток</div>
+<div id="ups"></div>
+
+<div class="sect">Мои петы</div>
+<div id="mine"></div>
+
+<div class="sect">Каталог</div>
+<div id="all"></div>
+
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = null, busy = false;
+
+function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&"]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c])); }
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 3200);
+}
+function left(sec){
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + " ч " : "") + (h || m ? m + " м " : "") + s + " с";
+}
+function render(){
+  if (!S) return;
+  document.getElementById("pts").textContent = "$ " + money(S.wallet.points);
+  document.getElementById("gms").textContent = "💎 " + money(S.wallet.gems);
+  document.getElementById("eggs").textContent = "🥚 " + S.eggs.owned;
+  document.getElementById("slots").innerHTML = S.incubator.slots.map(function(cell){
+    if (!cell.busy) return '<div class="cell" data-put="' + cell.slot + '">' +
+      '<div class="n">клетка ' + cell.slot + '</div><div class="e">➕</div>' +
+      '<div class="t">' + (S.eggs.owned > 0 ? "посадить" : "нет яиц") + '</div></div>';
+    if (cell.ready) return '<div class="cell ready" data-hatch="' + cell.slot + '">' +
+      '<div class="n">клетка ' + cell.slot + '</div><div class="e">🐣</div>' +
+      '<div class="t">забрать</div></div>';
+    return '<div class="cell"><div class="n">клетка ' + cell.slot + '</div>' +
+      '<div class="e">🥚</div><div class="t">' + left(cell.left) + '</div></div>';
+  }).join("");
+  document.querySelectorAll("[data-put]").forEach(function(el){
+    el.onclick = function(){ put(Number(el.dataset.put)); };
+  });
+  document.querySelectorAll("[data-hatch]").forEach(function(el){
+    el.onclick = function(){ hatch(Number(el.dataset.hatch)); };
+  });
+
+  document.getElementById("ups").innerHTML = Object.keys(S.incubator.upgrades).map(function(kind){
+    const up = S.incubator.upgrades[kind];
+    const info = up.info || {};
+    const price = up.next_price;
+    return '<div class="up"><div class="b"><div class="t">' + esc(info.title) + ' · ур. ' + up.level + '</div>' +
+      '<div class="s">' + esc(info.note || "") + '</div></div>' +
+      '<button data-up="' + kind + '"' + (up.can && S.wallet.points >= price ? "" : " disabled") + '>' +
+      (up.can ? money(price) : "макс") + '</button></div>';
+  }).join("");
+  document.querySelectorAll("[data-up]").forEach(function(el){
+    el.onclick = function(){ upgrade(el.dataset.up); };
+  });
+
+  const mine = S.pets || [];
+  document.getElementById("mine").innerHTML = mine.length ? mine.map(function(pet){
+    return '<div class="pet' + (S.equipped === pet.id ? " on" : "") + '">' +
+      '<div class="em">' + pet.emoji + '</div>' +
+      '<div class="b"><div class="t">' + esc(pet.name) + ' · ур. ' + pet.level + '</div>' +
+      '<div class="s">' + esc(pet.title) + ': ' + esc(pet.note) + '</div></div>' +
+      '<button data-pet="' + pet.id + '">' + (S.equipped === pet.id ? "надет" : "надеть") + '</button></div>';
+  }).join("") : '<div class="sub">Пока никого. Купи яйцо у Санты и посади в клетку.</div>';
+  document.querySelectorAll("[data-pet]").forEach(function(el){
+    el.onclick = function(){ equip(el.dataset.pet); };
+  });
+
+  document.getElementById("all").innerHTML = (S.catalog || []).map(function(pet){
+    const owned = (S.pets || []).some(function(m){ return m.id === pet.id; });
+    return '<div class="pet' + (owned ? " on" : "") + '">' +
+      '<div class="em">' + pet.emoji + '</div>' +
+      '<div class="b"><div class="t">' + esc(pet.name) + (pet.rare ? " · редкий" : "") + '</div>' +
+      '<div class="s">' + esc(pet.title) + ': ' + esc(pet.note) + '</div></div>' +
+      '<button disabled>' + (owned ? "есть" : (pet.currency === "gems" ? "💎 " + pet.price : money(pet.price))) +
+      '</button></div>';
+  }).join("");
+}
+async function load(){
+  try{
+    const r = await fetch("/api/pets", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S = d; render();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+async function post(path, body){
+  const r = await fetch(path, {method: "POST", headers, body: JSON.stringify(body || {})});
+  return await r.json();
+}
+async function put(slot){
+  if (busy) return;
+  if (!S.eggs.owned){ toast("Яиц нет — купи у Санты"); return; }
+  busy = true;
+  const d = await post("/api/pets/incubator/put", {slot: slot, egg_id: "cats"});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  toast("Яйцо в клетке: " + left(d.seconds));
+  load();
+}
+async function hatch(slot){
+  if (busy) return;
+  busy = true;
+  const d = await post("/api/pets/incubator/hatch", {slot: slot});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  if (window.__revealCards && d.reveal){
+    window.__revealCards([d.reveal], function(){ load(); });
+  } else { load(); }
+}
+async function equip(petId){
+  if (busy) return;
+  busy = true;
+  const d = await post("/api/pets/equip", {pet_id: S.equipped === petId ? "" : petId});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  load();
+}
+async function upgrade(kind){
+  if (busy) return;
+  busy = true;
+  const d = await post("/api/pets/upgrade", {kind: kind});
+  busy = false;
+  if (d.error){ toast(d.error); return; }
+  S = d.state; render();
+  toast("Уровень " + d.level);
+}
+if (tg){ tg.ready(); tg.expand(); }
+load();
+setInterval(function(){ if (S) render(); }, 1000);
+</script>
+</body>
+</html>
+"""
+
 DROP_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
@@ -5907,6 +6950,16 @@ load();
 </body>
 </html>
 """
+
+@router.get("/santa", response_class=HTMLResponse)
+async def santa_page() -> HTMLResponse:
+    return HTMLResponse(inject(SANTA_PAGE))
+
+
+@router.get("/pets", response_class=HTMLResponse)
+async def pets_page() -> HTMLResponse:
+    return HTMLResponse(inject(PETS_PAGE))
+
 
 @router.get("/drop", response_class=HTMLResponse)
 async def drop_page() -> HTMLResponse:
@@ -10197,6 +11250,52 @@ function person(x, y, color, label, alpha, walk){
   }
   ctx.globalAlpha = 1;
 }
+/* ---------- питомец-компаньон ---------- */
+// Мэни бегает с игроком и бьёт ближайшего моба. Остальные петы — пассивки,
+// их эффекты читают серверные системы, на карте они не рисуются.
+const PET = {id: null, level: 1, x: 0, y: 0, cd: 0};
+async function petLoad(){
+  if (!TG_INIT) return;
+  const d = await coopApi("/api/pets");
+  if (!d || !d.equipped) return;
+  const own = (d.pets || []).filter(function(p){ return p.id === d.equipped; })[0];
+  PET.id = d.equipped;
+  PET.level = own ? Number(own.level) || 1 : 1;
+  PET.x = P.x + 30; PET.y = P.y;
+}
+function petTick(dt){
+  if (PET.id !== "mani") return;
+  const tx = P.x - (P.facing === 1 ? 34 : -30), ty = P.y + 4;
+  PET.x += (tx - PET.x) * Math.min(1, dt * 7);
+  PET.y += (ty - PET.y) * Math.min(1, dt * 7);
+  PET.cd = Math.max(0, PET.cd - dt);
+  if (PET.cd > 0) return;
+  let best = null, bestD = 999;
+  for (let i = 0; i < mobs.length; i++){
+    const m = mobs[i];
+    const d = Math.hypot(m.x - PET.x, m.y - PET.y);
+    if (d < bestD){ bestD = d; best = m; }
+  }
+  if (!best || bestD > 250) return;
+  PET.cd = 1.05;
+  best.hp -= 10 + 6 * (PET.level - 1);
+  best.hit = 0.18;
+  FX.burst(best.x, best.y - 10, 7, "#8fd0ff", 100, 10);
+  if (best.hp <= 0) killMob(best);
+}
+function petDraw(){
+  if (PET.id !== "mani") return;
+  ctx.save();
+  ctx.font = "18px serif";
+  ctx.textAlign = "center";
+  ctx.fillText("🐱", PET.x, PET.y);
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = "rgba(143,208,255,.05)";
+  ctx.beginPath(); ctx.arc(PET.x, PET.y, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 function loop(now){
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
@@ -10205,7 +11304,8 @@ function loop(now){
   FX.step(dt);
   coopUiTick(dt);
   remoteTick(dt);
-  if (!P.weapon || inBattle || COOP.open || questShown){ render(dt); return; }
+  petTick(dt);
+  if (!P.weapon || inBattle || COOP.open || questShown){ render(dt); petDraw(); return; }
 
   let vx = joyV.x, vy = joyV.y;
   if (keys["w"] || keys["ц"] || keys["arrowup"]) vy = -1;
@@ -10363,6 +11463,7 @@ function loop(now){
   }
 
   render(dt);
+  petDraw();
   document.getElementById("hpfill").style.width = Math.max(0, P.hp / P.max * 100) + "%";
   document.getElementById("hptxt").textContent =
     "HP " + Math.round(P.hp) + " / " + P.max + "  ·  ур. " + stats.lvl;
@@ -10749,6 +11850,7 @@ function sync(){ document.getElementById("coins").textContent = P.coins;
   const zel = document.getElementById("zone");
   if (zel) zel.textContent = "ЛОК. " + (zi + 1) + "/10 · " + ZONES[zi].n + " · ур." + (1 + zi * 25); }
 requestAnimationFrame(loop);
+petLoad();
 </script>
 </body>
 </html>

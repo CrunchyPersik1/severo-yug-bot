@@ -892,3 +892,72 @@ create table if not exists card_packs (
     created_at timestamptz not null default now()
 );
 create index if not exists card_packs_user_idx on card_packs (user_id, opened);
+-- ===================================================================== --
+-- Питомцы: карты редкости «Премиум» + состояние (уровень, надет)
+-- ===================================================================== --
+
+create table if not exists pets_owned (
+    user_id  bigint not null references players(user_id) on delete cascade,
+    pet_id   text   not null,
+    level    integer not null default 1,
+    equipped boolean not null default false,
+    source   text   not null default 'egg',
+    got_at   timestamptz not null default now(),
+    primary key (user_id, pet_id)
+);
+create index if not exists pets_owned_user_idx on pets_owned (user_id);
+
+-- Инкубатор: 9 клеток. slot 1..9, egg_id, ready_at.
+create table if not exists incubator (
+    user_id   bigint not null references players(user_id) on delete cascade,
+    slot      integer not null,
+    egg_id    text   not null,
+    started_at timestamptz not null default now(),
+    ready_at  timestamptz not null,
+    hatched   boolean not null default false,
+    primary key (user_id, slot)
+);
+
+create table if not exists incubator_upgrades (
+    user_id bigint not null references players(user_id) on delete cascade,
+    kind    text   not null,
+    level   integer not null default 0,
+    primary key (user_id, kind)
+);
+
+-- ===================================================================== --
+-- Ивент «Санта Егор»: сюжетка, пройденные уровни, купленное в магазине
+-- ===================================================================== --
+
+create table if not exists santa_progress (
+    user_id    bigint primary key references players(user_id) on delete cascade,
+    story_done boolean not null default false,
+    choice     text,
+    levels_done integer not null default 0,
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists santa_levels (
+    user_id bigint not null references players(user_id) on delete cascade,
+    level   integer not null,
+    cleared_at timestamptz not null default now(),
+    primary key (user_id, level)
+);
+
+create table if not exists santa_bought (
+    user_id bigint not null references players(user_id) on delete cascade,
+    season  bigint not null,
+    item_id text   not null,
+    price   bigint not null,
+    currency text  not null,
+    bought_at timestamptz not null default now(),
+    primary key (user_id, season, item_id)
+);
+create table if not exists eggs_owned (
+    id      bigserial primary key,
+    user_id bigint not null references players(user_id) on delete cascade,
+    egg_id  text   not null default 'cats',
+    used    boolean not null default false,
+    got_at  timestamptz not null default now()
+);
+create index if not exists eggs_owned_user_idx on eggs_owned (user_id, used);
