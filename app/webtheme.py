@@ -244,6 +244,12 @@ POLISH = r"""<style>
     font-size:12.5px!important;font-weight:800!important;box-shadow:none!important}
   .__sw.on{background:var(--acc)!important;color:var(--acc-ink)!important;
     border-color:transparent!important}
+  .__opts{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
+  .__opts button{flex:1 0 30%;border:1px solid var(--line)!important;background:transparent!important;
+    color:var(--muted)!important;border-radius:10px!important;padding:9px 6px!important;
+    font-size:11.5px!important;font-weight:800!important;box-shadow:none!important}
+  .__opts button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
   .__note{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
 </style>
 """
@@ -378,6 +384,13 @@ BOOTSTRAP = POLISH + r"""<script>
              p.view_classic || "wheel") +
       segRow("view_crystal", "Кристальная рулетка", "Колесо или лента",
              p.view_crystal || "wheel") +
+      '<div class="__row"><div><div class="__t">Скорость открытия</div>' +
+      '<div class="__s">Чем медленнее, тем дольше лента ползёт в конце</div></div></div>' +
+      '<div class="__opts" id="__speeds">' +
+      (d.speeds || []).map(function(item){
+        return '<button data-speed="' + item.id + '" class="' +
+          (item.id === (p.speed || "slow") ? "on" : "") + '">' + item.title + '</button>';
+      }).join("") + '</div>' +
       '<div class="__row"><div><div class="__t">Карточка в профиле</div>' +
       '<div class="__s">' +
       (pin ? ("Сейчас: " + pin.name) : "Витрина пуста — повесь карту из коллекции") +
@@ -412,6 +425,17 @@ BOOTSTRAP = POLISH + r"""<script>
           });
         };
       });
+    });
+    var speedBox = document.getElementById("__speeds");
+    if (speedBox) speedBox.querySelectorAll("[data-speed]").forEach(function(b){
+      b.onclick = function(){
+        speedBox.querySelectorAll("[data-speed]").forEach(function(o){ o.className = ""; });
+        b.className = "on";
+        p.speed = b.dataset.speed;
+        prefsRequest("POST", {speed: b.dataset.speed}, function(saved){
+          if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
+        });
+      };
     });
     var clear = document.getElementById("__pin-clear");
     if (clear) clear.onclick = function(){

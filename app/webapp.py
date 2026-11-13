@@ -40,6 +40,7 @@ from . import deals as deals_mod
 from . import gems as gems_mod
 from . import mega as mega_mod
 from . import packs as packs_mod
+from . import reveal as reveal_mod
 from . import roulette as roulette_mod
 from . import upgrader
 from . import yugi
@@ -1256,6 +1257,7 @@ PREFS_DEFAULTS: dict[str, Any] = {
     "fx": True,              # анимация раскрытия карточки
     "view_classic": "wheel",  # колесо | лента
     "view_crystal": "wheel",
+    "speed": reveal_mod.DEFAULT,  # скорость открытия: turbo..turtle
     "pinned": "",             # card_id карточки, висящей в профиле
 }
 
@@ -1276,6 +1278,7 @@ def _prefs_clean(current: dict[str, Any] | None) -> dict[str, Any]:
     for key in ("view_classic", "view_crystal"):
         if prefs.get(key) not in ROULETTE_VIEWS:
             prefs[key] = "wheel"
+    prefs["speed"] = reveal_mod.normalize(prefs.get("speed"))
     pinned = str(prefs.get("pinned") or "")
     prefs["pinned"] = pinned if pinned in CARDS_BY_ID else ""
     return prefs
@@ -1309,6 +1312,7 @@ def _roulette_payload(
     balance: int,
     crystals: int,
     view: str,
+    speed: str = reveal_mod.DEFAULT,
 ) -> dict[str, Any]:
     """Всё состояние рулетки для страницы — одним ответом."""
     return {
@@ -1322,6 +1326,8 @@ def _roulette_payload(
         "balance": int(balance),
         "crystals": int(crystals),
         "view": view,
+        "speed": reveal_mod.normalize(speed),
+        "speeds": reveal_mod.payload(),
         "reset_text": _reset_text(),
     }
 
@@ -1384,6 +1390,8 @@ async def api_case(request: Request) -> JSONResponse:
             "pool": cases_mod.case_pool(),
             "pool_d": cases_mod.case_pool_d(),
             "next_d": next_d,
+            "speed": (await _prefs(state, uid))["speed"],
+            "speeds": reveal_mod.payload(),
             "balance": await _points_balance(state, uid),
         },
         headers={"Cache-Control": "no-store"},
@@ -1552,6 +1560,7 @@ async def api_roulette(request: Request) -> JSONResponse:
             balance=await state.market.balance(uid),
             crystals=await state.db.player_crystals(uid),
             view=_view_of(prefs, kind),
+            speed=str(prefs.get("speed") or reveal_mod.DEFAULT),
         ),
         headers={"Cache-Control": "no-store"},
     )
@@ -1645,6 +1654,7 @@ async def api_prefs(request: Request) -> JSONResponse:
             "prefs": prefs,
             "pinned_card": pinned,
             "views": list(ROULETTE_VIEWS),
+            "speeds": reveal_mod.payload(),
             "crystals": await state.db.player_crystals(uid),
         },
         headers={"Cache-Control": "no-store"},
@@ -1674,6 +1684,11 @@ async def api_prefs_save(request: Request) -> JSONResponse:
             if value not in ROULETTE_VIEWS:
                 return JSONResponse({"error": "Неизвестный вид рулетки"}, status_code=400)
             patch[key] = value
+    if "speed" in body:
+        value = str(body.get("speed") or "")
+        if not reveal_mod.is_speed(value):
+            return JSONResponse({"error": "Неизвестная скорость"}, status_code=400)
+        patch["speed"] = value
     if "pinned" in body:
         pinned = str(body.get("pinned") or "")
         if pinned:
