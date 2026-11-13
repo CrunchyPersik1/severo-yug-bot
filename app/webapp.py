@@ -6383,7 +6383,8 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
   border-radius:12px;padding:11px 13px;font-family:inherit;font-size:12.5px;font-weight:700;line-height:1.4}
 .choices button.sel{border-color:var(--acc);background:#1c2b45}
 /* бой */
-.fight{position:fixed;inset:0;z-index:9600;background:#060a12;display:none;flex-direction:column;overflow:hidden}
+.fight{position:fixed;inset:0;height:100dvh;z-index:9600;background:#060a12;
+  display:none;flex-direction:column;overflow:hidden}
 .fight.on{display:flex}
 .bhud{display:flex;gap:9px;padding:8px 11px;align-items:center;background:rgba(6,10,18,.92);z-index:3}
 .bhud .who{font-size:11.5px;font-weight:900;white-space:nowrap;color:#dbe9ff}
@@ -6393,18 +6394,24 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .bhud .num{font-size:11px;color:#c7d4ea;min-width:42px;text-align:right;font-weight:800}
 .stage3{position:relative;flex:1;display:flex;overflow:hidden}
 .stage3 canvas{flex:1;display:block;width:100%;height:100%;touch-action:none}
-.joy{position:absolute;left:16px;bottom:18px;width:118px;height:118px;border-radius:50%;
-  background:rgba(18,27,44,.5);border:2px solid #2c4566;z-index:4;touch-action:none}
+.joy{position:fixed;left:16px;bottom:calc(18px + env(safe-area-inset-bottom));
+  width:118px;height:118px;border-radius:50%!important;
+  background:rgba(18,27,44,.55)!important;border:2px solid #2c4566;z-index:9700;touch-action:none}
 .joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
   border-radius:50%;background:rgba(143,208,255,.32);border:2px solid #6fa8d8;display:block}
-.batk{position:absolute;right:18px;bottom:24px;width:86px;height:86px;border-radius:50%;
-  border:2px solid #6b4a22;background:radial-gradient(circle at 35% 30%,#f0b276,#b45309);
-  color:#1a1205;font-size:30px;font-family:inherit;z-index:4}
+.batk{position:fixed;right:18px;bottom:calc(24px + env(safe-area-inset-bottom));
+  width:86px;height:86px;border-radius:50%!important;
+  border:2px solid #6b4a22!important;
+  background:radial-gradient(circle at 35% 30%,#f0b276,#b45309)!important;
+  color:#1a1205!important;font-size:30px;font-family:inherit;z-index:9700}
 .batk:active{transform:scale(.94)}
-.bdash{position:absolute;right:112px;bottom:100px;width:60px;height:60px;border-radius:50%;
-  border:2px solid #2c4566;background:rgba(18,27,44,.8);color:#9fc7ff;font-size:22px;z-index:4}
+.bdash{position:fixed;right:112px;bottom:calc(100px + env(safe-area-inset-bottom));
+  width:60px;height:60px;border-radius:50%!important;
+  border:2px solid #2c4566!important;background:rgba(18,27,44,.85)!important;
+  color:#9fc7ff!important;font-size:22px;z-index:9700}
 .bdash:active{transform:scale(.94)}
-.bfoot{position:absolute;right:16px;bottom:118px;font-size:10.5px;color:#8b93a7;z-index:4;text-align:right;max-width:150px}
+.bfoot{position:fixed;right:16px;bottom:calc(196px + env(safe-area-inset-bottom));
+  font-size:10.5px;color:#8b93a7;z-index:9700;text-align:right;max-width:170px;line-height:1.35}
 /* магазин *//* магазин */
 .shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
 .shop .cap{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#f6c94a;font-weight:900}
@@ -6923,9 +6930,14 @@ function drawElf(ctx){
   ctx.translate(G.e.x, G.e.y);
   ctx.scale(G.e.face, 1);
   if (im.complete && im.naturalWidth){
+    // кадр 160x144, сам эльф занимает середину: якорим по ступням и
+    // увеличиваем так, чтобы он был одного роста с игроком
+    const k = 1.9;
+    const dw = ELF_FRAME_W * k, dh = ELF_FRAME_H * k;
+    const feet = 0.667;                    // доля высоты кадра до ступней
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(im, frame * ELF_FRAME_W, 0, ELF_FRAME_W, ELF_FRAME_H,
-                  -60, -104, 120, 108);
+                  -dw / 2, -dh * feet, dw, dh);
   } else {
     ctx.fillStyle = "#e11d48"; ctx.fillRect(-16, -70, 32, 70);
   }
