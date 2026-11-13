@@ -45,3 +45,32 @@ def test_unknown_key_gets_fallback():
     assert quests.reward_for("нет такого") == {"points": quests.POINTS}
     assert quests.source_sql("нет такого") is None
     assert quests.title_for("нет такого") == "нет такого"
+
+
+def test_claim_is_bound_to_the_game_day():
+    """Регрессия: ключ был (игрок, квест) без даты — забрав раз, игрок видел
+    «ПОЛУЧЕНО» навсегда, хотя задания ежедневные."""
+    import inspect
+
+    from app import quest_repo
+
+    source = inspect.getsource(quest_repo)
+    assert "from .gacha import day_key" in source
+    class_body = source.split("class QuestRepo", 1)[1]
+    assert "day_key" in class_body
+    # и запись, и чтение учитывают сутки
+    assert "insert into quest_claim (user_id, quest_key, day_key)" in source
+    assert "on conflict (user_id, quest_key, day_key) do nothing" in source
+    assert "where user_id = $1::bigint and day_key = $2::date" in source
+
+
+def test_schema_resets_claims_each_day():
+    import pathlib
+
+    schema = pathlib.Path(__file__).resolve().parent.parent / "schema.sql"
+    sql = schema.read_text(encoding="utf-8")
+    block = sql.split("create table if not exists quest_claim", 1)[1][:1600]
+    assert "day_key date" in block
+    assert "quest_claim_day_uniq" in block
+    # старый первичный ключ без даты больше не должен мешать
+    assert "drop constraint quest_claim_pkey" in block

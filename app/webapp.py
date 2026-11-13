@@ -5354,7 +5354,11 @@ async def api_quests(request: Request) -> JSONResponse:
                     {"need": 10, "cases": 15, "reached": streak >= 10},
                 ],
             },
-        }
+        },
+        # Прогресс читается из живых счётчиков: без запрета кеша браузер
+        # отдавал старый список, и после выполненного квеста страница
+        # выглядела «замороженной».
+        headers={"Cache-Control": "no-store, must-revalidate"},
     )
 
 
@@ -5468,7 +5472,9 @@ function toast(t){
 }
 async function load(){
   try{
-    const r = await fetch("/api/quests", {headers});
+    // Прогресс живой: кеш тут только мешает, поэтому и запрос, и заголовки
+    // просим без него.
+    const r = await fetch("/api/quests", {headers, cache: "no-store"});
     const d = await r.json();
     if (d.error){ toast(d.error); return; }
     document.getElementById("cnt").textContent = "Выполнено " + d.done + " из " + d.total +
@@ -5516,6 +5522,14 @@ document.getElementById("list").addEventListener("click", async function(e){
 });
 if (tg){ tg.ready(); tg.expand(); }
 load();
+// Мини-аппка живёт в iframe: пока игрок ходил в кликер или подземелье, вкладка
+// не перезагружалась, и список оставался старым. Обновляем при возврате.
+document.addEventListener("visibilitychange", function(){
+  if (!document.hidden) load();
+});
+window.addEventListener("pageshow", function(e){ if (e.persisted) load(); });
+window.addEventListener("focus", load);
+setInterval(function(){ if (!document.hidden) load(); }, 30000);
 </script>
 </body>
 </html>
@@ -6113,8 +6127,6 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   image-rendering:pixelated;font-size:11px;line-height:1.5}
 #cv{display:block;width:100%;height:100%;touch-action:none;background:#0d0a10;
   image-rendering:pixelated}
-.top{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;
-  background:linear-gradient(#0b0e14ee,#0b0e1400);z-index:10}
 .hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
   justify-content:space-between;gap:6px;z-index:12}
 .frame{background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
@@ -6167,13 +6179,16 @@ html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
   background:linear-gradient(#2a1c10,#160e07);border:2px solid #6b4a22;border-radius:10px;
   padding:14px 12px;color:#ffd98a;font-size:11px;font-weight:800}
 .wfitem span{color:#e8d7b0}
-.top{justify-content:space-between;background:none}
-.top .grp{display:flex;gap:7px}
-.top button{border:0;color:#f0d79a;border-radius:50%;width:46px;height:46px;
+/* Кнопки HUD рисуются от класса .hudtop. Раньше тут стоял .top, а в разметке
+   был .hudtop: стили не попадали на кнопки, а скрипт искал .top [data-tab] и
+   вообще не вешал обработчики — сумка, задания, лидерборд были мертвы. */
+.hudtop{justify-content:space-between;background:none}
+.hudtop .grp{display:flex;gap:7px}
+.hudtop button{border:0;color:#f0d79a;border-radius:50%;width:46px;height:46px;
   font-size:18px;font-family:inherit;padding:0;
   background:url(/static/ui/btn_yellow.png) center/100% 100% no-repeat;
   filter:drop-shadow(0 3px 6px #000a)}
-.top button:active{transform:translateY(2px)}
+.hudtop button:active{transform:translateY(2px)}
 
 .wcol{flex:1;min-width:0;background:linear-gradient(#2a1c10ee,#140d06ee);border:3px solid #6b4a22;
   border-radius:10px;padding:8px 10px;box-shadow:0 0 0 2px #120c06}
@@ -7370,6 +7385,9 @@ document.getElementById("cleave").onclick = function(){ coopClose(false); };
 /* ---------- НПС-квестовик ---------- */
 let QUEST = null;
 let QUEST_ERR = "";
+// Панель квеста открыта: пока она на экране, мир стоит, иначе мобы бьют
+// игрока, пока он читает задание.
+let questShown = false;
 
 function questProgress(){
   return QUEST ? (QUEST.kind === "boss" ? (QUEST.bossDone || 0) : (QUEST.done || 0)) : 0;
@@ -7434,7 +7452,17 @@ async function questLoad(){
   try{ r = await coopApi("/api/dungeon/quest"); }
   catch(e){ r = {error: "нет связи с сервером"}; }
   if (r && r.quest){
-    QUEST = r.quest; QUEST.done = 0; QUEST.bossDone = 0;
+    // Прогресс живёт на клиенте: считаем убийства тут же. Если сервер прислал
+    // тот же час, что уже был, накопленное нельзя обнулять — раньше здесь
+    // стоял жёсткий сброс, и полоска всегда откатывалась к «0 из N».
+    const sameHour = !!QUEST && QUEST.hour === r.quest.hour;
+    const keepDone = sameHour ? (QUEST.done || 0) : 0;
+    const keepBoss = sameHour ? (QUEST.bossDone || 0) : 0;
+    const keepClaimed = sameHour && !!QUEST.claimed;
+    QUEST = r.quest;
+    QUEST.done = keepDone || (QUEST.done || 0);
+    QUEST.bossDone = keepBoss || (QUEST.bossDone || 0);
+    if (keepClaimed) QUEST.claimed = true;
     questToCache();
   } else {
     QUEST_ERR = (r && r.error) || "сервер не ответил";
@@ -7457,6 +7485,7 @@ async function questTake(){
   }catch(e){ toast("Связь потерялась"); }
 }
 function questOpen(){
+  questShown = true;
   document.getElementById("questpanel").classList.add("on");
   questPaint();
   if (!QUEST) questLoad();
@@ -7473,7 +7502,9 @@ cv.addEventListener("pointerdown", function(ev){
   if (Math.hypot(wx - spot.x, wy - spot.y) < 70) questOpen();
 });
 document.getElementById("qclose").onclick = function(){
+  questShown = false;
   document.getElementById("questpanel").classList.remove("on");
+  if (typeof heroSave === "function") heroSave(false);
 };
 /* ---------- таблица лидеров ---------- */
 async function openTop(){
@@ -7617,8 +7648,7 @@ document.getElementById("wclose").onclick = function(){
 };
 document.getElementById("wfsell").onclick = function(){
   document.getElementById("wfull").classList.remove("on");
-  document.getElementById("bag").classList.add("on");
-  paintInv();
+  openBag();
 };
 document.getElementById("offbtn").onclick = function(){
   if (!OFFLINE.length){ toast("Все на месте — оффлайн никого"); return; }
@@ -8138,6 +8168,12 @@ function toast(t){
   el.textContent = t; el.className = "on";
   clearTimeout(el._t); el._t = setTimeout(() => el.className = "", 2500);
 }
+// В других мини-аппках money() есть, а в подземелье её не было: панель квеста
+// падала на ReferenceError прямо в questPaint и оставалась «Загружаю…».
+function money(n){
+  const value = Math.round(Number(n) || 0);
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
 /* ---------- мир ---------- */
 // Мобы живут во всех локациях, а не только там, где сейчас игрок: иначе
 // соседние уровни пустые и кажется, что мир вымер.
@@ -8580,7 +8616,7 @@ function loop(now){
   FX.step(dt);
   coopUiTick(dt);
   remoteTick(dt);
-  if (!P.weapon || inBattle || COOP.open){ render(dt); return; }
+  if (!P.weapon || inBattle || COOP.open || questShown){ render(dt); return; }
 
   let vx = joyV.x, vy = joyV.y;
   if (keys["w"] || keys["ц"] || keys["arrowup"]) vy = -1;
@@ -8696,12 +8732,12 @@ function loop(now){
 
   // кнопка «говорить» появляется рядом с НПС
   const talkBtn = document.getElementById("talkbtn");
-  if (talkBtn) talkBtn.classList.toggle("on", npcDist() < 150 && !document.getElementById("questpanel").classList.contains("on"));
-  // НПС: подошёл впервые — окликает и открывает квест
+  if (talkBtn) talkBtn.classList.toggle("on", npcDist() < 150 && !questShown);
+  // НПС окликает при первом подходе, но панель не распахивает: раньше она
+  // открывалась сама, мобы продолжали бить, и квест было не прочитать.
   if (!NPC.met && npcDist() < 110){
     NPC.met = true;
-    toast(NPC.name + ": «" + NPC.greet[0] + "»");
-    questOpen();
+    toast(NPC.name + ": «" + NPC.greet[0] + "» — нажми 💬, чтобы взять задание");
   }
   // сейф-зона: показываем, что тут можно стоять и не отбиваться
   const safeBadge = document.getElementById("safebadge");
@@ -8993,8 +9029,9 @@ function sellWeapon(id, ev){
   paintInv(); sync(); heroSave(true);
 }
 function paintInv(){
-  const html = P.bag.map(id => {
+  const html = (P.bag || []).map(function(id){
     const w = weaponById(id);
+    if (!w) return "";                 // старое оружие из сумки могло не дожить
     const on = P.weapon && P.weapon.id === id;
     return '<div class="c" data-eq="' + id + '" style="margin-bottom:8px;' +
       'border-color:' + (on ? "#3b6fff" : "#2a3346") + '">' +
@@ -9009,26 +9046,33 @@ function paintInv(){
     box.innerHTML = html || '<div style="color:#8a7a9a;font-size:11px;padding:10px">' +
       'Пусто. Бей мобов — с них падает оружие.</div>';
     box.querySelectorAll("[data-eq]").forEach(el => el.onclick = () => {
-      P.weapon = weaponById(el.dataset.eq);
-      paintInv(); toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
+      const picked = weaponById(el.dataset.eq);
+      if (!picked){ toast("Это оружие больше не существует"); return; }
+      P.weapon = picked;
+      paintInv(); sync(); heroSave(true);
+      toast("Взял: " + P.weapon.name + " — теперь ты " + P.weapon.cls);
     });
     box.querySelectorAll("[data-sell]").forEach(el => el.onclick = (ev) => {
       sellWeapon(el.dataset.sell, ev);
     });
   });
 }
+// Одна точка входа в сумку: кнопки HUD, 🎒 на карте и меню оружия.
+function openBag(){
+  const box = document.getElementById("bag");
+  if (!box) return;
+  paintInv();
+  box.classList.add("on");
+}
+function closeBag(){
+  const box = document.getElementById("bag");
+  if (box) box.classList.remove("on");
+}
 paintInv();
-const bagBtn = document.getElementById("bagbtn");
-if (bagBtn) bagBtn.onclick = (e) => {
-  e.preventDefault();
-  document.getElementById("bag").classList.add("on");
-  paintInv();
-};
-const bag2 = document.getElementById("bag2");
-if (bag2) bag2.onclick = () => {
-  document.getElementById("bag").classList.add("on");
-  paintInv();
-};
+["bagbtn", "bag2"].forEach(function(idd){
+  const btn = document.getElementById(idd);
+  if (btn) btn.onclick = function(e){ if (e) e.preventDefault(); openBag(); };
+});
 const wUpg = document.getElementById("wupg");
 if (wUpg) wUpg.onclick = () => heroUpgrade();
 const wChat = document.getElementById("wchat");
@@ -9036,7 +9080,7 @@ if (wChat) wChat.onclick = () => chatOpen();
 const wArmor = document.getElementById("warmor");
 if (wArmor) wArmor.onclick = () => heroArmor();
 const bagClose = document.getElementById("bagclose");
-if (bagClose) bagClose.onclick = () => document.getElementById("bag").classList.remove("on");
+if (bagClose) bagClose.onclick = closeBag;
 document.getElementById("startbtn").onclick = () => {
   if (!P.started){
     reset();
@@ -9076,17 +9120,18 @@ function openGfx(){
     };
   });
 }
-document.querySelectorAll(".top [data-tab]").forEach(b => b.onclick = () => {
-  const t = b.dataset.tab;
-  if (t === "bag"){ document.getElementById("bag").classList.add("on"); paintInv(); return; }
+function openTab(t){
+  if (t === "bag"){ openBag(); return; }
   if (t === "clicker"){ location.href = "/yugi"; return; }
   if (t === "quests"){ location.href = "/quests"; return; }
-  if (t === "weapon"){
-    document.getElementById("wfull").classList.add("on");
-    return;
-  }
+  if (t === "weapon"){ document.getElementById("wfull").classList.add("on"); return; }
   if (t === "board"){ openTop(); return; }
   if (t === "settings"){ openGfx(); return; }
+}
+// Разметка HUD — .hudtop, а не .top. Из-за опечатки в селекторе ни одна из
+// пяти кнопок не получала обработчик, и в сумку было не попасть.
+document.querySelectorAll(".hudtop [data-tab]").forEach(function(b){
+  b.onclick = function(){ openTab(b.dataset.tab); };
 });
 function sync(){ document.getElementById("coins").textContent = P.coins;
   if (P.weapon){

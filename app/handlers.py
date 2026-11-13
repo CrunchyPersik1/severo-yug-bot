@@ -444,25 +444,36 @@ async def cmd_collection(message: Message, db: Database, market: MarketRepo) -> 
     await message.answer(text, reply_markup=keyboard)
 
 
+# Снимаем только «обёртку» вокруг токена. Дефис и подчёркивание не трогаем:
+# они бывают частью имени и телеграм-ника.
+_TOKEN_PUNCT = " \t\n\r,.;:!?()[]{}<>«»\"'`*—–"
+
+
 async def resolve_profile_target(
     message: Message, market: MarketRepo
 ) -> tuple[int | None, str | None, str | None]:
-    """Кого смотреть: (id, имя, ошибка). id=None — свой профиль."""
+    """Кого смотреть: (id, имя, ошибка). id=None и error=None — свой профиль."""
     reply = message.reply_to_message
     if reply is not None and reply.from_user is not None and not reply.from_user.is_bot:
         return reply.from_user.id, reply.from_user.first_name, None
-    for part in (message.text or "").split()[1:]:
-        if part.startswith("@"):
-            found = await market.find_by_username(part)
-            if found is None:
-                return None, None, (
-                    f"Игрок {render.esc(part)} не найден. Он должен хотя бы раз "
-                    "написать боту — тогда я его узнаю."
-                )
-            return int(found["user_id"]), found["first_name"], None
     for entity in message.entities or []:
         if entity.type == "text_mention" and entity.user is not None:
             return entity.user.id, entity.user.first_name, None
+    # Всё, что стоит после команды, — попытка указать игрока. Раньше здесь
+    # понимались только токены с «@», остальное молча превращалось в свой
+    # профиль: /profile Тро или /profile 123 показывали профиль автора команды.
+    for part in (message.text or "").split()[1:]:
+        token = part.strip(_TOKEN_PUNCT)
+        if not token:
+            continue
+        found = await market.find_player(token)
+        if found is None:
+            return None, None, (
+                f"Игрок {render.esc(token)} не найден. Нужен @ник, точное имя "
+                "из профиля или числовой id — и этот игрок должен был хотя бы "
+                "раз написать боту."
+            )
+        return int(found["user_id"]), found["first_name"], None
     return None, None, None
 
 

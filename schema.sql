@@ -738,7 +738,7 @@ create table if not exists dungeon_hero (
 );
 
 -- ===================================================================== --
--- Квесты со страницы «Задания»: награда забирается один раз
+-- Задания со страницы «Задания»: награда забирается один раз в игровые сутки
 -- ===================================================================== --
 
 create table if not exists quest_claim (
@@ -747,6 +747,27 @@ create table if not exists quest_claim (
     claimed_at timestamptz not null default now(),
     primary key (user_id, quest_key)
 );
+
+-- Квесты ежедневные, а ключ был (user_id, quest_key) без даты: забрав все
+-- семь один раз, игрок навсегда видел «ПОЛУЧЕНО». Добавляем день и переносим
+-- уникальность на тройку (user_id, quest_key, day_key).
+alter table quest_claim add column if not exists day_key date;
+update quest_claim
+   set day_key = (claimed_at - interval '7 hours')::date
+ where day_key is null;
+alter table quest_claim alter column day_key set not null;
+do $$
+begin
+    if exists (
+        select 1 from pg_constraint
+         where conname = 'quest_claim_pkey'
+           and conrelid = 'quest_claim'::regclass
+    ) then
+        alter table quest_claim drop constraint quest_claim_pkey;
+    end if;
+end $$;
+create unique index if not exists quest_claim_day_uniq
+    on quest_claim (user_id, quest_key, day_key);
 
 alter table dungeon_hero add column if not exists armor integer not null default 0;
 

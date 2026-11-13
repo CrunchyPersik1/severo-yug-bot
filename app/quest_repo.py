@@ -1,8 +1,9 @@
-"""Квесты: прогресс по счётчикам и выдача награды ровно один раз.
+"""Квесты: прогресс по счётчикам и выдача награды ровно один раз в сутки.
 
 Прогресс читаем из тех же SQL-счётчиков, что у недельного ивента. Награда
 записывается в quest_claim; вставка с on conflict do nothing и есть защита
-от двойного нажатия и от двух вкладок сразу.
+от двойного нажатия и от двух вкладок сразу. Ключ награды — (игрок, квест,
+игровые сутки), поэтому на следующий день квесты снова доступны.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import asyncpg
 
 from . import quests
 from .db import Database
+from .gacha import day_key
 
 
 class QuestError(Exception):
@@ -26,14 +28,17 @@ class QuestRepo:
         return self.db._p()
 
     async def list(self, user_id: int) -> list[dict]:
+        today = day_key()
         result: list[dict] = []
         async with self.pool.acquire() as con:
             claimed_rows = await con.fetch(
-                "select quest_key from quest_claim where user_id = $1::bigint",
+                "select quest_key from quest_claim "
+                "where user_id = $1::bigint and day_key = $2::date",
                 int(user_id),
+                today,
             )
             claimed = {str(row["quest_key"]) for row in claimed_rows}
-            for index, key in enumerate(quests.order()):
+            for key in quests.order():
                 sql = quests.source_sql(key)
                 current = int(await con.fetchval(sql, int(user_id)) or 0) if sql else 0
                 need = quests.need_for(key)
@@ -56,9 +61,9 @@ class QuestRepo:
         name = str(key or "").strip()
         if name not in quests.order():
             raise QuestError("Такого квеста нет")
-        index = quests.order().index(name)
         sql = quests.source_sql(name) or ""
         need = quests.need_for(name)
+        today = day_key()
 
         async with self.pool.acquire() as con:
             async with con.transaction():
@@ -67,16 +72,17 @@ class QuestRepo:
                     raise QuestError("Квест ещё не выполнен")
                 fresh = await con.fetchrow(
                     """
-                    insert into quest_claim (user_id, quest_key)
-                    values ($1::bigint, $2::text)
-                    on conflict (user_id, quest_key) do nothing
+                    insert into quest_claim (user_id, quest_key, day_key)
+                    values ($1::bigint, $2::text, $3::date)
+                    on conflict (user_id, quest_key, day_key) do nothing
                     returning quest_key
                     """,
                     int(user_id),
                     name,
+                    today,
                 )
                 if fresh is None:
-                    raise QuestError("Награда уже получена")
+                    raise QuestError("Награда уже получена — ждать до сброса суток")
                 reward = quests.reward_for(name)
                 if reward.get("points"):
                     await con.execute(

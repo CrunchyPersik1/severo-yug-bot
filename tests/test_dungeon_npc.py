@@ -16,10 +16,36 @@ def test_npc_stands_near_spawn():
 
 def test_npc_talks():
     assert "greet: [" in DUNGEON_PAGE
-    # при подходе окликает и открывает панель
+    # при подходе окликает, но панель сама не распахивается: иначе мобы бьют
+    # игрока, пока он читает задание
     assert "if (!NPC.met && npcDist() < 110){" in DUNGEON_PAGE
+    met_block = DUNGEON_PAGE.split("if (!NPC.met && npcDist() < 110){", 1)[1][:400]
+    assert "questOpen()" not in met_block, "подход к НПС не должен открывать квест сам"
     # в панели реплика НПС, а не сухая строка
     assert "NPC.name + ': «' + esc(line) + '»'" in DUNGEON_PAGE
+
+
+def test_quest_panel_pauses_the_world():
+    """Пока панель квеста открыта, мобы не должны бить игрока."""
+    assert "let questShown = false;" in DUNGEON_PAGE
+    assert "questShown = true;" in DUNGEON_PAGE
+    assert "questShown = false;" in DUNGEON_PAGE
+    assert "COOP.open || questShown){ render(dt); return; }" in DUNGEON_PAGE
+
+
+def test_quest_panel_has_money_helper():
+    """Раньше page падал на ReferenceError: money is not defined."""
+    assert "function money(n){" in DUNGEON_PAGE
+    # и правда используется в панели квеста
+    assert "money(QUEST.coins)" in DUNGEON_PAGE
+    assert "money(r.coins)" in DUNGEON_PAGE
+
+
+def test_quest_progress_survives_reload():
+    """Прогресс копится на клиенте — жёсткий сброс обнулял полоску."""
+    assert "QUEST.done = 0; QUEST.bossDone = 0;" not in DUNGEON_PAGE
+    assert "const sameHour = !!QUEST && QUEST.hour === r.quest.hour;" in DUNGEON_PAGE
+    assert "const keepDone = sameHour ? (QUEST.done || 0) : 0;" in DUNGEON_PAGE
 
 
 def test_npc_can_be_tapped():

@@ -696,6 +696,48 @@ def test_unknown_username_gives_a_hint():
     asyncio.run(scenario())
 
 
+def test_profile_by_bare_nickname_and_id_is_not_self():
+    """Регрессия: /profile по нику или id показывал профиль автора команды."""
+
+    async def scenario():
+        for command in ("/profile friend", "/profile 333", "/profile @friend,"):
+            db = FakeDB()
+            db.names[333] = "Друг"
+            session = await feed(command, db, FakeService())
+            body = sent_texts(session)[0]
+            assert "Друг" in body, f"{command}: должен показаться чужой профиль, а не свой"
+            markup = str(
+                [p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup")
+            )
+            assert "pf:333" in markup
+            assert "pf:111" not in markup, f"{command}: кнопки ведут на свой профиль"
+
+    asyncio.run(scenario())
+
+
+def test_profile_by_unknown_name_errors_instead_of_showing_self():
+    async def scenario():
+        session = await feed("/profile Несуществующий", FakeDB(), FakeService())
+        body = sent_texts(session)[0]
+        assert "не найден" in body
+        markup = str([p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup"))
+        assert "pf:111" not in markup, "нельзя молча падать на свой профиль"
+
+    asyncio.run(scenario())
+
+
+def test_profile_without_argument_still_shows_own_profile():
+    async def scenario():
+        db = FakeDB()
+        session = await feed("/profile", db, FakeService())
+        body = sent_texts(session)[0]
+        assert "Игрок111" in body, "без аргумента показываем свой профиль"
+        markup = str([p for n, p in session.calls if n == "SendMessage"][0].get("reply_markup"))
+        assert "my:c:0" in markup, "кнопки своего профиля, а не чужого"
+
+    asyncio.run(scenario())
+
+
 def test_other_players_cards_and_stats_are_viewable():
     async def scenario():
         db = FakeDB()

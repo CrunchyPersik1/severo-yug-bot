@@ -48,3 +48,38 @@ def test_controls_do_not_overlap_menu():
     assert "right:14px;bottom:150px" in DUNGEON_PAGE
     # полосы теперь компактной строкой сверху, а не поверх игры
     assert "top:54px" in DUNGEON_PAGE
+
+
+def test_hud_buttons_are_actually_wired():
+    """Регрессия: селектор был .top, разметка — .hudtop, и все 5 кнопок молчали."""
+    assert 'document.querySelectorAll(".hudtop [data-tab]")' in DUNGEON_PAGE
+    assert 'document.querySelectorAll(".top [data-tab]")' not in DUNGEON_PAGE
+    # обработчик вешается через общий диспетчер, а не копией кода в пяти местах
+    assert "function openTab(t){" in DUNGEON_PAGE
+    for tab in ("bag", "clicker", "quests", "weapon", "board", "settings"):
+        assert 't === "%s"' % tab in DUNGEON_PAGE, tab
+
+
+def test_css_selectors_match_the_markup():
+    """.top в стилях подземелья не существовал в разметке — стили не доезжали."""
+    assert ".hudtop .grp{display:flex;gap:7px}" in DUNGEON_PAGE
+    assert ".hudtop button{" in DUNGEON_PAGE
+    # старый селектор, который ни на что не накладывался, убран
+    assert ".top button{border:0;color:#f0d79a" not in DUNGEON_PAGE
+    assert ".top .grp{display:flex;gap:7px}" not in DUNGEON_PAGE
+
+
+def test_bag_opens_from_one_place():
+    """В сумку нельзя было войти: кнопки звали несуществующий #bagbtn."""
+    assert "function openBag(){" in DUNGEON_PAGE
+    assert "function closeBag(){" in DUNGEON_PAGE
+    assert 'if (t === "bag"){ openBag(); return; }' in DUNGEON_PAGE
+    assert '["bagbtn", "bag2"].forEach' in DUNGEON_PAGE
+    assert "if (bagClose) bagClose.onclick = closeBag;" in DUNGEON_PAGE
+
+
+def test_bag_skips_unknown_weapons_instead_of_crashing():
+    """paintInv падал на weaponById(...).name, если оружия уже нет в WEAPONS."""
+    assert "const w = weaponById(id);" in DUNGEON_PAGE
+    assert 'if (!w) return "";' in DUNGEON_PAGE
+    assert 'if (!picked){ toast("Это оружие больше не существует"); return; }' in DUNGEON_PAGE

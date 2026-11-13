@@ -20,3 +20,21 @@ def test_claim_button_is_wired():
 def test_note_no_longer_promises_automatic_rewards():
     assert "Награды приходят автоматически" not in QUESTS_PAGE
     assert "забирается кнопкой" in QUESTS_PAGE
+
+
+def test_page_refreshes_when_coming_back():
+    """Регрессия: список не обновлялся после возврата из другой мини-аппки."""
+    assert 'document.addEventListener("visibilitychange"' in QUESTS_PAGE
+    assert 'window.addEventListener("pageshow"' in QUESTS_PAGE
+    assert 'cache: "no-store"' in QUESTS_PAGE
+    assert "setInterval(" in QUESTS_PAGE
+
+
+def test_api_forbids_caching():
+    """Ответ /api/quests читается из живых счётчиков — кешировать нельзя."""
+    import inspect
+
+    from app import webapp
+
+    source = inspect.getsource(webapp.api_quests)
+    assert "Cache-Control" in source and "no-store" in source
