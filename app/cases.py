@@ -79,9 +79,21 @@ def roll_case_rarity(rng: random.Random | None = None) -> str:
     return rng.choices(keys, weights=[CASE_RARITY_WEIGHTS[k] for k in keys], k=1)[0]
 
 
-def roll_case_card(rng: random.Random | None = None) -> Card:
+def roll_case_card(rng: random.Random | None = None, boost: float = 1.0) -> Card:
+    # boost > 1 поднимает шансы верхних редкостей (пет Симона)
     rng = rng or random
-    return rng.choice(CARDS_BY_RARITY[roll_case_rarity(rng)])
+    if boost <= 1.0:
+        return rng.choice(CARDS_BY_RARITY[roll_case_rarity(rng)])
+    keys = list(CASE_RARITY_WEIGHTS)
+    weights = []
+    for key in keys:
+        weight = CASE_RARITY_WEIGHTS[key]
+        if key in ("legendary", "secret", "ultimate", "ultra"):
+            weight *= boost
+        weights.append(weight)
+    total = sum(weights) or 1.0
+    rarity = rng.choices(keys, weights=[w / total for w in weights], k=1)[0]
+    return rng.choice(CARDS_BY_RARITY[rarity])
 
 
 def case_contents() -> str:

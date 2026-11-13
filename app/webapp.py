@@ -1509,10 +1509,12 @@ async def api_drop(request: Request) -> JSONResponse:
             {"error": "Попытки на сегодня кончились — сброс в 12:00 по ЕКБ"},
             status_code=400,
         )
+    effects = await petfx.multi(state.db, uid)
+    boost = 1.0 + float(effects.get("chance_all", 0.0))
     if kind == "d":
         card = roll_card_d()
     else:
-        card = roll_gacha_card()
+        card = roll_gacha_card(boost=boost)
     counts = await state.db.get_collection(uid)
     is_new = card.card_id not in counts
     await state.db.add_card(uid, card.card_id)
@@ -2183,11 +2185,17 @@ async def api_case_open(request: Request) -> JSONResponse:
     is_d = str(case.get("source") or "") == cases_mod.CASE_D_SOURCE
     if not await state.db.open_case(uid, int(case["id"])):
         return JSONResponse({"error": "Этот кейс уже открыт"}, status_code=400)
-    card = cases_mod.roll_case_d() if is_d else roll_case_card()
+    effects = await petfx.multi(state.db, uid)
+    card = (
+        cases_mod.roll_case_d()
+        if is_d
+        else roll_case_card(boost=1.0 + float(effects.get("ultra_luck", 0.0)))
+    )
     counts = await state.db.get_collection(uid)
     is_new = card.card_id not in counts
     count = await state.db.add_card(uid, card.card_id)
-    await state.db.add_points(uid, card.points)
+    points = int(card.points * (1.0 + float(effects.get("case_points", 0.0))))
+    await state.db.add_points(uid, points)
     left = len(await state.db.user_cases(uid))
     return JSONResponse(
         {
@@ -3191,6 +3199,13 @@ async def api_upgrader_spin(request: Request) -> JSONResponse:
         )
         if not outcome.get("ok"):
             raise ValueError(outcome.get("error", "Этой карты у тебя уже нет."))
+        saved = False
+        if not won:
+            effects = await petfx.multi(state.db, user_id)
+            chance_save = float(effects.get("upgrade_save", 0.0))
+            if chance_save > 0 and random.random() < chance_save:
+                await state.db.add_card(user_id, from_id)
+                saved = True
     except Exception as error:  # noqa: BLE001
         return JSONResponse({"error": str(error)}, status_code=400)
 
@@ -3205,6 +3220,7 @@ async def api_upgrader_spin(request: Request) -> JSONResponse:
             "boost": boost,
             "base_chance": base_odd,
             "drift": bool(outcome.get("drift")),
+            "saved": saved,
             "drift_streak": int(outcome.get("streak") or 0),
             "dep": await state.db.dep_balance(user_id),
         }
@@ -8355,11 +8371,18 @@ async def api_case_open_many(request: Request) -> JSONResponse:
             continue
         # Пул строго по типу кейса: 7Д не может выдать карту 7Г.
         case_is_d = str(case.get("source") or "") == cases_mod.CASE_D_SOURCE
-        card = cases_mod.roll_case_d() if case_is_d else roll_case_card()
+        effects = await petfx.multi(state.db, uid)
+        card = (
+            cases_mod.roll_case_d()
+            if case_is_d
+            else roll_case_card(boost=1.0 + float(effects.get("ultra_luck", 0.0)))
+        )
         counts = await state.db.get_collection(uid)
         is_new = card.card_id not in counts
         await state.db.add_card(uid, card.card_id)
-        await state.db.add_points(uid, card.points)
+        await state.db.add_points(
+            uid, int(card.points * (1.0 + float(effects.get("case_points", 0.0))))
+        )
         opened.append(
             {
                 "id": card.card_id,
