@@ -13,6 +13,7 @@ from typing import Any
 import asyncpg
 
 from . import event
+from . import game_log
 from .cards import CARDS_BY_ID, get_card
 from .db import Database
 from .gacha import day_key
@@ -42,6 +43,10 @@ stock                      показать курсы биржи
 stock syug 1500            задать курс монеты (плавно доедет за пару шагов)
 stock syug +10%            поднять (или -10% опустить) курс на процент
 stock fix                  вылечить биржу, если курс замер
+log                        живой лог игры за 30 минут
+log 5                      за 5 минут
+log 120 200                за 120 минут, последние 200 строк
+log @ник                   только по этому игроку
 
 Игрока можно указывать как @username, так и числовым id.
 give начисляет очки за карту, take списывает их же.
@@ -635,6 +640,46 @@ async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
     )
 
 
+async def act_log(con: asyncpg.Connection, args: list[str]) -> str:
+    """Живой лог игры за последние минуты.
+
+    log              что было за 30 минут
+    log 5            за 5 минут
+    log 120 200      за 120 минут, последние 200 строк
+    log @ник         только этот игрок (за 30 минут)
+    """
+    minutes = 30
+    limit = 60
+    target: str | None = None
+
+    for arg in args:
+        if arg.startswith("@"):
+            target = arg.lstrip("@")
+            continue
+        if arg.isdigit():
+            value = int(arg)
+            # Первое число после игрока — это лимит строк, иначе минуты.
+            if target is not None and limit == 60:
+                limit = value
+            elif minutes == 30:
+                minutes = value
+            else:
+                limit = value
+
+    rows = await game_log.recent(con, minutes=minutes, limit=limit, username=target)
+    if not rows:
+        span = f"за {minutes} мин" if minutes < 120 else f"за {minutes // 60} ч"
+        return f"Живой лог: тихо. Никто ничего не делал {span}."
+
+    head = f"Живой лог · последние {minutes} мин · строк: {len(rows)}"
+    if target:
+        head += f" · игрок @{target}"
+    out = [game_log.frame(head)]
+    for row in reversed(rows):
+        out.append(game_log.line(row))
+    return "\n".join(out)
+
+
 COMMANDS = {
     "event": act_event,
     "minuta": act_minuta,
@@ -649,6 +694,8 @@ COMMANDS = {
     "take": act_take,
     "stock": act_stock,
     "курс": act_stock,
+    "log": act_log,
+    "лог": act_log,
 }
 
 

@@ -47,6 +47,7 @@ from .cards import (
 from .casino_repo import CasinoRepo
 from .cases import roll_case_card
 from . import dungeon
+from . import game_log
 from .dungeon_repo import DungeonError
 from .quest_repo import QuestError
 from .games_page import CASE_PAGE, ROULETTE_PAGE
@@ -119,7 +120,103 @@ async def _player(request: Request) -> dict[str, Any]:
     # мог спокойно играть через приложение — middleware его не видел.
     if user_id not in state.settings.admin_ids and await state.db.is_banned(user_id):
         raise ShopError("🚫 Доступ закрыт: аккаунт заблокирован.")
+    _log_action(request, user)
     return user
+
+
+# Ручки, которые дробят действия на части: тапы кликера, шаги биржи,
+# отметки присутствия в подземелье. Их в ленте показываем не чаще раза
+# в STORM_SECONDS на игрока, иначе лог превращается в одну строку «тап».
+_STORM = {
+    "/api/yugi/tap",
+    "/api/yugi/buy",
+    "/api/yugi/case",
+    "/api/yugi/tree",
+    "/api/dungeon/presence",
+    "/api/dungeon/boss/hit",
+}
+STORM_SECONDS = 20.0
+
+# user_id -> когда последний раз писали про шумную ручку
+_STORM_SEEN: dict[tuple[int, str], float] = {}
+
+# Человеческие названия ручек для ленты.
+_ACTIONS = {
+    "/api/buy": "покупка в магазине",
+    "/api/market/buy": "купил лот на бирже",
+    "/api/market/cancel": "снял лот с биржи",
+    "/api/stocks/buy": "купил акции",
+    "/api/stocks/sell": "продал акции",
+    "/api/case/open": "открыл кейс",
+    "/api/case/open_many": "открыл пачку кейсов",
+    "/api/case/buy_d": "купил кейс 7Д",
+    "/api/roulette/spin": "крутил рулетку",
+    "/api/roulette_table/spin": "крутил стол",
+    "/api/upgrader/spin": "крутил апгрейдер",
+    "/api/buyer/sell": "продал скупщику",
+    "/api/buyer/dupes": "сдал дубли",
+    "/api/theme/set": "сменил тему",
+    "/api/casino/play": "играл в казино",
+    "/api/yugi/tap": "кликает",
+    "/api/yugi/buy": "строит в кликере",
+    "/api/yugi/case": "обменял Юги на кейс",
+    "/api/yugi/tree": "качает древо",
+    "/api/yugi/ascend": "перерождение",
+    "/api/yugi/golden": "поймал печеньку",
+    "/api/event/claim": "забрал награду ивента",
+    "/api/event/contribute": "внёс вклад в ивент",
+    "/api/profile/save": "правил профиль",
+    "/api/collection/upgrade": "апгрейд карты",
+    "/api/quests/claim": "забрал награду задания",
+    "/api/dungeon/boss/join": "встал на босса",
+    "/api/dungeon/boss/hit": "бьёт босса",
+    "/api/dungeon/boss/leave": "вышел из боя",
+    "/api/dungeon/boss/start": "начал бой один",
+    "/api/dungeon/presence": "ходит по подземелью",
+    "/api/dungeon/hero": "сохранил героя",
+    "/api/dungeon/upgrade": "улучшил оружие",
+    "/api/dungeon/quest": "взял квест Тимура",
+    "/api/dungeon/armor": "купил броню",
+}
+
+
+def _log_action(request: Request, user: dict[str, Any]) -> None:
+    """Пишет действие игрока в живой лог. Только POST: GET — это чтение.
+
+    Никогда не бросает: лог не имеет права сломать игру.
+    """
+    try:
+        if request.method != "POST":
+            return
+        path = request.url.path
+        action = _ACTIONS.get(path)
+        if action is None:
+            return
+        user_id = int(user["id"])
+        if path in _STORM:
+            now = datetime.now(timezone.utc).timestamp()
+            key = (user_id, path)
+            last = _STORM_SEEN.get(key, 0.0)
+            if now - last < STORM_SECONDS:
+                return
+            _STORM_SEEN[key] = now
+            # карту не раздуваем: чистим, когда набралось много
+            if len(_STORM_SEEN) > 5000:
+                _STORM_SEEN.clear()
+        database = getattr(request.app.state, "db", None)
+        pool = getattr(database, "pool", None)
+        if pool is None:
+            return
+        game_log.write_soon(
+            pool,
+            user_id,
+            game_log.who_of(user.get("username"), user.get("first_name"), user_id),
+            "app",
+            action,
+            "",
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _entry_payload(entry) -> dict[str, Any]:

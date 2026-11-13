@@ -28,6 +28,7 @@ from app.db import Database
 from app.dungeon_hero import DungeonHeroRepo
 from app.dungeon_hub import DungeonHub
 from app.dungeon_repo import DungeonBossRepo
+from app import game_log
 from app.handlers import router
 from app.market_repo import MarketRepo
 from app.quest_repo import QuestRepo
@@ -325,6 +326,7 @@ async def telegram_webhook(request: Request) -> Response:
 
     bot = runtime.get("bot")
     dp = runtime.get("dp")
+    db = runtime.get("db")
     if bot is None or dp is None:
         return Response(status_code=503)
 
@@ -335,6 +337,12 @@ async def telegram_webhook(request: Request) -> Response:
 
     try:
         update = Update.model_validate(payload, context={"bot": bot})
+        # Живой лог: пишем ДО обработки, чтобы в ленте было видно и то,
+        # что упало обработчиком. Запись в фоне — не задерживаем ответ.
+        entry = game_log.describe_update(update)
+        if entry is not None and db is not None:
+            user_id, who, action, detail = entry
+            game_log.write_soon(db.pool, user_id, who, "bot", action, detail)
         await dp.feed_update(
             bot,
             update,

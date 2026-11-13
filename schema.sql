@@ -788,3 +788,22 @@ create table if not exists dungeon_quest (
     claimed_at timestamptz not null default now(),
     primary key (user_id, hour_key)
 );
+
+-- ===================================================================== --
+-- Живой лог игры: кто что нажал. Пишется из webhook бота и из ручек
+-- мини-аппки, читается командой `admin.local.bat log` в консоли.
+-- Специально без внешних ключей на players: если игрока удалят, история
+-- не должна исчезать. Чистка — по возрасту, см. game_log.prune().
+-- ===================================================================== --
+
+create table if not exists game_log (
+    id         bigserial primary key,
+    user_id    bigint,
+    who        text not null default '',
+    source     text not null default '',
+    action     text not null,
+    detail     text not null default '',
+    created_at timestamptz not null default now()
+);
+create index if not exists game_log_created_idx on game_log (created_at desc);
+create index if not exists game_log_user_idx on game_log (user_id, created_at desc);

@@ -178,6 +178,12 @@ async def main(argv: list[str] | None = None) -> int:
                 "delete from upgrader_log where user_id = any($1::bigint[])",
                 list(TEST_USERS),
             )
+            # Живой лог: прогон проверки — не действия живых игроков,
+            # в ленте им делать нечего.
+            await con.execute(
+                "delete from game_log where user_id = any($1::bigint[])",
+                list(TEST_USERS),
+            )
 
     if not args.keep_rows:
         await wipe()
