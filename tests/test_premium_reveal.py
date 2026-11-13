@@ -24,9 +24,21 @@ def test_hub_thumb_lookup():
     from app.webapp import HUB_ART_DIR, _hub_thumb
 
     assert HUB_ART_DIR.name == "hub"
-    # пока картинок нет — арта нет, плитка рисуется как раньше
-    assert _hub_thumb("yugi") is None
+    # у настоящих плиток миниатюры на месте, у выдуманной — нет
+    assert _hub_thumb("yugi") == "/images/hub/yugi.jpg"
+    assert _hub_thumb("rtable") == "/images/hub/rtable.jpg"
     assert _hub_thumb("nope") is None
+
+
+def test_every_hub_tile_has_art():
+    from app import webapp
+
+    missing = [
+        section["id"]
+        for section in webapp.HUB_SECTIONS
+        if webapp._hub_thumb(str(section["id"])) is None
+    ]
+    assert not missing, missing
 
 
 def test_hub_page_renders_art():
