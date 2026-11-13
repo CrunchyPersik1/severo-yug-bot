@@ -1792,6 +1792,51 @@ async def api_pets_upgrade(request: Request) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 
 
+async def _santa_weapons(state, user_id: int) -> dict[str, object]:
+    """Оружие бойца берётся из подземелья: то, что надето и лежит в сумке."""
+    from . import dungeon as dungeon_mod
+    from .dungeon_hero import parse_weapon
+
+    async with state.db.pool.acquire() as con:
+        row = await con.fetchrow(
+            "select weapon, bag from dungeon_hero where user_id = $1", int(user_id)
+        )
+    ids: list[str] = []
+    if row is not None:
+        if row["weapon"]:
+            ids.append(str(row["weapon"]))
+        raw = row["bag"]
+        if isinstance(raw, str):
+            try:
+                import json as _json
+                raw = _json.loads(raw)
+            except ValueError:
+                raw = []
+        for item in raw or []:
+            text = str(item)
+            if text not in ids:
+                ids.append(text)
+    out = []
+    for weapon_id in ids:
+        parsed = parse_weapon(weapon_id)
+        if parsed is None:
+            continue
+        kind, rank, variant = parsed
+        out.append(
+            {
+                "id": weapon_id,
+                "kind": kind,
+                "rank": rank,
+                "dmg": dungeon_mod.weapon_dmg(rank, variant),
+                "name": {"bow": "Лук", "sword": "Клинок", "staff": "Посох"}.get(kind, "Ствол")
+                        + " · ранг " + str(rank + 1),
+            }
+        )
+    if not out:
+        out.append({"id": "bow_3_0", "kind": "bow", "rank": 3,
+                    "dmg": dungeon_mod.weapon_dmg(3, 0), "name": "Лук · ранг 4"})
+    return {"weapons": out, "weapon": out[0]["id"]}
+
 async def _santa_state(state, user_id: int) -> dict[str, Any]:
     progress = await state.db.santa_progress(user_id)
     day = santa_mod.today_ekb()
@@ -1809,7 +1854,10 @@ async def _santa_state(state, user_id: int) -> dict[str, Any]:
                 and int(elf["level"]) <= progress["levels_done"] + 1,
             )
         )
+    weapons = await _santa_weapons(state, user_id)
     return {
+        "weapons": weapons["weapons"],
+        "weapon": weapons["weapon"],
         "story_done": bool(progress["story_done"]),
         "choice": choice,
         "levels_done": int(progress["levels_done"]),
@@ -6424,6 +6472,9 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .bdash{width:60px;height:60px;border-radius:50%!important;border:2px solid #2c4566!important;
   background:rgba(18,27,44,.9)!important;color:#9fc7ff!important;font-size:22px}
 .bdash:active{transform:scale(.94)}
+.bweap{width:60px;height:60px;border-radius:50%!important;border:2px solid #4a6b3a!important;
+  background:rgba(22,40,26,.9)!important;color:#b8e59a!important;font-size:22px}
+.bweap:active{transform:scale(.94)}
 .bfoot{font-size:10.5px;color:#8b93a7;text-align:right;line-height:1.4;max-width:110px}
 /* магазин *//* магазин */
 .shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
@@ -6484,6 +6535,7 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
     <div class="joy" id="joy"><i id="joyKnob"></i></div>
     <div class="bside">
       <div class="bfoot" id="bfoot">⚔ — удар<br>💨 — рывок</div>
+      <button class="bweap" id="weapBtn">🏹</button>
       <button class="bdash" id="dashBtn">💨</button>
       <button class="batk" id="atkBtn">⚔</button>
     </div>
@@ -6719,8 +6771,8 @@ async function buy(id){
   S = d.state; render();
   toast("Куплено: " + (d.granted || []).join(", "));
 }
-/* ---------- бой с эльфом: как в подземелье ---------- */
-let G = null, raf = 0, joystick = {active: false, x: 0, y: 0, dx: 0, dy: 0};
+/* ---------- бой: лук, укрытия, лечение, волны ---------- */
+let G = null, raf = 0, joystick = {active: false, dx: 0, dy: 0};
 const IMG = {};
 function loadImg(key, src){
   if (IMG[key]) return IMG[key];
@@ -6735,11 +6787,35 @@ loadImg("idle", "/images/event/elf_idle.png");
 loadImg("walk", "/images/event/elf_walk.png");
 loadImg("atk", "/images/event/elf_atk.png");
 loadImg("hurt", "/images/event/elf_hurt.png");
-
 const ELF_SHEETS = {idle: {img: "idle", frames: 6}, walk: {img: "walk", frames: 8},
                     atk: {img: "atk", frames: 7}, hurt: {img: "hurt", frames: 4}};
 const ELF_FRAME_W = 160, ELF_FRAME_H = 144;
+const FIGHTER = {frame: 32, rows: {idle: 0, walk: 1, attack: 6, hurt: 8},
+                 counts: {idle: 5, walk: 5, attack: 6, hurt: 3}, scale: 2.2};
 
+function weapons(){
+  return (S && S.weapons && S.weapons.length) ? S.weapons : [
+    {id: "bow_3_0", kind: "bow", rank: 3, dmg: 52, name: "Лук · ранг 4"}];
+}
+function currentWeapon(){
+  const list = weapons();
+  const saved = localStorage.getItem("santa_weapon");
+  return list.find(w => w.id === saved) || list[0];
+}
+function cycleWeapon(){
+  const list = weapons();
+  const cur = currentWeapon();
+  const i = list.indexOf(cur);
+  const next = list[(i + 1) % list.length];
+  localStorage.setItem("santa_weapon", next.id);
+  showWeapon();
+  if (G) G.p.dmg = next.dmg;
+}
+function showWeapon(){
+  const w = currentWeapon();
+  const el = document.getElementById("bfoot");
+  if (el) el.innerHTML = "🏹 " + esc(w.name) + "<br>урон " + w.dmg + "<br>⚔ удар · 💨 рывок";
+}
 function startFight(lv){
   const fight = document.getElementById("fight");
   document.body.classList.add("fighting");
@@ -6751,18 +6827,28 @@ function startFight(lv){
   const dpr = window.devicePixelRatio || 1;
   cv.width = Math.floor(rect.width * dpr);
   cv.height = Math.floor(rect.height * dpr);
+  const w = rect.width, h = rect.height;
+  const cover = [
+    {x: w * 0.30, y: h * 0.22, w: 64, h: 26},
+    {x: w * 0.62, y: h * 0.62, w: 70, h: 26},
+    {x: w * 0.18, y: h * 0.70, w: 58, h: 24}
+  ];
   G = {
-    lv: lv, dpr: dpr, w: rect.width, h: rect.height, t: 0, over: false, hits: [],
-    p: {x: rect.width * 0.3, y: rect.height * 0.5, hp: 140, max: 140, atkCd: 0,
-        dashCd: 0, dashT: 0, vx: 0, vy: 0, face: 1, moving: false, atkAnim: 0},
-    e: {x: rect.width * 0.7, y: rect.height * 0.5, hp: lv.hp, max: lv.hp,
-        shootCd: 1200, dodgeCd: 1800, hurtT: 0, face: -1, moving: false,
-        atkAnim: 0, vx: 0, vy: 0},
-    arrows: []
+    lv: lv, dpr: dpr, w: w, h: h, t: 0, over: false, hits: [], cover: cover,
+    hearts: [], heartCd: 6,
+    p: {x: w * 0.25, y: h * 0.5, hp: 150, max: 150, atkCd: 0, dashCd: 0,
+        dashT: 0, dvx: 0, dvy: 0, face: 1, moving: false, atkAnim: 0, hurtT: 0,
+        dmg: currentWeapon().dmg},
+    e: {x: w * 0.75, y: h * 0.5, hp: lv.hp, max: lv.hp, shootCd: 1200, dodgeCd: 1800,
+        hurtT: 0, face: -1, moving: false, atkAnim: 0, volleyCd: 15000, volley: 0},
+    arrows: [], shots: []
   };
-  // тап по арене тоже бьёт: на телефоне это удобнее кнопки
-  cv.onpointerdown = function(){ attack(); };
+  cv.onpointerdown = function(ev){
+    const r = cv.getBoundingClientRect();
+    shootAt(ev.clientX - r.left, ev.clientY - r.top);
+  };
   bindFightControls();
+  showWeapon();
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
 }
@@ -6777,38 +6863,57 @@ function bindFightControls(){
     const cap = Math.min(len, 44);
     joystick.dx = dx / len * (cap / 44);
     joystick.dy = dy / len * (cap / 44);
-    knob.style.transform = "translate(" + (joystick.dx * 34) + "px," + (joystick.dy * 34) + "px)";
+    knob.style.transform = "translate(" + (joystick.dx * 32) + "px," + (joystick.dy * 32) + "px)";
   }
   function end(){
-    joystick.active = false; joystick.dx = 0; joystick.dy = 0;
+    joystick.dx = 0; joystick.dy = 0;
     knob.style.transform = "translate(0,0)";
   }
-  joy.onpointerdown = function(ev){ joystick.active = true; joy.setPointerCapture(ev.pointerId); move(ev); };
+  joy.onpointerdown = function(ev){ joystick.active = true; move(ev); };
   joy.onpointermove = function(ev){ if (joystick.active) move(ev); };
   joy.onpointerup = end;
   joy.onpointercancel = end;
-  document.getElementById("atkBtn").onclick = attack;
+  document.getElementById("atkBtn").onclick = autoShoot;
   document.getElementById("dashBtn").onclick = dash;
+  document.getElementById("weapBtn").onclick = cycleWeapon;
 }
-function attack(){
-  if (!G || G.over) return;
+/* выстрел в точку (мультитап: можно стрелять на ходу сколько угодно) */
+function shootAt(tx, ty){
+  if (!G || G.over || G.p.atkCd > 0) return;
+  G.p.atkCd = 0.34;
   G.p.atkAnim = 0.22;
-  if (G.p.atkCd > 0) return;
-  G.p.atkCd = 0.42;
-  const d = Math.hypot(G.e.x - G.p.x, G.e.y - G.p.y);
-  G.p.face = G.e.x >= G.p.x ? 1 : -1;
-  if (d < 78){
-    const dmg = 12 + Math.floor(Math.random() * 6);
-    G.e.hp -= dmg;
-    G.e.hurtT = 0.28;
-    G.hits.push({x: G.e.x, y: G.e.y - 40, t: 0.7, dmg: dmg});
-    if (navigator.vibrate) navigator.vibrate(12);
-  }
+  const a = Math.atan2(ty - (G.p.y - 30), tx - G.p.x);
+  G.p.face = Math.cos(a) >= 0 ? 1 : -1;
+  G.arrows.push({
+    x: G.p.x, y: G.p.y - 30, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520,
+    dmg: G.p.dmg, from: "p", t: 1.2
+  });
+}
+/* кнопка ⚔ — автоприцел по эльфу */
+function autoShoot(){
+  if (!G || G.over) return;
+  shootAt(G.e.x, G.e.y - 40);
 }
 function dash(){
   if (!G || G.over || G.p.dashCd > 0) return;
-  G.p.dashCd = 1.6;
-  G.p.dashT = 0.18;
+  G.p.dashCd = 1.5;
+  G.p.dashT = 0.2;
+  const len = Math.hypot(joystick.dx, joystick.dy);
+  const dx = len > 0.05 ? joystick.dx / len : G.p.face;
+  const dy = len > 0.05 ? joystick.dy / len : 0;
+  G.p.dvx = dx * 640;
+  G.p.dvy = dy * 640;
+}
+function blocked(x, y, pad){
+  for (const c of G.cover){
+    if (x > c.x - pad && x < c.x + c.w + pad && y > c.y - pad && y < c.y + c.h + pad) return true;
+  }
+  return false;
+}
+function spawnHeart(){
+  const x = 60 + Math.random() * (G.w - 120);
+  const y = 90 + Math.random() * (G.h - 160);
+  if (!blocked(x, y, 30)) G.hearts.push({x: x, y: y, t: 12});
 }
 function loop(){
   raf = requestAnimationFrame(loop);
@@ -6819,69 +6924,136 @@ function loop(){
   const ctx = cv.getContext("2d");
   ctx.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
   drawGround(ctx);
-  // игрок
-  const sp = (G.p.dashT > 0 ? 620 : 190);
-  G.p.x += joystick.dx * sp * dt;
-  G.p.y += joystick.dy * sp * dt;
-  G.p.moving = Math.abs(joystick.dx) + Math.abs(joystick.dy) > 0.08;
-  if (Math.abs(joystick.dx) > 0.15) G.p.face = joystick.dx > 0 ? 1 : -1;
-  G.p.x = Math.max(26, Math.min(G.w - 26, G.p.x));
-  G.p.y = Math.max(36, Math.min(G.h - 26, G.p.y));
+  drawCover(ctx);
+  // игрок двигается всегда, стрелять можно одновременно
   G.p.atkCd = Math.max(0, G.p.atkCd - dt);
   G.p.atkAnim = Math.max(0, G.p.atkAnim - dt);
   G.p.dashCd = Math.max(0, G.p.dashCd - dt);
+  G.p.hurtT = Math.max(0, G.p.hurtT - dt);
   G.p.dashT = Math.max(0, G.p.dashT - dt);
-  G.p.hurtT = Math.max(0, (G.p.hurtT || 0) - dt);
+  const sp = 200;
+  let nx = G.p.x + joystick.dx * sp * dt;
+  let ny = G.p.y + joystick.dy * sp * dt;
+  if (G.p.dashT > 0){
+    nx += G.p.dvx * dt;
+    ny += G.p.dvy * dt;
+  }
+  G.p.moving = Math.abs(joystick.dx) + Math.abs(joystick.dy) > 0.08;
+  if (Math.abs(joystick.dx) > 0.15) G.p.face = joystick.dx > 0 ? 1 : -1;
+  if (!blocked(nx, G.p.y, 16)) G.p.x = nx;
+  if (!blocked(G.p.x, ny, 16)) G.p.y = ny;
+  G.p.x = Math.max(26, Math.min(G.w - 26, G.p.x));
+  G.p.y = Math.max(40, Math.min(G.h - 26, G.p.y));
   // эльф
   const dx = G.p.x - G.e.x, dy = G.p.y - G.e.y, dist = Math.hypot(dx, dy) || 1;
   const speed = 70 * (G.lv.speed || 1);
   let mx = 0, my = 0;
-  if (dist < 150){ mx = -dx / dist; my = -dy / dist; }
-  else if (dist > 230){ mx = dx / dist * 0.7; my = dy / dist * 0.7; }
-  G.e.x += mx * speed * dt;
-  G.e.y += my * speed * dt;
+  if (dist < 160){ mx = -dx / dist; my = -dy / dist; }
+  else if (dist > 260){ mx = dx / dist * 0.7; my = dy / dist * 0.7; }
+  const ex = G.e.x + mx * speed * dt, ey = G.e.y + my * speed * dt;
+  if (!blocked(ex, G.e.y, 18)) G.e.x = ex;
+  if (!blocked(G.e.x, ey, 18)) G.e.y = ey;
   G.e.moving = Math.abs(mx) + Math.abs(my) > 0.05;
-  if (!G.e.moving) G.e.face = dx >= 0 ? 1 : -1; else G.e.face = mx >= 0 ? 1 : -1;
+  G.e.face = dist > 1 ? (dx >= 0 ? 1 : -1) : G.e.face;
   G.e.x = Math.max(30, Math.min(G.w - 30, G.e.x));
-  G.e.y = Math.max(40, Math.min(G.h - 30, G.e.y));
+  G.e.y = Math.max(46, Math.min(G.h - 30, G.e.y));
   G.e.hurtT = Math.max(0, G.e.hurtT - dt);
   G.e.atkAnim = Math.max(0, G.e.atkAnim - dt);
+  // стрельба эльфа: с 3 уровня три стрелы веером
   G.e.shootCd -= dt * 1000;
-  if (G.e.shootCd <= 0 && dist < 420){
-    G.e.shootCd = 1500 - 400 * (G.lv.aim || 0.4);
+  if (G.e.shootCd <= 0 && dist < 460){
+    G.e.shootCd = Math.max(500, 1500 - 400 * (G.lv.aim || 0.4));
     G.e.atkAnim = 0.4;
-    const a = Math.atan2(dy, dx);
-    G.arrows.push({x: G.e.x, y: G.e.y - 30, vx: Math.cos(a) * 290, vy: Math.sin(a) * 290});
+    const base = Math.atan2(dy, dx);
+    const spread = G.lv.level >= 3 ? [-0.22, 0, 0.22] : [0];
+    spread.forEach(function(off){
+      G.arrows.push({
+        x: G.e.x, y: G.e.y - 34,
+        vx: Math.cos(base + off) * 300, vy: Math.sin(base + off) * 300,
+        dmg: 8, from: "e", t: 3
+      });
+    });
   }
-  G.e.dodgeCd -= dt * 1000;
-  if (G.e.dodgeCd <= 0 && dist < 120){
-    G.e.dodgeCd = 1500;
-    G.e.y += (Math.random() < 0.5 ? -1 : 1) * 70;
+  // с 3 уровня раз в 15 секунд — залп со всех сторон
+  if (G.lv.level >= 3){
+    G.e.volleyCd -= dt * 1000;
+    if (G.e.volleyCd <= 0){
+      G.e.volleyCd = 15000;
+      G.e.volley = 4;          // четыре волны подряд
+      G.e.volleyNext = 0;
+    }
+    if (G.e.volley > 0 && (G.e.volleyNext || 0) <= G.t){
+      G.e.volley -= 1;
+      G.e.volleyNext = G.t + 0.22;
+      const sides = [
+        {x: -20, y: Math.random() * G.h},
+        {x: G.w + 20, y: Math.random() * G.h},
+        {x: Math.random() * G.w, y: -20},
+        {x: Math.random() * G.w, y: G.h + 20}
+      ];
+      sides.forEach(function(from){
+        const a = Math.atan2(G.p.y - from.y, G.p.x - from.x);
+        G.arrows.push({
+          x: from.x, y: from.y, vx: Math.cos(a) * 560, vy: Math.sin(a) * 560,
+          dmg: 10, from: "e", t: 2.4
+        });
+      });
+      G.e.atkAnim = 0.4;
+    }
   }
   // стрелы
-  G.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; });
+  G.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt; });
   G.arrows = G.arrows.filter(function(a){
+    if (blocked(a.x, a.y, 4)) return false;
+    if (a.from === "p"){
+      if (Math.hypot(a.x - G.e.x, a.y - (G.e.y - 50)) < 42){
+        G.e.hp -= a.dmg;
+        G.e.hurtT = 0.26;
+        G.hits.push({x: G.e.x, y: G.e.y - 70, t: 0.7, dmg: a.dmg});
+        return false;
+      }
+      return a.t > 0 && a.x > -30 && a.x < G.w + 30 && a.y > -30 && a.y < G.h + 30;
+    }
     if (Math.hypot(a.x - G.p.x, a.y - (G.p.y - 26)) < 26){
-      G.p.hp -= 7 + Math.floor(Math.random() * 6);
+      G.p.hp -= a.dmg;
       G.p.hurtT = 0.3;
       return false;
     }
-    return a.x > -30 && a.x < G.w + 30 && a.y > -30 && a.y < G.h + 30;
+    return a.t > 0 && a.x > -40 && a.x < G.w + 40 && a.y > -40 && a.y < G.h + 40;
   });
-  G.hits = G.hits.filter(function(hit){ hit.t -= dt; hit.y -= 26 * dt; return hit.t > 0; });
-  // рисуем
-  drawPlayer(ctx);
+  // аптечки
+  G.heartCd -= dt;
+  if (G.heartCd <= 0){ G.heartCd = 9 + Math.random() * 4; spawnHeart(); }
+  G.hearts = G.hearts.filter(function(heart){
+    heart.t -= dt;
+    if (Math.hypot(heart.x - G.p.x, heart.y - G.p.y) < 30){
+      G.p.hp = Math.min(G.p.max, G.p.hp + 30);
+      return false;
+    }
+    return heart.t > 0;
+  });
+  G.hits = G.hits.filter(function(hit){ hit.t -= dt; hit.y -= 30 * dt; return hit.t > 0; });
+  drawCover(ctx);
   drawElf(ctx);
-  ctx.fillStyle = "#ffd166";
-  G.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, Math.PI * 2); ctx.fill(); });
-  ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center";
+  drawPlayer(ctx);
+  // чужие стрелы — красные, свои — жёлтые
+  G.arrows.forEach(function(a){
+    ctx.fillStyle = a.from === "p" ? "#ffd166" : "#ef7d7d";
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.from === "p" ? 4 : 5, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
+  G.hearts.forEach(function(heart){
+    ctx.globalAlpha = heart.t < 3 ? (0.4 + 0.6 * Math.abs(Math.sin(G.t * 6))) : 1;
+    ctx.fillText("❤️", heart.x, heart.y);
+    ctx.globalAlpha = 1;
+  });
+  ctx.font = "bold 13px sans-serif";
   G.hits.forEach(function(hit){
     ctx.globalAlpha = Math.max(0, hit.t);
     ctx.fillStyle = "#ff6b6b";
     ctx.fillText("-" + hit.dmg, hit.x, hit.y);
     ctx.globalAlpha = 1;
   });
-  // HUD
   document.getElementById("php").style.width = Math.max(0, G.p.hp / G.p.max * 100) + "%";
   document.getElementById("phpTxt").textContent = Math.max(0, Math.round(G.p.hp));
   document.getElementById("fhp").style.width = Math.max(0, G.e.hp / G.e.max * 100) + "%";
@@ -6892,28 +7064,22 @@ function loop(){
 function drawGround(ctx){
   ctx.fillStyle = "#0b1526";
   ctx.fillRect(0, 0, G.w, G.h);
-  // снег и камни: сетка без картинок
   for (let i = 0; i < 90; i++){
     const x = (i * 137) % G.w, y = (i * 89) % G.h;
     ctx.fillStyle = i % 5 ? "rgba(200,225,255,.10)" : "rgba(143,208,255,.22)";
     ctx.fillRect(x, y, 2, 2);
   }
-  ctx.fillStyle = "rgba(28,53,87,.55)";
-  for (let i = 0; i < 7; i++){
-    const x = (i * 211 + 40) % G.w, y = (i * 157 + 30) % G.h;
-    ctx.fillRect(x, y, 46, 3);
-    ctx.fillRect(x + 20, y - 8, 3, 11);
-  }
 }
-/* Боевой персонаж — свой спрайт-лист 32x32.
-   Ряды: 0 покой, 1 ходьба, 6 атака, 8 урон. Если кадры сместятся,
-   правится одной строкой в FIGHTER. */
-const FIGHTER = {
-  frame: 32,
-  rows: {idle: 0, walk: 1, attack: 6, hurt: 8},
-  counts: {idle: 5, walk: 5, attack: 6, hurt: 3},
-  scale: 2.2
-};
+function drawCover(ctx){
+  G.cover.forEach(function(c){
+    ctx.fillStyle = "rgba(84,110,148,.5)";
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.fillStyle = "rgba(150,190,235,.35)";
+    ctx.fillRect(c.x, c.y, c.w, 5);
+    ctx.strokeStyle = "#2c4566";
+    ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
+  });
+}
 function drawPlayer(ctx){
   const state = (G.p.hurtT || 0) > 0 ? "hurt" : G.p.atkAnim > 0 ? "attack"
     : G.p.moving ? "walk" : "idle";
@@ -6927,14 +7093,8 @@ function drawPlayer(ctx){
   if (im.complete && im.naturalWidth){
     ctx.imageSmoothingEnabled = false;
     const size = FIGHTER.frame * FIGHTER.scale;
-    ctx.drawImage(
-      im,
-      frame * FIGHTER.frame, row * FIGHTER.frame, FIGHTER.frame, FIGHTER.frame,
-      -size / 2, -size + 8, size, size
-    );
-  } else if (IMG.hero.complete && IMG.hero.naturalWidth){
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(IMG.hero, 0, 0, 16, 16, -26, -52, 52, 52);
+    ctx.drawImage(im, frame * FIGHTER.frame, row * FIGHTER.frame, FIGHTER.frame,
+                  FIGHTER.frame, -size / 2, -size + 8, size, size);
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(-12, -40, 24, 40);
   }
@@ -6951,14 +7111,11 @@ function drawElf(ctx){
   ctx.translate(G.e.x, G.e.y);
   ctx.scale(G.e.face, 1);
   if (im.complete && im.naturalWidth){
-    // кадр 160x144, сам эльф занимает середину: якорим по ступням и
-    // увеличиваем так, чтобы он был одного роста с игроком
     const k = 1.9;
     const dw = ELF_FRAME_W * k, dh = ELF_FRAME_H * k;
-    const feet = 0.667;                    // доля высоты кадра до ступней
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(im, frame * ELF_FRAME_W, 0, ELF_FRAME_W, ELF_FRAME_H,
-                  -dw / 2, -dh * feet, dw, dh);
+                  -dw / 2, -dh * 0.667, dw, dh);
   } else {
     ctx.fillStyle = "#e11d48"; ctx.fillRect(-16, -70, 32, 70);
   }
@@ -6976,9 +7133,8 @@ async function finishFight(win){
   if (!G || G.over) return;
   G.over = true;
   cancelAnimationFrame(raf);
-  const fight = document.getElementById("fight");
   if (!win){
-    toast("Эльф сильнее. Вернись с оружием получше!");
+    toast("Эльф сильнее. Возьми лук получше и возвращайся!");
     setTimeout(closeFight, 900);
     return;
   }
