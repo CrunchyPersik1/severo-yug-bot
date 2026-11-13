@@ -699,11 +699,15 @@ PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Северо-Юг · Магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{overscroll-behavior:none;touch-action:manipulation}
+body.fighting{position:fixed!important;inset:0!important;width:100%!important;
+  overflow:hidden!important;touch-action:none}
+button{touch-action:manipulation}
 html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:96px}
@@ -1170,7 +1174,11 @@ document.querySelectorAll("#nav [data-tab]").forEach(b => b.onclick = () => {
   });
   window.scrollTo(0, 0);
 });
-if (tg){ tg.ready(); tg.expand(); }
+if (tg){
+  tg.ready();
+  tg.expand();
+  if (tg.disableVerticalSwipes) { try { tg.disableVerticalSwipes(); } catch(e){} }
+}
 load();
 </script>
 </body>
@@ -6302,11 +6310,15 @@ SANTA_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Северо-Юг · Санта Егор</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{overscroll-behavior:none;touch-action:manipulation}
+body.fighting{position:fixed!important;inset:0!important;width:100%!important;
+  overflow:hidden!important;touch-action:none}
+button{touch-action:manipulation}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   background:var(--bg);color:var(--ink);min-height:100vh}
 .wrap{padding:14px 14px 40px;max-width:560px;margin:0 auto}
@@ -6383,8 +6395,11 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
   border-radius:12px;padding:11px 13px;font-family:inherit;font-size:12.5px;font-weight:700;line-height:1.4}
 .choices button.sel{border-color:var(--acc);background:#1c2b45}
 /* бой */
-.fight{position:fixed;inset:0;height:100dvh;z-index:9600;background:#060a12;
-  display:none;flex-direction:column;overflow:hidden}
+.fight{position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100vh;
+  z-index:9600;background:#060a12;display:none;flex-direction:column;
+  overflow:hidden;overscroll-behavior:none;touch-action:none}
+@supports (height:100dvh){ .fight{height:100dvh} }
+.fight *{touch-action:none;-webkit-user-select:none;user-select:none}
 .fight.on{display:flex}
 .bhud{display:flex;gap:9px;padding:8px 11px;align-items:center;background:rgba(6,10,18,.92);z-index:3}
 .bhud .who{font-size:11.5px;font-weight:900;white-space:nowrap;color:#dbe9ff}
@@ -6727,6 +6742,8 @@ const ELF_FRAME_W = 160, ELF_FRAME_H = 144;
 
 function startFight(lv){
   const fight = document.getElementById("fight");
+  document.body.classList.add("fighting");
+  if (tg && tg.disableVerticalSwipes) { try { tg.disableVerticalSwipes(); } catch(e){} }
   fight.classList.add("on");
   document.getElementById("foeName").textContent = "🧝 " + lv.name;
   const cv = document.getElementById("cv");
@@ -6949,6 +6966,12 @@ function drawElf(ctx){
   ctx.beginPath(); ctx.ellipse(0, 4, 26, 6, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
+function closeFight(){
+  const fight = document.getElementById("fight");
+  fight.classList.remove("on");
+  document.body.classList.remove("fighting");
+  if (tg && tg.enableVerticalSwipes) { try { tg.enableVerticalSwipes(); } catch(e){} }
+}
 async function finishFight(win){
   if (!G || G.over) return;
   G.over = true;
@@ -6956,18 +6979,21 @@ async function finishFight(win){
   const fight = document.getElementById("fight");
   if (!win){
     toast("Эльф сильнее. Вернись с оружием получше!");
-    setTimeout(function(){ fight.classList.remove("on"); }, 900);
+    setTimeout(closeFight, 900);
     return;
   }
   const d = await post("/api/santa/level", {level: G.lv.level});
-  if (d.error){ toast(d.error); fight.classList.remove("on"); return; }
+  if (d.error){ toast(d.error); closeFight(); return; }
   S = d.state;
-  fight.classList.remove("on");
+  closeFight();
   render();
   toast("Эльф повержен! " + (d.granted || []).join(", "));
 }
 
-document.getElementById("exitBtn").onclick = function(){ location.href = "/hub"; };
+document.getElementById("exitBtn").onclick = function(){
+  if (tg && tg.enableVerticalSwipes) { try { tg.enableVerticalSwipes(); } catch(e){} }
+  location.href = "/hub";
+};
 if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
