@@ -699,7 +699,7 @@ PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -2468,7 +2468,7 @@ STOCKS_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Биржа</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -3168,7 +3168,7 @@ UPGRADER_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Апгрейдер</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -4091,7 +4091,7 @@ HUB_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -4647,7 +4647,7 @@ CASINO_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Казино</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -4995,7 +4995,7 @@ ROULETTE_TABLE_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Рулетка</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -5444,7 +5444,7 @@ YUGI_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Юга-кликер</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -5971,7 +5971,7 @@ EVENT_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Событие</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -6302,7 +6302,7 @@ SANTA_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Санта Егор</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -6394,24 +6394,22 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .bhud .num{font-size:11px;color:#c7d4ea;min-width:42px;text-align:right;font-weight:800}
 .stage3{position:relative;flex:1;display:flex;overflow:hidden}
 .stage3 canvas{flex:1;display:block;width:100%;height:100%;touch-action:none}
-.joy{position:fixed;left:16px;bottom:calc(18px + env(safe-area-inset-bottom));
-  width:118px;height:118px;border-radius:50%!important;
-  background:rgba(18,27,44,.55)!important;border:2px solid #2c4566;z-index:9700;touch-action:none}
-.joy i{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;
-  border-radius:50%;background:rgba(143,208,255,.32);border:2px solid #6fa8d8;display:block}
-.batk{position:fixed;right:18px;bottom:calc(24px + env(safe-area-inset-bottom));
-  width:86px;height:86px;border-radius:50%!important;
-  border:2px solid #6b4a22!important;
+.bctrl{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:10px 16px 12px;background:rgba(6,10,18,.92);
+  border-top:1px solid #1b2b45;z-index:5}
+.joy{position:relative;flex:0 0 auto;width:110px;height:110px;border-radius:50%!important;
+  background:rgba(18,27,44,.75)!important;border:2px solid #2c4566;touch-action:none}
+.joy i{position:absolute;left:50%;top:50%;width:50px;height:50px;margin:-25px 0 0 -25px;
+  border-radius:50%;background:rgba(143,208,255,.4);border:2px solid #6fa8d8;display:block}
+.bside{display:flex;align-items:center;gap:10px}
+.batk{width:84px;height:84px;border-radius:50%!important;border:2px solid #6b4a22!important;
   background:radial-gradient(circle at 35% 30%,#f0b276,#b45309)!important;
-  color:#1a1205!important;font-size:30px;font-family:inherit;z-index:9700}
+  color:#1a1205!important;font-size:30px;font-family:inherit;font-weight:900}
 .batk:active{transform:scale(.94)}
-.bdash{position:fixed;right:112px;bottom:calc(100px + env(safe-area-inset-bottom));
-  width:60px;height:60px;border-radius:50%!important;
-  border:2px solid #2c4566!important;background:rgba(18,27,44,.85)!important;
-  color:#9fc7ff!important;font-size:22px;z-index:9700}
+.bdash{width:60px;height:60px;border-radius:50%!important;border:2px solid #2c4566!important;
+  background:rgba(18,27,44,.9)!important;color:#9fc7ff!important;font-size:22px}
 .bdash:active{transform:scale(.94)}
-.bfoot{position:fixed;right:16px;bottom:calc(196px + env(safe-area-inset-bottom));
-  font-size:10.5px;color:#8b93a7;z-index:9700;text-align:right;max-width:170px;line-height:1.35}
+.bfoot{font-size:10.5px;color:#8b93a7;text-align:right;line-height:1.4;max-width:110px}
 /* магазин *//* магазин */
 .shop{border-radius:16px;padding:13px;background:var(--panel);border:1px solid var(--line);margin-top:12px}
 .shop .cap{font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:#f6c94a;font-weight:900}
@@ -6466,10 +6464,14 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
   </div>
   <div class="stage3">
     <canvas id="cv"></canvas>
+  </div>
+  <div class="bctrl">
     <div class="joy" id="joy"><i id="joyKnob"></i></div>
-    <button class="batk" id="atkBtn">⚔</button>
-    <button class="bdash" id="dashBtn">💨</button>
-    <div class="bfoot" id="bfoot">⚔ — удар, 💨 — рывок</div>
+    <div class="bside">
+      <div class="bfoot" id="bfoot">⚔ — удар<br>💨 — рывок</div>
+      <button class="bdash" id="dashBtn">💨</button>
+      <button class="batk" id="atkBtn">⚔</button>
+    </div>
   </div>
 </div>
 <div id="toast"></div>
@@ -6741,6 +6743,8 @@ function startFight(lv){
         atkAnim: 0, vx: 0, vy: 0},
     arrows: []
   };
+  // тап по арене тоже бьёт: на телефоне это удобнее кнопки
+  cv.onpointerdown = function(){ attack(); };
   bindFightControls();
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
@@ -6975,7 +6979,7 @@ PETS_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Питомник</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -7180,7 +7184,7 @@ DROP_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Карта дня</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -7294,7 +7298,7 @@ PROFILE_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Профиль</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -7657,7 +7661,7 @@ COLLECTION_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Коллекция</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -8292,7 +8296,7 @@ QUESTS_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Северо-Юг · Задания</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -8484,7 +8488,7 @@ PROTO_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Прототип · Юга-кликер</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
