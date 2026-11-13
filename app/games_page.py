@@ -380,6 +380,13 @@ canvas{display:block;border-radius:50%;box-shadow:0 0 0 4px #1b1f2b, 0 10px 30px
 .spin.crystal{background:linear-gradient(135deg,#0891b2,#155e75)}
 .spin:disabled{opacity:.45}
 .hint{margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.5}
+.odds{margin-top:12px;width:100%;border-radius:14px;background:var(--card);border:1px solid var(--line);padding:10px 12px}
+.odds .oh{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--muted);font-weight:900;margin-bottom:4px}
+.odds .or{display:flex;align-items:center;gap:9px;padding:6px 0;font-size:12.5px;border-top:1px solid var(--line)}
+.odds .or:first-of-type{border-top:0}
+.odds .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 6px currentColor}
+.odds .ol{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.odds .op{font-weight:900;font-variant-numeric:tabular-nums;color:var(--ink)}
 #toast{position:fixed;left:14px;right:14px;bottom:18px;background:#232838;color:#fff;border-radius:12px;padding:14px 16px;font-size:14px;transform:translateY(150%);transition:.26s;z-index:9}
 #toast.on{transform:translateY(0)}
 #toast.bad{background:#b91c1c}
@@ -415,6 +422,7 @@ canvas{display:block;border-radius:50%;box-shadow:0 0 0 4px #1b1f2b, 0 10px 30px
     <button data-n="3">3 спина</button>
   </div>
   <button class="spin" id="spin">Крутить</button>
+  <div class="odds" id="odds"></div>
   <div class="hint" id="hint"></div>
 </main>
 <div id="toast"></div>
@@ -448,6 +456,20 @@ function pctOf(seg){
 }
 function segAt(index){
   return segments[index] || {key: "?", label: "?", color: "#334155", weight: 0};
+}
+/* Шансы отдельным списком под кнопкой: на кристальном колесе доли
+   по 0.5% и 1% физически уже двух градусов, подписи там не читаются. */
+function renderOdds(){
+  var box = document.getElementById("odds");
+  if (!box) return;
+  if (!segments.length){ box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="oh">шансы</div>' + segments.map(function(s){
+    return '<div class="or">' +
+      '<span class="dot" style="background:' + (s.color || "#334155") + ';color:' + (s.color || "#334155") + '"></span>' +
+      '<span class="ol">' + shortOf(s) + '</span>' +
+      '<span class="op">' + pctOf(s) + '</span>' +
+      '</div>';
+  }).join("");
 }
 
 /* ---------- колесо ---------- */
@@ -595,6 +617,7 @@ async function load(){
     count = Math.min(count, maxAtOnce);
     document.getElementById("reset").textContent = d.reset_text || "";
     prep(d.segments || []);
+    renderOdds();
     if (view === "reel"){
       if (!reelsBox.children.length){
         makeReel(Math.floor(Math.random() * (d.segments || []).length), false);

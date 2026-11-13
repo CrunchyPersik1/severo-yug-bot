@@ -30,6 +30,9 @@ RESET_HOUR_UTC = 15  # смена акций вместе с рулеткой, 2
 # С этой суммы содержимое начинает продаваться за кристаллы.
 GEMS_FROM_VALUE = 250_000
 
+# Больше 30% не рисуем: такие скидки уже не читаются как честные.
+MAX_DISCOUNT = 30
+
 CURRENCY_POINTS = "points"
 CURRENCY_GEMS = "gems"
 
@@ -112,9 +115,10 @@ def _teacher(rng: random.Random) -> tuple[dict, str, str, str, str]:
 
 def _cases_g(rng: random.Random) -> tuple[dict, str, str, str, str]:
     count = rng.randint(3, 10)
+    word = bundles.plural(count, "кейс", "кейса", "кейсов")
     return (
         bundles.make(cases_g=count),
-        f"{count} кейсов 7Г",
+        f"{count} {word} 7Г",
         "внутри от эпической до ультралегендарной",
         "📦",
         "#15803d",
@@ -125,7 +129,7 @@ def _case_d(rng: random.Random) -> tuple[dict, str, str, str, str]:
     count = rng.randint(1, 2)
     return (
         bundles.make(cases_d=count),
-        f"Кейс «7Д класс» ×{count}",
+        f"Кейс «7Д класс»" + (" ×2" if count > 1 else ""),
         "27 карт второго класса",
         "🏫",
         "#7c3aed",
@@ -136,7 +140,7 @@ def _case_ultra(rng: random.Random) -> tuple[dict, str, str, str, str]:
     count = rng.randint(1, 3)
     return (
         bundles.make(cases_ultra=count),
-        f"Кейс «Ультра» ×{count}",
+        "Кейс «Ультра»" + (f" ×{count}" if count > 1 else ""),
         "0.01% на Садыкова или Леру",
         "🎟",
         "#b45309",
@@ -145,9 +149,10 @@ def _case_ultra(rng: random.Random) -> tuple[dict, str, str, str, str]:
 
 def _spins(rng: random.Random) -> tuple[dict, str, str, str, str]:
     count = rng.randint(2, 6)
+    word = bundles.plural(count, "крутка", "крутки", "круток")
     return (
         bundles.make(spins=count),
-        f"{count} круток рулетки",
+        f"{count} {word} рулетки",
         "сверх дневного лимита",
         "🎡",
         "#dc2626",
@@ -156,23 +161,13 @@ def _spins(rng: random.Random) -> tuple[dict, str, str, str, str]:
 
 def _shares(rng: random.Random) -> tuple[dict, str, str, str, str]:
     count = rng.choice([20, 30, 50, 75, 100])
+    word = bundles.plural(count, "акция", "акции", "акций")
     return (
         bundles.make(shares=count),
-        f"Пакет акций · {count} шт.",
+        f"Пакет акций · {count} {word}",
         "случайная компания с биржи",
         "📈",
         "#0ea5e9",
-    )
-
-
-def _points(rng: random.Random) -> tuple[dict, str, str, str, str]:
-    amount = rng.choice([50_000, 75_000, 100_000, 150_000, 200_000])
-    return (
-        bundles.make(points=amount),
-        "Мешок очков",
-        "сразу на баланс",
-        "💰",
-        "#eab308",
     )
 
 
@@ -212,6 +207,7 @@ def _weapon(rng: random.Random) -> tuple[dict, str, str, str, str]:
     )
 
 
+# Мешка очков тут нет и не будет: продавать очки за очки — абсурд.
 TEMPLATES: tuple = (
     (_cards, 30),
     (_teacher, 8),
@@ -220,7 +216,6 @@ TEMPLATES: tuple = (
     (_case_ultra, 6),
     (_spins, 8),
     (_shares, 8),
-    (_points, 8),
     (_yugi, 6),
     (_gems, 6),
     (_weapon, 4),
@@ -241,14 +236,28 @@ def _build(period: int, slot: int, user_id: int | None) -> dict[str, Any]:
     if real >= GEMS_FROM_VALUE and not bundle.get("gems") and rng.random() < 0.65:
         currency = CURRENCY_GEMS
 
-    if currency == CURRENCY_GEMS:
-        price = max(1, int(round(real / bundles.GEM_RATE * rng.uniform(0.42, 0.62))))
-        old_price = max(price + 1, int(round(price * rng.uniform(1.7, 2.6))))
+    # Кристаллы — конвертируемая валюта: скидку на них почти не даём,
+    # иначе получается арбитраж «купи акцию → продай кристаллы дороже».
+    if bundle.get("gems"):
+        currency = CURRENCY_POINTS
+        # floor, а не round: цена никогда не должна перевалить за стоимость
+        price = max(1000, int(real * rng.uniform(0.85, 1.0) / 1000.0) * 1000)
+    elif currency == CURRENCY_GEMS:
+        price = max(1, int(round(real / bundles.GEM_RATE * rng.uniform(0.55, 0.7))))
     else:
-        price = max(1000, int(round(real * rng.uniform(0.42, 0.62) / 1000.0)) * 1000)
-        old_price = max(price + 1000, int(round(price * rng.uniform(1.7, 2.6) / 1000.0)) * 1000)
+        price = max(1000, int(round(real * rng.uniform(0.5, 0.7) / 1000.0)) * 1000)
 
-    discount = max(5, min(85, int(round((1 - price / old_price) * 100))))
+    # Скидка — не на всё и не больше 30%: большие числа не верят.
+    discount = 0
+    if rng.random() < 0.6:
+        discount = int(round(rng.uniform(10, MAX_DISCOUNT)))
+    if discount:
+        raw = price / (1 - discount / 100.0)
+        step = 1000 if currency == CURRENCY_POINTS else 1
+        old_price = max(price + step, int(round(raw / step)) * step)
+        discount = max(1, min(MAX_DISCOUNT, int(round((1 - price / old_price) * 100))))
+    else:
+        old_price = price
     return {
         "id": f"p{period}-{'u' if user_id else 's'}{slot}",
         "kind": builder.__name__.lstrip("_"),

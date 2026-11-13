@@ -51,11 +51,49 @@ def test_deal_ids_are_unique_and_stable():
 def test_every_deal_has_price_and_discount():
     for deal in deals.all_for(99, deals.period_of()):
         assert deal["price"] > 0
-        assert deal["old_price"] > deal["price"]
-        assert 5 <= deal["discount"] <= 85
+        assert deal["old_price"] >= deal["price"]
+        assert 0 <= deal["discount"] <= deals.MAX_DISCOUNT
         assert deal["currency"] in (deals.CURRENCY_POINTS, deals.CURRENCY_GEMS)
         assert deal["contents"]
         assert deal["emoji"]
+
+
+def test_discount_never_above_thirty_percent():
+    for period in range(100, 140):
+        for deal in deals.all_for(period, period):
+            assert deal["discount"] <= 30
+            if deal["discount"]:
+                assert deal["old_price"] > deal["price"]
+            else:
+                assert deal["old_price"] == deal["price"]
+
+
+def test_discount_is_not_on_every_deal():
+    discounts = [
+        deal["discount"]
+        for period in range(100, 130)
+        for deal in deals.all_for(period, period)
+    ]
+    assert any(d == 0 for d in discounts)
+    assert any(d > 0 for d in discounts)
+
+
+def test_no_points_for_points():
+    """Очки за очки не продаём: такой акции не бывает ни в одном периоде."""
+    for period in range(100, 130):
+        for deal in deals.all_for(period, period):
+            if deal["bundle"].get("points"):
+                assert deal["currency"] == deals.CURRENCY_GEMS, deal["title"]
+
+
+def test_gems_are_not_discounted_much():
+    """Кристаллы конвертируемые: скидка на них открыла бы арбитраж."""
+    for period in range(100, 130):
+        for deal in deals.all_for(period, period):
+            if deal["bundle"].get("gems"):
+                paid = deal["price"]
+                real = bundles.value(deal["bundle"])
+                assert paid <= real, deal["title"]
 
 
 def test_gems_are_never_sold_for_gems():
@@ -109,7 +147,14 @@ def test_packs_cost_only_gems():
         for pack in packs.roulette(period):
             assert pack["currency"] == "gems"
             assert pack["price"] > 0
-            assert pack["old_price"] > pack["price"]
+            assert pack["old_price"] >= pack["price"]
+            assert pack["discount"] <= 30
+
+
+def test_packs_discount_is_not_on_every_pack():
+    discounts = [pack["discount"] for pack in packs.PACKS]
+    assert any(d == 0 for d in discounts)
+    assert all(d <= 30 for d in discounts)
 
 
 def test_pack_examples_from_spec():

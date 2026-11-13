@@ -15,8 +15,8 @@ from . import bundles
 # Сколько паков максимум висит в витрине за период.
 MAX_PER_PERIOD = 3
 
-# Скидка «старой цены» — та же логика, что у акций: без неё не читается.
-INFLATE = (1.5, 2.1)
+# Скидка — не больше 30% и не на каждый пак: у части паков её просто нет.
+MAX_DISCOUNT = 30
 
 
 def _pack(
@@ -27,8 +27,11 @@ def _pack(
     color: str,
     bundle: dict,
     price: int,
+    discount: int = 0,
 ) -> dict[str, Any]:
-    old_price = int(round(price * 1.75))
+    discount = max(0, min(MAX_DISCOUNT, int(discount)))
+    old_price = price if not discount else int(round(price / (1 - discount / 100.0)))
+    discount = 0 if not discount else max(1, int(round((1 - price / old_price) * 100)))
     return {
         "id": pack_id,
         "title": title,
@@ -40,7 +43,7 @@ def _pack(
         "currency": "gems",
         "price": int(price),
         "old_price": old_price,
-        "discount": max(5, int(round((1 - price / old_price) * 100))),
+        "discount": discount,
     }
 
 
@@ -66,6 +69,7 @@ PACKS: tuple[dict[str, Any], ...] = (
         "#22d3ee",
         bundles.make(cards=["valeriya", "daniyar_epic", "valeriya"]),
         150,
+        20,
     ),
     _pack(
         "vault",
@@ -75,6 +79,7 @@ PACKS: tuple[dict[str, Any], ...] = (
         "#7c3aed",
         bundles.make(cases_d=2, points=100_000),
         220,
+        25,
     ),
     _pack(
         "arsenal",
@@ -84,6 +89,7 @@ PACKS: tuple[dict[str, Any], ...] = (
         "#ef4444",
         bundles.make(weapon="sword_8_3", cases_g=5, spins=10),
         120,
+        15,
     ),
     _pack(
         "investor",
@@ -93,6 +99,7 @@ PACKS: tuple[dict[str, Any], ...] = (
         "#0ea5e9",
         bundles.make(shares=200, points=250_000),
         140,
+        30,
     ),
     _pack(
         "collector",
