@@ -137,7 +137,9 @@ const poolU = [
   {name: "Пусто", emoji: "💨", points: 0, price: 0, color: "#64748b"}
 ];
 let kind = null, howMany = 1, spinning = false;
-let SPEEDS = [], SPEED_ID = "slow";
+/* Параметры прокрута приходят с сервера: 15 секунд, три стадии. */
+let SPIN = {spin_ms: 15000, spin_stages: [6750, 6000, 2250], slip_chance: 0.15,
+            stage_tiles: [14, 4, 1.4], slip_tiles: [14, 3, 2.4]};
 const reels = document.getElementById("reels");
 const result = document.getElementById("result");
 const openBtn = document.getElementById("open");
@@ -162,13 +164,15 @@ function source(){
   if (kind === "u") return poolU;
   return kind === "d" ? poolD : pool;
 }
-/* Сколько крутить ленту. Время задаёт игрок в настройках, пачку не тянем. */
-function reelMs(count){
-  var item = null;
-  for (var i = 0; i < SPEEDS.length; i++){ if (SPEEDS[i].id === SPEED_ID) item = SPEEDS[i]; }
-  var ms = item ? Number(item.reel_ms) : 4800;
-  if (count > 1) ms = Math.max(2400, Math.round(ms * 0.6));
-  return ms;
+/* Прокрут: три стадии — быстро, медленнее, совсем медленно. В самом конце
+   есть шанс, что лента проедет ещё тайл: игрок видит, как она почти встала
+   и всё-таки съехала. Финиш всегда совпадает с призом с сервера. */
+function spinPlan(){
+  var cfg = SPIN || {};
+  var st = cfg.spin_stages || [6750, 6000, 2250];
+  var slip = Math.random() < (cfg.slip_chance || 0);
+  var tiles = slip ? (cfg.slip_tiles || [14, 3, 2.4]) : (cfg.stage_tiles || [14, 4, 1.4]);
+  return {stages: st, tiles: tiles, slip: slip, ms: Number(cfg.spin_ms) || 15000};
 }
 function left(){ return kind === "d" ? countD : (kind === "u" ? countU : countG); }
 function randomOf(src){
@@ -195,23 +199,31 @@ function makeReel(win, mini, src){
   el.innerHTML = html;
   return {el: el, target: target, step: tw + GAP, tw: tw};
 }
-function spinOne(item, ms){
+function spinOne(item, plan){
+  plan = plan || spinPlan();
   const center = window.innerWidth / 2;
   const jitter = (Math.random() * 40) - 20;
-  const offset = item.target * item.step + item.tw / 2 - center + jitter;
-  // Последние полтора тайла лента проходит отдельным медленным шагом:
-  // сначала почти встала, потом доползла. Игрок до конца не знает, что выпало.
-  const creep = item.step * 1.5;
-  const first = Math.max(600, Math.round(ms * 0.78));
-  const second = Math.max(500, ms - first);
+  const finish = item.target * item.step + item.tw / 2 - center + jitter;
+  const st = plan.stages;
+  const tiles = plan.tiles;
+  const p2 = finish - tiles[2] * item.step;
+  const p1 = p2 - tiles[1] * item.step;
+  const start = Math.max(0, p1 - tiles[0] * item.step);
+  item.el.style.transition = "none";
+  item.el.style.transform = "translateX(" + (-start) + "px)";
+  void item.el.offsetWidth;
   setTimeout(function(){
-    item.el.style.transition = "transform " + (first / 1000) + "s cubic-bezier(.06,.66,.1,1)";
-    item.el.style.transform = "translateX(" + (-(offset - creep)) + "px)";
+    item.el.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
+    item.el.style.transform = "translateX(" + (-p1) + "px)";
   }, 30);
   setTimeout(function(){
-    item.el.style.transition = "transform " + (second / 1000) + "s cubic-bezier(.35,.02,.55,.9)";
-    item.el.style.transform = "translateX(" + (-offset) + "px)";
-  }, 30 + first);
+    item.el.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
+    item.el.style.transform = "translateX(" + (-p2) + "px)";
+  }, 30 + st[0]);
+  setTimeout(function(){
+    item.el.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
+    item.el.style.transform = "translateX(" + (-finish) + "px)";
+  }, 30 + st[0] + st[1]);
 }
 function sync(){
   const l = left();
@@ -277,8 +289,8 @@ async function open(){
         return makeReel(pack.win, mini, poolU);
       });
       void reels.offsetWidth;
-      const msU = reelMs(items.length);
-      reelsOut.forEach(function(item){ spinOne(item, msU); });
+      const planU = spinPlan();
+      reelsOut.forEach(function(item){ spinOne(item, planU); });
       updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
       setTimeout(function(){
         result.innerHTML = items.map(function(pack){
@@ -291,15 +303,15 @@ async function open(){
           return "💨 Пусто.";
         }).join("<br>");
         spinning = false; sync();
-      }, msU + 500);
+      }, planU.ms + 500);
       return;
     }
     const mini = d.cards.length > 1;
     const src = source();
     const items = d.cards.map(function(c){ return makeReel(c, mini, src); });
     void reels.offsetWidth;
-    const ms = reelMs(items.length);
-    items.forEach(function(item){ spinOne(item, ms); });
+    const plan = spinPlan();
+    items.forEach(function(item){ spinOne(item, plan); });
     updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
     setTimeout(function(){
       result.innerHTML = d.cards.map(function(c){
@@ -309,7 +321,7 @@ async function open(){
       }).join("<br>");
       spinning = false;
       sync();
-    }, ms + 500);
+    }, plan.ms + 500);
   }catch(e){
     toast("Связь потерялась", "bad");
     spinning = false; sync();
@@ -322,8 +334,7 @@ async function load(){
     if (d.error){ hint.textContent = d.error; return; }
     pool = d.pool || [];
     poolD = d.pool_d || [];
-    SPEEDS = d.speeds || [];
-    SPEED_ID = d.speed || "slow";
+    if (d.spin) SPIN = d.spin;
     updateCounts(d.count_g || 0, d.count_d || 0, d.count_ultra || 0);
   }catch(e){
     hint.textContent = "Не смог загрузить кейсы";
@@ -462,7 +473,9 @@ const PRICE = 25000;
 let kind = "classic", view = "wheel", count = 1, spinning = false;
 let segments = [], spinsLeft = 0, freeLeft = 0, balance = 0, crystals = 0, price = 0;
 let currentRot = 0, maxAtOnce = 3;
-let SPEEDS = [], SPEED_ID = "slow";
+/* Те же 15 секунд, что и у кейсов: параметры приходят с сервера. */
+let SPIN = {spin_ms: 15000, spin_stages: [6750, 6000, 2250], slip_chance: 0.15,
+            stage_tiles: [14, 4, 1.4], slip_tiles: [14, 3, 2.4]};
 const canvas = document.getElementById("wheel");
 const stage = document.getElementById("stage");
 const reelsBox = document.getElementById("reels");
@@ -528,39 +541,40 @@ function prep(segs){
   segments = segs;
   draw(segs);
 }
-function speedItem(){
-  for (var i = 0; i < SPEEDS.length; i++){ if (SPEEDS[i].id === SPEED_ID) return SPEEDS[i]; }
-  return null;
+function spinPlan(){
+  var cfg = SPIN || {};
+  var st = cfg.spin_stages || [6750, 6000, 2250];
+  var slip = Math.random() < (cfg.slip_chance || 0);
+  var tiles = slip ? (cfg.slip_tiles || [14, 3, 2.4]) : (cfg.stage_tiles || [14, 4, 1.4]);
+  return {stages: st, tiles: tiles, slip: slip, ms: Number(cfg.spin_ms) || 15000};
 }
-function wheelMs(){
-  var item = speedItem();
-  return item && item.wheel_ms ? Number(item.wheel_ms) : 8200;
-}
-function reelMs(count){
-  var item = speedItem();
-  var ms = item && item.reel_ms ? Number(item.reel_ms) : 6800;
-  if (count > 1) ms = Math.max(2400, Math.round(ms * 0.6));
-  return ms;
-}
-function spinTo(index, ms){
+function spinTo(index, plan){
+  plan = plan || spinPlan();
   var mid = segments[index] ? segments[index].mid : 0;
   var want = (360 - mid) % 360;
   var cur = ((currentRot % 360) + 360) % 360;
   var delta = (want - cur + 360) % 360;
-  var turns = 6 + Math.floor(Math.random()*3);
+  var turns = 8 + Math.floor(Math.random()*4);
   var total = turns*360 + delta;
-  // Две стадии: почти доехали, потом последние 20° ползём отдельно.
-  var creep = 20;
-  var first = Math.max(700, Math.round(ms * 0.8));
-  var second = Math.max(500, ms - first);
-  currentRot += total - creep;
-  canvas.style.transition = "transform " + (first / 1000) + "s cubic-bezier(.06,.66,.1,1)";
-  canvas.style.transform = "rotate(" + currentRot + "deg)";
+  var st = plan.stages;
+  // Три стадии как у ленты: разгон, замедление, последние 18° ползём.
+  var last = 18;
+  var second = 150;
+  var first = Math.max(0, total - last - second);
+  var stage1 = currentRot + first;
+  var stage2 = stage1 + second;
+  var stage3 = stage2 + last;
+  canvas.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
+  canvas.style.transform = "rotate(" + stage1 + "deg)";
   setTimeout(function(){
-    currentRot += creep;
-    canvas.style.transition = "transform " + (second / 1000) + "s cubic-bezier(.35,.02,.55,.9)";
-    canvas.style.transform = "rotate(" + currentRot + "deg)";
-  }, first);
+    canvas.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
+    canvas.style.transform = "rotate(" + stage2 + "deg)";
+  }, st[0]);
+  setTimeout(function(){
+    canvas.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
+    canvas.style.transform = "rotate(" + stage3 + "deg)";
+  }, st[0] + st[1]);
+  currentRot = stage3;
 }
 
 /* ---------- лента ---------- */
@@ -589,21 +603,31 @@ function makeReel(winIndex, mini){
   el.innerHTML = html;
   return {el: el, target: target, step: tw + 8, tw: tw};
 }
-function spinReel(item, ms){
+function spinReel(item, plan){
+  plan = plan || spinPlan();
   var center = reelsBox.clientWidth / 2 || window.innerWidth / 2;
   var jitter = (Math.random() * 36) - 18;
-  var offset = item.target * item.step + item.tw / 2 - center + jitter;
-  var creep = item.step * 1.5;
-  var first = Math.max(600, Math.round(ms * 0.78));
-  var second = Math.max(500, ms - first);
+  var finish = item.target * item.step + item.tw / 2 - center + jitter;
+  var st = plan.stages;
+  var tiles = plan.tiles;
+  var p2 = finish - tiles[2] * item.step;
+  var p1 = p2 - tiles[1] * item.step;
+  var start = Math.max(0, p1 - tiles[0] * item.step);
+  item.el.style.transition = "none";
+  item.el.style.transform = "translateX(" + (-start) + "px)";
+  void item.el.offsetWidth;
   setTimeout(function(){
-    item.el.style.transition = "transform " + (first / 1000) + "s cubic-bezier(.06,.66,.1,1)";
-    item.el.style.transform = "translateX(" + (-(offset - creep)) + "px)";
+    item.el.style.transition = "transform " + (st[0] / 1000) + "s cubic-bezier(.1,.66,.28,1)";
+    item.el.style.transform = "translateX(" + (-p1) + "px)";
   }, 30);
   setTimeout(function(){
-    item.el.style.transition = "transform " + (second / 1000) + "s cubic-bezier(.35,.02,.55,.9)";
-    item.el.style.transform = "translateX(" + (-offset) + "px)";
-  }, 30 + first);
+    item.el.style.transition = "transform " + (st[1] / 1000) + "s cubic-bezier(.22,.72,.24,1)";
+    item.el.style.transform = "translateX(" + (-p2) + "px)";
+  }, 30 + st[0]);
+  setTimeout(function(){
+    item.el.style.transition = "transform " + (st[2] / 1000) + "s cubic-bezier(.36,.04,.62,.96)";
+    item.el.style.transform = "translateX(" + (-finish) + "px)";
+  }, 30 + st[0] + st[1]);
 }
 
 /* ---------- состояние ---------- */
@@ -668,8 +692,7 @@ async function load(){
     balance = d.balance || 0;
     crystals = d.crystals || 0;
     price = d.price || 0;
-    SPEEDS = d.speeds || [];
-    SPEED_ID = d.speed || "slow";
+    if (d.spin) SPIN = d.spin;
     count = Math.min(count, maxAtOnce);
     document.getElementById("reset").textContent = d.reset_text || "";
     prep(d.segments || []);
@@ -711,28 +734,27 @@ async function spin(){
     crystals = d.crystals || 0;
 
     reelsBox.innerHTML = "";
+    var plan = spinPlan();
     if (view === "wheel" && items.length === 1){
-      var msW = wheelMs();
-      spinTo(items[0].index || 0, msW);
+      spinTo(items[0].index || 0, plan);
       setTimeout(function(){
         showResult(items);
         spinning = false;
         sync();
         load();
-      }, msW + 500);
+      }, plan.ms + 500);
       return;
     }
     var mini = items.length > 1;
     var created = items.map(function(item){ return makeReel(item.index || 0, mini); });
     void reelsBox.offsetWidth;
-    var msR = reelMs(items.length);
-    created.forEach(function(item){ spinReel(item, msR); });
+    created.forEach(function(item){ spinReel(item, plan); });
     setTimeout(function(){
       showResult(items);
       spinning = false;
       sync();
       load();
-    }, msR + 500);
+    }, plan.ms + 500);
   }catch(e){
     toast("Связь потерялась", "bad");
     spinning = false; sync();

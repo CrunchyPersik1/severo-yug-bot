@@ -384,13 +384,6 @@ BOOTSTRAP = POLISH + r"""<script>
              p.view_classic || "wheel") +
       segRow("view_crystal", "Кристальная рулетка", "Колесо или лента",
              p.view_crystal || "wheel") +
-      '<div class="__row"><div><div class="__t">Скорость открытия</div>' +
-      '<div class="__s">Чем медленнее, тем дольше лента ползёт в конце</div></div></div>' +
-      '<div class="__opts" id="__speeds">' +
-      (d.speeds || []).map(function(item){
-        return '<button data-speed="' + item.id + '" class="' +
-          (item.id === (p.speed || "slow") ? "on" : "") + '">' + item.title + '</button>';
-      }).join("") + '</div>' +
       '<div class="__row"><div><div class="__t">Карточка в профиле</div>' +
       '<div class="__s">' +
       (pin ? ("Сейчас: " + pin.name) : "Витрина пуста — повесь карту из коллекции") +
@@ -425,17 +418,6 @@ BOOTSTRAP = POLISH + r"""<script>
           });
         };
       });
-    });
-    var speedBox = document.getElementById("__speeds");
-    if (speedBox) speedBox.querySelectorAll("[data-speed]").forEach(function(b){
-      b.onclick = function(){
-        speedBox.querySelectorAll("[data-speed]").forEach(function(o){ o.className = ""; });
-        b.className = "on";
-        p.speed = b.dataset.speed;
-        prefsRequest("POST", {speed: b.dataset.speed}, function(saved){
-          if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
-        });
-      };
     });
     var clear = document.getElementById("__pin-clear");
     if (clear) clear.onclick = function(){

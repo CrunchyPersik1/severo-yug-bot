@@ -1,87 +1,82 @@
-"""Скорость открытия: пять профилей и их влияние на страницы."""
+"""Открытие приза: 15 секунд, три стадии и «проскок» на соседний тайл."""
 
 import inspect
 
 from app import reveal
 
 
-def test_five_speeds_in_order():
-    ids = [item["id"] for item in reveal.SPEEDS]
-    assert ids == ["turbo", "fast", "normal", "slow", "turtle"]
-    titles = [item["title"] for item in reveal.SPEEDS]
-    assert titles[0] == "Супер быстрая"
-    assert titles[-1] == "Черепаха"
+def test_spin_is_at_least_fifteen_seconds():
+    assert reveal.SPIN_MS == 15_000
+    assert reveal.total_ms() >= 15_000
 
 
-def test_speeds_grow_monotonically():
-    reels = [int(item["reel_ms"]) for item in reveal.SPEEDS]
-    wheels = [int(item["wheel_ms"]) for item in reveal.SPEEDS]
-    assert reels == sorted(reels) and len(set(reels)) == len(reels)
-    assert wheels == sorted(wheels) and len(set(wheels)) == len(wheels)
+def test_three_stages_add_up_to_the_whole_time():
+    first, second, third = reveal.stage_ms()
+    assert first + second + third == reveal.SPIN_MS
+    assert first > second > third, "сначала быстро, потом медленнее, потом совсем медленно"
 
 
-def test_turtle_is_long_enough_for_suspense():
-    assert reveal.reel_ms("turtle") >= 9000
-    assert reveal.wheel_ms("turtle") >= 10000
-    # и заметно дольше прежних 4.2 с
-    assert reveal.reel_ms("slow") > 6000
+def test_stage_shares():
+    assert abs(sum(reveal.STAGE_SHARE) - 1.0) < 1e-9
+    assert reveal.STAGE_SHARE[0] > reveal.STAGE_SHARE[1] > reveal.STAGE_SHARE[2]
 
 
-def test_default_is_not_fast():
-    assert reveal.DEFAULT == "slow"
-    assert reveal.normalize("nope") == "slow"
-    assert reveal.normalize(None) == "slow"
-    assert reveal.normalize("turbo") == "turbo"
+def test_stage_ms_never_shorter_than_minimum():
+    first, second, third = reveal.stage_ms(1000)
+    assert first + second + third == reveal.SPIN_MS
 
 
-def test_batch_is_faster_but_not_instant():
-    single = reveal.reel_ms("slow", 1)
-    batch = reveal.reel_ms("slow", 5)
-    assert batch < single
-    assert batch >= reveal.MIN_BATCH_MS
+def test_slip_chance_is_fifteen_percent():
+    assert reveal.slip_chance() == 0.15
 
 
-def test_payload_for_settings():
+def test_usual_end_barely_moves():
+    """Обычно лента почти не сдвигается после «остановки»."""
+    usual = reveal.STAGE_TILES[-1]
+    slip = reveal.SLIP_TILES[-1]
+    assert usual < 0.6
+    assert slip > 1.0
+    assert slip > usual
+
+
+def test_payload_for_pages():
     data = reveal.payload()
-    assert len(data) == 5
-    for item in data:
-        assert item["id"] and item["title"] and item["reel_ms"]
+    assert data["spin_ms"] == reveal.SPIN_MS
+    assert len(data["spin_stages"]) == 3
+    assert sum(data["spin_stages"]) == reveal.SPIN_MS
+    assert data["slip_chance"] == reveal.SLIP_CHANCE
+    assert len(data["stage_tiles"]) == 3 and len(data["slip_tiles"]) == 3
 
 
-def test_prefs_keep_and_validate_speed():
-    from app.webapp import PREFS_DEFAULTS, _prefs_clean
-
-    assert PREFS_DEFAULTS["speed"] == reveal.DEFAULT
-    assert _prefs_clean({"speed": "turtle"})["speed"] == "turtle"
-    assert _prefs_clean({"speed": "ракета"})["speed"] == reveal.DEFAULT
-
-
-def test_api_exposes_speed_to_pages():
+def test_api_sends_spin_config():
     from app import webapp
 
-    case_source = inspect.getsource(webapp.api_case)
-    assert '"speed":' in case_source and '"speeds":' in case_source
-    payload_source = inspect.getsource(webapp._roulette_payload)
-    assert "reveal_mod.normalize" in payload_source
-    prefs_source = inspect.getsource(webapp.api_prefs)
-    assert '"speeds": reveal_mod.payload()' in prefs_source
+    assert '"spin": reveal_mod.payload()' in inspect.getsource(webapp.api_case)
+    assert '"spin": reveal_mod.payload()' in inspect.getsource(webapp._roulette_payload)
 
 
-def test_pages_use_speed_and_creep():
+def test_no_speed_profiles_left():
+    from app import webapp
+    from app.webapp import PREFS_DEFAULTS
+
+    assert "speed" not in PREFS_DEFAULTS
+    assert "speed" not in inspect.getsource(webapp.api_prefs)
+
+
+def test_pages_use_stages_and_slip():
     from app.games_page import CASE_PAGE, ROULETTE_PAGE
 
     for page in (CASE_PAGE, ROULETTE_PAGE):
-        assert "SPEED_ID" in page
-        assert "reelMs(" in page
-        # вторая, медленная стадия «доползания»
-        assert "creep" in page
-    assert "wheelMs(" in ROULETTE_PAGE
-    assert "spinTo(items[0].index || 0, msW)" in ROULETTE_PAGE
+        assert "spinPlan" in page
+        assert "slip" in page
+        assert "spin_ms" in page
+        for old in ("SPEEDS", "SPEED_ID", "reelMs(", "wheelMs("):
+            assert old not in page, old
+    assert "spinTo(items[0].index || 0, plan)" in ROULETTE_PAGE
 
 
-def test_settings_modal_has_speed_buttons():
+def test_settings_have_no_speed_row():
     from app.webtheme import BOOTSTRAP
 
-    assert "__speeds" in BOOTSTRAP
-    assert "data-speed" in BOOTSTRAP
-    assert "Скорость открытия" in BOOTSTRAP
+    assert "__speeds" not in BOOTSTRAP
+    assert "Скорость открытия" not in BOOTSTRAP

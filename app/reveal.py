@@ -1,65 +1,57 @@
-"""Скорость открытия призов: от «супер быстрой» до «черепахи».
+"""Открытие приза: 15 секунд с постепенным замедлением.
 
-Чем медленнее, тем дольше лента/колесо ползёт в конце: последние полтора
-тайла оно доползает отдельным медленным шагом, поэтому игрок до последнего
-не понимает, что выпало. Это и есть азарт — не «мгновенный результат».
+Скоростей больше нет — есть один честно долгий прокрут. Лента и колесо
+идут тремя стадиями: быстро, медленнее, совсем медленно. В самом конце
+есть шанс, что приз «проскочит» ещё на один тайл: тогда игрок видит, как
+лента почти встала и всё-таки проехала дальше.
 
-Значение хранится в настройках игрока (`speed`), страницы берут готовые
-миллисекунды из /api/case и /api/roulette.
+Важно: визуальный финиш всегда совпадает с призом, который выдал сервер.
+«Проскок» не подменяет награду — он только делает остановку неочевидной.
 """
 
 from __future__ import annotations
 
-DEFAULT = "slow"
+# Минимальная длина прокрута. Меньше не бывает ни в каком профиле.
+SPIN_MS = 15_000
 
-# id, подпись, лента (мс), колесо (мс)
-SPEEDS: tuple[dict[str, object], ...] = (
-    {"id": "turbo", "title": "Супер быстрая", "reel_ms": 2200, "wheel_ms": 3000},
-    {"id": "fast", "title": "Быстрая", "reel_ms": 3200, "wheel_ms": 4200},
-    {"id": "normal", "title": "Медленнее", "reel_ms": 4800, "wheel_ms": 6000},
-    {"id": "slow", "title": "Медленная", "reel_ms": 6800, "wheel_ms": 8200},
-    {"id": "turtle", "title": "Черепаха", "reel_ms": 9500, "wheel_ms": 11000},
-)
+# Доли времени на три стадии: разгон, замедление, доползание.
+STAGE_SHARE = (0.45, 0.40, 0.15)
 
-BY_ID: dict[str, dict[str, object]] = {str(item["id"]): item for item in SPEEDS}
+# Шанс, что в конце лента проедет ещё один тайл.
+SLIP_CHANCE = 0.15
 
-# Пачка (2-10 призов) не должна тянуться вечность: режем время, но не
-# ниже «быстрой».
-MIN_BATCH_MS = 2400
-BATCH_FACTOR = 0.6
+# Сколько тайлов проходит каждая стадия. Обычно в конце лента просто
+# «досаживается» меньше чем на полтайла — кажется, что встала на месте.
+STAGE_TILES = (14.0, 4.0, 0.45)
 
-# Сколько держать финальный кадр перед показом текста результата.
-HOLD_MS = 450
+# С шансом SLIP_CHANCE последняя стадия — целый тайл: видно, как лента
+# проехала ещё и встала на соседнюю награду.
+SLIP_TILES = (14.0, 2.9, 1.7)
 
 
-def is_speed(value: object) -> bool:
-    return str(value or "") in BY_ID
+def stage_ms(total: int = SPIN_MS) -> tuple[int, int, int]:
+    """Миллисекунды трёх стадий."""
+    total = max(SPIN_MS, int(total))
+    first = int(round(total * STAGE_SHARE[0]))
+    second = int(round(total * STAGE_SHARE[1]))
+    return first, second, total - first - second
 
 
-def normalize(value: object) -> str:
-    value = str(value or "")
-    return value if value in BY_ID else DEFAULT
+def total_ms() -> int:
+    return SPIN_MS
 
 
-def reel_ms(value: object, count: int = 1) -> int:
-    speed = BY_ID[normalize(value)]
-    ms = int(speed["reel_ms"])
-    if int(count) > 1:
-        ms = max(MIN_BATCH_MS, int(ms * BATCH_FACTOR))
-    return ms
+def slip_chance() -> float:
+    return SLIP_CHANCE
 
 
-def wheel_ms(value: object) -> int:
-    return int(BY_ID[normalize(value)]["wheel_ms"])
-
-
-def hold_ms() -> int:
-    return HOLD_MS
-
-
-def payload() -> list[dict[str, object]]:
-    """Список скоростей для кнопок в настройках."""
-    return [
-        {"id": item["id"], "title": item["title"], "reel_ms": item["reel_ms"]}
-        for item in SPEEDS
-    ]
+def payload() -> dict[str, object]:
+    """Всё, что нужно страницам для анимации."""
+    first, second, third = stage_ms()
+    return {
+        "spin_ms": SPIN_MS,
+        "spin_stages": [first, second, third],
+        "slip_chance": SLIP_CHANCE,
+        "stage_tiles": list(STAGE_TILES),
+        "slip_tiles": list(SLIP_TILES),
+    }
