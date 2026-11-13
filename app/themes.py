@@ -25,6 +25,8 @@ class Theme:
     acc2: str      # светлый акцент
     acc_ink: str   # цвет текста НА акценте
     particles: str
+    personal: bool = False   # личная тема: не продаётся, выдаётся вручную
+    light: bool = False      # светлая: тёмный текст на светлом фоне
 
     @property
     def vars(self) -> dict[str, str]:
@@ -49,10 +51,36 @@ class Theme:
 DEFAULT_THEME = "classic"
 
 THEMES: tuple[Theme, ...] = (
+    # Зима пришла: осенняя тема стала снежной (чёрный + голубой).
     Theme(
-        "classic", "Осень", 0,
-        "#1b1613", "#241d19", "#2e251f", "#3d3229",
-        "#f4ece4", "#a8968a", "#dc8a3f", "#f0b276", "#1b1206", "leaf",
+        "classic", "Зима", 0,
+        "#0c1220", "#121b2c", "#18233a", "#243350",
+        "#eaf2ff", "#93a6c4", "#3b9ae8", "#8fd0ff", "#04121f", "snow",
+    ),
+    # Светлая снежная тема: белый + голубой.
+    Theme(
+        "snowlight", "Снег", 0,
+        "#eef5fd", "#ffffff", "#e4eefb", "#cfe0f5",
+        "#16233a", "#5b7291", "#2f8ce0", "#6fc0ff", "#ffffff", "snow",
+        light=True,
+    ),
+    # Две бесплатные темы каждому игроку.
+    Theme(
+        "mint", "Мята", 0,
+        "#0f1b18", "#16261f", "#1d3129", "#2a4638",
+        "#e9f8f1", "#93b3a4", "#38b48a", "#7be0bd", "#04140f", "spark",
+    ),
+    Theme(
+        "clay", "Терракота", 0,
+        "#1e1613", "#2a1e19", "#362621", "#4a362e",
+        "#f7ece4", "#bfa08c", "#c4713e", "#eba679", "#20100a", "ember",
+    ),
+    # Личная тема Трофима: чистый чёрный и белый, без оттенков.
+    Theme(
+        "trofim", "Чёрно-белая", 0,
+        "#000000", "#0a0a0a", "#141414", "#262626",
+        "#ffffff", "#9a9a9a", "#ffffff", "#e6e6e6", "#000000", "spark",
+        personal=True,
     ),
     Theme(
         "mono", "Мел", 50_000,
@@ -111,7 +139,17 @@ def get(theme_id: str | None) -> Theme:
 
 
 def shop_entries() -> list[Theme]:
-    return [theme for theme in THEMES if theme.price > 0]
+    """В магазине — только платные и не личные."""
+    return [theme for theme in THEMES if theme.price > 0 and not theme.personal]
+
+
+def is_free(theme: Theme) -> bool:
+    """Бесплатная — значит доступна всем сразу, без покупки."""
+    return theme.price <= 0 and not theme.personal
+
+
+def granted_only(theme: Theme) -> bool:
+    return bool(theme.personal)
 
 
 def describe(theme: Theme) -> str:

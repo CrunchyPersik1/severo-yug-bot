@@ -89,7 +89,11 @@ from .roulette import (
     wheel_segments,
 )
 from .shop import ShopError, catalog, teachers_of_day
+from . import gacha
+from .cards_d import roll_card_d
 from .gacha import day_key as game_day_key
+from .gacha import next_reset
+from .gacha import roll_card as roll_gacha_card
 from .stocks_repo import StocksError
 from .db import _NotEnough as NotEnoughError
 
@@ -401,6 +405,12 @@ async def _shop_payload(state, user_id: int) -> dict[str, Any]:
         "gems": {
             "rate": bundles_mod.GEM_RATE,
             "options": [1, 5, 10, 50, 180],
+        },
+        "card_packs": {
+            "owned": len(await state.db.card_packs(user_id, limit=50)),
+            "price": CARD_PACK_PRICE,
+            "price5": CARD_PACK5_PRICE,
+            "max_open": CARD_PACK_MAX_OPEN,
         },
         "mega": await _mega_payload(state, user_id),
         "catalog": [_entry_payload(entry) for entry in catalog(day)],
@@ -746,6 +756,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .pack button[disabled]{background:var(--panel2);color:var(--muted)}
 .pack.bought{opacity:.6}
 
+/* Паки карточек */
+.cpbox{border-radius:16px;padding:14px;margin-bottom:14px;background:linear-gradient(135deg,#1b1220,#111827);
+  border:1px solid #334155}
+.cphead{font-size:15px;font-weight:900}
+.cpsub{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.45}
+.cprow{display:flex;gap:7px;margin-top:11px}
+.cprow button{flex:1;border:0;border-radius:11px;padding:11px 4px;font-size:12px;font-weight:900;
+  font-family:inherit;background:var(--acc);color:var(--acc-ink)}
+.cprow button[disabled]{background:var(--panel2);color:var(--muted)}
+.cpowned{font-size:12px;color:var(--muted);margin-top:9px}
+.cpowned b{color:var(--ink)}
+.cpopen{margin-top:9px;width:100%;border:0;border-radius:12px;padding:13px;font-size:13.5px;
+  font-weight:900;font-family:inherit;background:#7c3aed;color:#fff}
+.cpopen[disabled]{background:var(--panel2);color:var(--muted)}
+
 /* Обмен кристаллов */
 .exchange{border-radius:16px;padding:14px;background:var(--panel);border:1px solid var(--line);margin-top:14px}
 .exchange .ttl{font-size:14px;font-weight:900}
@@ -817,6 +842,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   </section>
 
   <section class="section" id="s-packs">
+    <div id="cardPacksBox"></div>
     <div class="hint">Топ-паки покупаются <b>только за кристаллы</b> и меняются вместе с акциями.</div>
     <div id="packList"></div>
   </section>
@@ -929,6 +955,26 @@ function packCard(pack){
     '</button></div></div>';
 }
 
+/* ---------- паки карточек ---------- */
+function cardPacksBlock(){
+  const cp = S.data.card_packs || {owned: 0, price: 25000, price5: 110000, max_open: 5};
+  const points = (S.data.wallet || {}).points || 0;
+  const canBuy = points >= cp.price;
+  const canBuy5 = points >= cp.price5;
+  return '<div class="cpbox">' +
+    '<div class="cphead">🃏 Паки карточек</div>' +
+    '<div class="cpsub">В паке одна карта: любая редкость, редко — Егор или Лера. ' +
+      'Открывается с анимацией.</div>' +
+    '<div class="cprow">' +
+      '<button id="buyPack"' + (canBuy ? "" : " disabled") + '>Купить пак · ' + money(cp.price) + '</button>' +
+      '<button id="buyPack5"' + (canBuy5 ? "" : " disabled") + '>Пачка 5 · ' + money(cp.price5) + '</button>' +
+    '</div>' +
+    '<div class="cpowned">В инвентаре: <b>' + (cp.owned || 0) + '</b></div>' +
+    '<button class="cpopen" id="openPacks"' +
+      (cp.owned > 0 ? "" : " disabled") + '>' +
+      (cp.owned > 0 ? ("ОТКРЫТЬ " + Math.min(cp.owned, cp.max_open || 5)) : "Нет паков") +
+    '</button></div>';
+}
 /* ---------- обмен ---------- */
 function exchangeBlock(){
   const g = S.data.gems || {rate: 55555, options: [1]};
@@ -973,6 +1019,7 @@ function render(){
   document.getElementById("dealsHint").innerHTML =
     'Четыре акции для всех и две личные · ' + esc(S.data.period_text || "");
   document.getElementById("dealGrid").innerHTML = (S.data.deals || []).map(dealTile).join("");
+  document.getElementById("cardPacksBox").innerHTML = cardPacksBlock();
   document.getElementById("packList").innerHTML = (S.data.packs || []).length
     ? S.data.packs.map(packCard).join("")
     : '<div class="empty">В этой ротации паков нет</div>';
@@ -988,6 +1035,12 @@ function bind(){
   });
   const gb = document.getElementById("gemBuy");
   if (gb) gb.onclick = buyGems;
+  const bp = document.getElementById("buyPack");
+  if (bp) bp.onclick = function(){ buyPacks(1); };
+  const bp5 = document.getElementById("buyPack5");
+  if (bp5) bp5.onclick = function(){ buyPacks(5); };
+  const op = document.getElementById("openPacks");
+  if (op) op.onclick = openPacks;
   ["dailyBtn"].forEach(id => {
     const list = document.querySelectorAll("#" + id);
     list.forEach(b => b.onclick = claimDaily);
@@ -1052,6 +1105,31 @@ async function buyGems(){
     await load();
   }catch(e){ toast("Связь потерялась"); }
   S.busy = false;
+}
+async function buyPacks(count){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await send("/api/shop/pack_cards/buy", {count: count});
+    if (d.error){ toast(d.error); }
+    else { toast("Паков куплено: " + d.bought); }
+    await load();
+  }catch(e){ toast("Связь потерялась"); }
+  S.busy = false;
+}
+async function openPacks(){
+  if (S.busy) return;
+  S.busy = true;
+  try{
+    const d = await send("/api/shop/pack_cards/open", {count: (S.data.card_packs || {}).max_open || 5});
+    if (d.error){ toast(d.error); S.busy = false; return; }
+    if (window.__revealCards && d.cards && d.cards.length){
+      window.__revealCards(d.cards, function(){ S.busy = false; load(); });
+      return;
+    }
+    S.busy = false;
+    await load();
+  }catch(e){ toast("Связь потерялась"); S.busy = false; }
 }
 async function buySku(btn){
   if (S.busy) return;
@@ -1247,6 +1325,177 @@ LIVE_KEY = "miniapps_live"
 async def _live(request: Request) -> bool:
     value = await request.app.state.db.get_setting(LIVE_KEY)
     return value == "1"
+
+
+# --------------------------------------------------------------------------- #
+# Паки карточек и «Северо-Юг» в приложении
+# --------------------------------------------------------------------------- #
+
+CARD_PACK_PRICE = 25_000
+CARD_PACK5_PRICE = 110_000
+CARD_PACK_MAX_OPEN = 5
+
+
+def _card_reveal(card) -> dict[str, Any]:
+    """Всё для анимации получения карты: без фото, только эмодзи."""
+    return {
+        "id": card.card_id,
+        "name": card.display_name,
+        "emoji": card.rarity_emoji,
+        "rarity": card.rarity,
+        "rarity_title": rarity_name(card.rarity),
+        "hp": card.hp,
+        "atk": card.atk,
+        "points": card.points,
+        "ability": card.ability.name,
+        "ability_text": describe_ability(card),
+        "description": card.description or "",
+        "price": market_price(card),
+        "fx": cardsfx.payload(card.rarity),
+    }
+
+
+@router.post("/api/shop/pack_cards/buy")
+async def api_buy_card_packs(request: Request) -> JSONResponse:
+    """Купить паки карточек: 1 за 25 000, набор из 5 — со скидкой."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        count = int((body or {}).get("count") or 1)
+    except (TypeError, ValueError):
+        count = 1
+    count = 5 if count >= 5 else 1
+    price = CARD_PACK5_PRICE if count == 5 else CARD_PACK_PRICE
+    if not await state.db.spend_points(int(user["id"]), price):
+        return JSONResponse(
+            {"error": f"Не хватает очков: нужно {price}"}, status_code=400
+        )
+    owned = await state.db.add_card_packs(int(user["id"]), count)
+    return JSONResponse(
+        {
+            "ok": True,
+            "bought": count,
+            "owned": owned,
+            "wallet": {"points": await state.market.balance(int(user["id"]))},
+        }
+    )
+
+
+@router.post("/api/shop/pack_cards/open")
+async def api_open_card_packs(request: Request) -> JSONResponse:
+    """Открыть паки: карта на пак, пачкой до пяти штук."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    try:
+        want = int((body or {}).get("count") or 1)
+    except (TypeError, ValueError):
+        want = 1
+    want = max(1, min(CARD_PACK_MAX_OPEN, want))
+    packs = await state.db.card_packs(uid, limit=want)
+    if not packs:
+        return JSONResponse({"error": "Паков нет — купи в магазине"}, status_code=400)
+    cards: list[dict[str, Any]] = []
+    for pack_id in packs:
+        if not await state.db.open_card_pack(uid, pack_id):
+            continue
+        card = roll_gacha_card()
+        counts = await state.db.get_collection(uid)
+        is_new = card.card_id not in counts
+        await state.db.add_card(uid, card.card_id)
+        await state.db.add_points(uid, card.points)
+        item = _card_reveal(card)
+        item["is_new"] = is_new
+        cards.append(item)
+    if not cards:
+        return JSONResponse({"error": "Не получилось открыть"}, status_code=400)
+    return JSONResponse(
+        {
+            "ok": True,
+            "cards": cards,
+            "owned": len(await state.db.card_packs(uid, limit=50)),
+            "wallet": {"points": await state.market.balance(uid)},
+        }
+    )
+
+
+@router.get("/api/drop")
+async def api_drop_state(request: Request) -> JSONResponse:
+    """«Северо-Юг» в приложении: сколько попыток осталось и когда сброс."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    day = game_day_key()
+    row = await state.db.player_drop_state(int(user["id"]), day, gacha.DROPS_PER_DAY)
+    return JSONResponse(
+        {
+            "left": row["left"],
+            "limit": row["limit"],
+            "reset_text": _drop_reset_text(),
+            "kinds": [
+                {"id": "g", "title": "Северо-Юг", "note": "основная коллекция"},
+                {"id": "d", "title": "Западо-Восток", "note": "вторая коллекция"},
+            ],
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _drop_reset_text() -> str:
+    seconds = (next_reset() - datetime.now(timezone.utc)).total_seconds()
+    hours = int(max(0, seconds) // 3600)
+    minutes = int(max(0, seconds) % 3600 // 60)
+    return f"Сброс через {hours} ч {minutes} мин"
+
+
+@router.post("/api/drop")
+async def api_drop(request: Request) -> JSONResponse:
+    """Открыть карту как в боте: одна попытка в сутки на обе коллекции."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    kind = str((body or {}).get("kind") or "g")
+    day = game_day_key()
+    left = await state.db.claim_daily(uid, day, gacha.DROPS_PER_DAY)
+    if left is None:
+        return JSONResponse(
+            {"error": "Попытки на сегодня кончились — сброс в 12:00 по ЕКБ"},
+            status_code=400,
+        )
+    if kind == "d":
+        card = roll_card_d()
+    else:
+        card = roll_gacha_card()
+    counts = await state.db.get_collection(uid)
+    is_new = card.card_id not in counts
+    await state.db.add_card(uid, card.card_id)
+    await state.db.add_points(uid, card.points)
+    payload = _card_reveal(card)
+    payload["is_new"] = is_new
+    return JSONResponse({"ok": True, "card": payload, "left": int(left)})
 
 
 # --------------------------------------------------------------------------- #
@@ -1505,6 +1754,7 @@ async def _settle_classic_prize(state, uid: int, prize: tuple[str, Any]) -> dict
             name=card.display_name,
             emoji=card.rarity_emoji,
             label=f"🃏 Главный приз — {card.name}!",
+            reveal=_card_reveal(card),
         )
     return item
 
@@ -3152,8 +3402,10 @@ def _theme_payload(user_id: int, current: str, owned: list[str]) -> dict[str, An
     active = themes.get(current)
     return {
         "theme": active.id,
+        "name": active.name,
         "vars": active.vars,
         "particles": active.particles,
+        "light": bool(getattr(active, "light", False)),
         "owned": owned,
         "all": [
             {
@@ -3163,7 +3415,9 @@ def _theme_payload(user_id: int, current: str, owned: list[str]) -> dict[str, An
                 "acc": theme.acc,
                 "bg": theme.bg,
                 "panel": theme.panel,
-                "owned": theme.price == 0 or theme.id in owned,
+                "owned": themes.is_free(theme) or theme.id in owned,
+                "personal": themes.granted_only(theme),
+                "light": bool(getattr(theme, "light", False)),
                 "active": theme.id == active.id,
             }
             for theme in themes.THEMES
@@ -3202,6 +3456,11 @@ async def api_theme_set(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Такого стиля нет."}, status_code=400)
 
     owned = await state.db.owned_themes(user_id)
+    if themes.granted_only(theme) and theme.id not in owned:
+        return JSONResponse(
+            {"error": f"Стиль «{theme.name}» личный — его выдаёт только админ."},
+            status_code=400,
+        )
     if theme.price > 0 and theme.id not in owned:
         return JSONResponse(
             {"error": f"Стиль «{theme.name}» не куплен — он в магазине."}, status_code=400
@@ -3216,6 +3475,7 @@ async def api_theme_set(request: Request) -> JSONResponse:
 # --------------------------------------------------------------------------- #
 
 HUB_SECTIONS: tuple[dict[str, Any], ...] = (
+    {"id": "drop", "title": "Карта дня", "note": "северо-юг и западо-восток", "kind": "app", "path": "/drop"},
     {"id": "collection", "title": "Коллекция", "note": "все твои карты", "kind": "app", "path": "/collection"},
     {"id": "market", "title": "Рынок", "note": "лоты игроков", "kind": "app", "path": "/market"},
     {"id": "shop", "title": "Магазин", "note": "учителя и наборы", "kind": "app", "path": "/app"},
@@ -5555,6 +5815,104 @@ async def api_profile_save(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "profile": payload})
 
 
+DROP_PAGE = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Северо-Юг · Карта дня</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:40px}
+.wrap{max-width:520px;margin:0 auto;padding:16px}
+h1{margin:0 0 4px;font-size:20px;font-weight:900}
+.sub{font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:16px}
+.left{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:12px 14px;font-size:13px;margin-bottom:14px}
+.left b{font-size:15px}
+.kind{display:flex;flex-direction:column;gap:10px}
+.kind button{width:100%;border:0;border-radius:16px;padding:20px 16px;text-align:left;
+  font-family:inherit;color:var(--acc-ink);background:var(--acc);position:relative;overflow:hidden}
+.kind button[disabled]{background:var(--panel2);color:var(--muted)}
+.kind .t{font-size:17px;font-weight:900}
+.kind .n{font-size:12px;opacity:.8;margin-top:3px;font-weight:700}
+.hint{margin-top:14px;font-size:11.5px;color:var(--muted);line-height:1.55;text-align:center}
+#toast{position:fixed;left:14px;right:14px;bottom:18px;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--line);border-radius:12px;padding:13px 15px;font-size:13px;
+  transform:translateY(220%);transition:.25s;z-index:40}
+#toast.on{transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🃏 Карта дня</h1>
+  <div class="sub">Одна попытка в сутки на обе коллекции. Тот же «Северо-Юг», что в чате, только с анимацией.</div>
+  <div class="left"><span>Осталось сегодня: <b id="left">…</b></span><span id="reset"></span></div>
+  <div class="kind" id="kinds"></div>
+  <div class="hint">Сброс в 12:00 по ЕКБ. Редкая карта приходит с вибрацией и эффектами на весь экран.</div>
+</div>
+<div id="toast"></div>
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
+let S = {left: 0, limit: 1, busy: false, kinds: []};
+
+function toast(t){
+  const el = document.getElementById("toast");
+  el.textContent = t; el.className = "on";
+  clearTimeout(el._t); el._t = setTimeout(function(){ el.className = ""; }, 3200);
+}
+function render(){
+  document.getElementById("left").textContent = S.left + " / " + S.limit;
+  document.getElementById("kinds").innerHTML = S.kinds.map(function(k){
+    return '<button data-k="' + k.id + '"' + (S.left <= 0 || S.busy ? " disabled" : "") + ">" +
+      '<div class="t">' + k.title + "</div>" +
+      '<div class="n">' + k.note + "</div></button>";
+  }).join("");
+  document.querySelectorAll("#kinds [data-k]").forEach(function(b){
+    b.onclick = function(){ open(b.dataset.k); };
+  });
+}
+async function load(){
+  try{
+    const r = await fetch("/api/drop", {headers});
+    const d = await r.json();
+    if (d.error){ toast(d.error); return; }
+    S.left = d.left || 0; S.limit = d.limit || 1; S.kinds = d.kinds || [];
+    document.getElementById("reset").textContent = d.reset_text || "";
+    render();
+  }catch(e){ toast("Не смог загрузить"); }
+}
+async function open(kind){
+  if (S.busy) return;
+  S.busy = true; render();
+  try{
+    const r = await fetch("/api/drop", {method: "POST", headers,
+      body: JSON.stringify({kind: kind})});
+    const d = await r.json();
+    if (d.error){ toast(d.error); S.busy = false; render(); return; }
+    S.left = d.left || 0;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+    if (window.__revealOne) window.__revealOne(d.card, function(){ S.busy = false; render(); });
+    else { S.busy = false; render(); }
+  }catch(e){ toast("Связь потерялась"); S.busy = false; render(); }
+}
+if (tg){ tg.ready(); tg.expand(); }
+load();
+</script>
+</body>
+</html>
+"""
+
+@router.get("/drop", response_class=HTMLResponse)
+async def drop_page() -> HTMLResponse:
+    return HTMLResponse(inject(DROP_PAGE))
+
+
 @router.get("/profile", response_class=HTMLResponse)
 async def profile_page() -> HTMLResponse:
     return HTMLResponse(inject(PROFILE_PAGE))
@@ -6377,6 +6735,7 @@ async def api_case_open_many(request: Request) -> JSONResponse:
                             "rarity": card.rarity,
                             "rarity_title": rarity_name(card.rarity),
                             "points": card.points,
+                            "reveal": _card_reveal(card),
                         }
                     )
             elif result["kind"] == "spin":
@@ -6428,6 +6787,7 @@ async def api_case_open_many(request: Request) -> JSONResponse:
                 "price": market_price(card),
                 "color": cases_mod.RARITY_COLORS.get(card.rarity, "#334155"),
                 "is_new": is_new,
+                "reveal": _card_reveal(card),
             }
         )
     if not opened:

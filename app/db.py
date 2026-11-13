@@ -334,6 +334,22 @@ class Database:
                 total = await con.fetchval("select count(*) from players")
         return int(total or 0)
 
+    async def player_drop_state(
+        self, user_id: int, day: Any, default_limit: int = 1
+    ) -> dict[str, Any]:
+        """Сколько попыток «Северо-Юг» осталось на эти игровые сутки."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select last_drop_day, drop_uses, drop_limit from players "
+                "where user_id = $1",
+                int(user_id),
+            )
+        if row is None or row["last_drop_day"] != day:
+            return {"left": int(default_limit), "limit": int(default_limit)}
+        limit = int(row["drop_limit"] or default_limit)
+        uses = int(row["drop_uses"] or 0)
+        return {"left": max(0, limit - uses), "limit": limit}
+
     async def claim_roulette(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         """Атомарно тратит один спин рулетки. Возвращает остаток или None."""
         async with self._p().acquire() as con:
@@ -700,6 +716,49 @@ class Database:
             "balance": int(row["bonus_points"]),
             "crystals": int(row["crystals"]),
         }
+
+    async def add_card_packs(self, user_id: int, count: int, source: str = "shop") -> int:
+        """Кладёт в инвентарь купленные паки карточек."""
+        count = max(0, int(count))
+        if count <= 0:
+            return 0
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into card_packs (user_id, source) "
+                "select $1, $2 from generate_series(1, $3::integer)",
+                int(user_id),
+                str(source),
+                count,
+            )
+            return int(
+                await con.fetchval(
+                    "select count(*) from card_packs where user_id = $1 and not opened",
+                    int(user_id),
+                )
+                or 0
+            )
+
+    async def card_packs(self, user_id: int, limit: int = 20) -> list[int]:
+        """Неоткрытые паки: id по порядку покупки."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select id from card_packs where user_id = $1 and not opened "
+                "order by id limit $2",
+                int(user_id),
+                max(1, int(limit)),
+            )
+        return [int(row["id"]) for row in rows]
+
+    async def open_card_pack(self, user_id: int, pack_id: int) -> bool:
+        """Отмечает пак открытым. False — его уже открыли или он не ваш."""
+        async with self._p().acquire() as con:
+            value = await con.fetchval(
+                "update card_packs set opened = true "
+                "where id = $1 and user_id = $2 and not opened returning id",
+                int(pack_id),
+                int(user_id),
+            )
+        return value is not None
 
     async def chat_setting(self, chat_id: int, key: str) -> str | None:
         """Настройка конкретного чата: группы или лички (chat_id = id игрока)."""

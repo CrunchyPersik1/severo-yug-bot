@@ -18,6 +18,7 @@ from .cards import CARDS_BY_ID, get_card
 from .db import Database
 from .gacha import day_key
 from .items import BY_SLOT
+from . import themes as themes_mod
 from .market import sum_bonus
 from .roulette import roulette_day_key
 
@@ -48,6 +49,7 @@ log 5                      за 5 минут
 log 120 200                за 120 минут, последние 200 строк
 log @ник                   только по этому игроку
 settings                   панель настроек: биржа, мини-аппки, дроп 💎
+theme @ник trofim          выдать тему игроку (trofim — личная чёрно-белая)
 
 Игрока можно указывать как @username, так и числовым id.
 give начисляет очки за карту, take списывает их же.
@@ -641,6 +643,28 @@ async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
     )
 
 
+async def act_theme(con: asyncpg.Connection, args: list[str]) -> str:
+    """Выдать тему игроку по нику — так личная тема Трофима уезжает другим."""
+    if len(args) < 2:
+        raise ValueError(
+            "формат: theme @ник тема\n"
+            "темы: " + ", ".join(theme.id for theme in themes_mod.THEMES)
+        )
+    player = await _resolve_player(con, args[0])
+    wanted = args[1].strip().lower()
+    theme = themes_mod.get(wanted)
+    if theme.id != wanted:
+        raise ValueError(f"нет такой темы: {wanted}")
+    await con.execute(
+        "insert into player_themes (user_id, theme_id) values ($1, $2) "
+        "on conflict do nothing",
+        player["user_id"],
+        theme.id,
+    )
+    who = player["first_name"] or player["username"]
+    return f"[ok] тема «{theme.name}» выдана: {who} (id {player['user_id']})"
+
+
 async def act_log(con: asyncpg.Connection, args: list[str]) -> str:
     """Живой лог игры за последние минуты.
 
@@ -697,6 +721,8 @@ COMMANDS = {
     "курс": act_stock,
     "log": act_log,
     "лог": act_log,
+    "theme": act_theme,
+    "тема": act_theme,
 }
 
 

@@ -291,6 +291,9 @@ async function open(){
           if (pack.kind === "points") return "💎 " + money(pack.item.amount) + " очков!";
           return "💨 Пусто.";
         }).join("<br>");
+        var extra = items.filter(function(p){ return p.item && p.item.reveal; })
+          .map(function(p){ return p.item.reveal; });
+        if (window.__revealCards && extra.length) window.__revealCards(extra, null);
         spinning = false; sync();
       }, reelMs() + holdMs());
       return;
@@ -308,6 +311,9 @@ async function open(){
           " · +" + money(c.points) + " очк." +
           (c.is_new ? " · <b>НОВАЯ!</b>" : "");
       }).join("<br>");
+      if (window.__revealCards && d.cards.length && d.cards[0].reveal){
+        window.__revealCards(d.cards.map(function(c){ return c.reveal; }), null);
+      }
       spinning = false;
       sync();
     }, msReel + holdMs());
@@ -637,6 +643,13 @@ function sync(){
       : "Спины на сегодня кончились — жди сброса.";
   }
 }
+/* Приз-карта открывается тем же оверлеем, что и везде: с эффектами. */
+function revealFrom(list){
+  if (!window.__revealCards) return;
+  var cards = (list || []).filter(function(r){ return r.reveal; })
+    .map(function(r){ return r.reveal; });
+  if (cards.length) window.__revealCards(cards, null);
+}
 function showResult(list){
   result.innerHTML = list.map(function(item){ return item.label || "—"; }).join("<br>");
 }
@@ -700,6 +713,7 @@ async function spin(){
       spinTo(items[0].index || 0, msWheel);
       setTimeout(function(){
         showResult(items);
+        revealFrom(items);
         spinning = false;
         sync();
         load();
@@ -713,6 +727,7 @@ async function spin(){
     created.forEach(function(item){ spinReel(item, msSpin); });
     setTimeout(function(){
       showResult(items);
+      revealFrom(items);
       spinning = false;
       sync();
       load();

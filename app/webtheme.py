@@ -251,6 +251,66 @@ POLISH = r"""<style>
   .__opts button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
     border-color:transparent!important}
   .__note{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+
+  /* ==================== Получение карты: оверлей ==================== */
+  .rv{position:fixed;inset:0;z-index:9700;display:flex;align-items:center;justify-content:center;
+    padding:18px;background:rgba(4,6,10,.9);--fxc:#334155;animation:__fadeIn .2s ease both;
+    overflow:hidden;touch-action:manipulation}
+  .rv.out{opacity:0;transition:opacity .28s ease}
+  .rv .rv-rays{position:absolute;left:50%;top:50%;width:150vmax;height:150vmax;
+    transform:translate(-50%,-50%);opacity:.2;pointer-events:none;
+    background:conic-gradient(from 0deg,transparent 0 5deg,var(--fxc) 5deg 7deg,transparent 7deg 30deg);
+    animation:__rvspin 10s linear infinite}
+  .rv .rv-flash{position:absolute;left:50%;top:50%;width:20px;height:20px;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;
+    background:radial-gradient(circle,#fff,var(--fxc) 45%,transparent 72%);
+    animation:__rvflash 1s ease-out both}
+  .rv .rv-spark{position:absolute;width:7px;height:7px;border-radius:50%;background:#ffe9a8;
+    box-shadow:0 0 12px #ffd166;pointer-events:none;animation:__rvspark 1.4s ease-out both}
+  .rv-card{position:relative;z-index:2;width:100%;max-width:330px;border-radius:20px;
+    padding:20px;background:var(--panel);border:2px solid var(--fxc);
+    box-shadow:0 0 40px -8px var(--fxc),0 18px 50px rgba(0,0,0,.6);
+    animation:__rvpop .55s cubic-bezier(.2,.9,.3,1.15) both}
+  .rv-card.hi{border-width:3px;
+    background:linear-gradient(var(--panel),var(--panel)) padding-box,
+      conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#111,var(--fxc)) border-box}
+  .rv-emoji{font-size:64px;line-height:1;text-align:center;
+    filter:drop-shadow(0 6px 18px var(--fxc))}
+  .rv-name{text-align:center;font-size:21px;font-weight:900;margin-top:10px;line-height:1.15}
+  .rv-rar{text-align:center;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;
+    color:var(--fxc);font-weight:900;margin-top:5px}
+  .rv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}
+  .rv-stats div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:8px 4px;text-align:center}
+  .rv-stats b{display:block;font-size:15px;font-weight:900}
+  .rv-stats span{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .rv-block{margin-top:11px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;padding:9px 11px}
+  .rv-block .t{font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--muted);font-weight:900}
+  .rv-block .v{font-size:12.5px;margin-top:3px;line-height:1.45}
+  .rv-new{position:absolute;top:-11px;left:50%;transform:translateX(-50%);
+    background:var(--acc);color:var(--acc-ink);font-size:10px;font-weight:900;
+    border-radius:8px;padding:3px 9px;letter-spacing:.6px}
+  .rv-tap{margin-top:14px;text-align:center;font-size:11px;color:var(--muted)}
+  @keyframes __rvspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  @keyframes __rvflash{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
+    35%{opacity:1}100%{transform:translate(-50%,-50%) scale(30);opacity:0}}
+  @keyframes __rvpop{from{opacity:0;transform:scale(.82) translateY(16px)}
+    to{opacity:1;transform:none}}
+  @keyframes __rvspark{0%{transform:translate(0,0) scale(1);opacity:1}
+    100%{transform:translate(var(--dx,0),var(--dy,-120px)) scale(.2);opacity:0}}
+
+  /* ==================== Снежная тема ==================== */
+  body.theme-snow button,body.theme-snow .btn,body.theme-snow .tab{
+    position:relative;overflow:hidden}
+  body.theme-snow button::before,body.theme-snow .tab::before{
+    content:"\2744";position:absolute;right:4px;top:1px;font-size:9px;opacity:.45;
+    color:var(--acc2);pointer-events:none;line-height:1}
+  .__snowfront{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+  .__snowfront span{position:absolute;top:-40px;color:#eaf6ff;
+    animation:__snowfall linear infinite}
+  @keyframes __snowfall{to{transform:translateY(115vh) translateX(30px) rotate(200deg);opacity:0}}
 </style>
 """
 
@@ -286,6 +346,10 @@ BOOTSTRAP = POLISH + r"""<script>
     var st = document.createElement("style");
     st.textContent = "@keyframes __fall{to{transform:translateY(118vh) rotate(400deg);opacity:0}}";
     document.head.appendChild(st);
+    if (kind === "snow"){
+      document.body.classList.add("theme-snow");
+      snowFront();
+    }
   }
   function backBar(){
     if (location.pathname === "/hub") return;
@@ -439,6 +503,103 @@ BOOTSTRAP = POLISH + r"""<script>
     }
     ov.classList.add("on");
     prefsRequest("GET", null, function(){ paintSettings(ov); });
+  }
+
+  /* ---------- Получение карты: оверлей с анимацией ---------- */
+  function rvEsc(s){
+    return String(s == null ? "" : s).replace(/[<>&"]/g, function(c){
+      return {"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c];
+    });
+  }
+  function rvShow(card){
+    return new Promise(function(resolve){
+      var fx = card.fx || {};
+      var lvl = Number(fx.level) || 0;
+      var color = fx.color || "#334155";
+      var ov = document.createElement("div");
+      ov.className = "rv";
+      ov.style.setProperty("--fxc", color);
+      var html = "";
+      if (lvl >= 3) html += '<div class="rv-rays"></div><div class="rv-flash"></div>';
+      if (lvl >= 4){
+        for (var i = 0; i < 20; i++){
+          var dx = Math.round(Math.random() * 300 - 150);
+          var dy = Math.round(-80 - Math.random() * 220);
+          html += '<div class="rv-spark" style="left:' + (44 + Math.random() * 12) +
+            "%;top:" + (44 + Math.random() * 12) + "%;--dx:" + dx + "px;--dy:" + dy +
+            'px;animation-delay:' + (Math.random() * 0.35).toFixed(2) + 's"></div>';
+        }
+      }
+      html += '<div class="rv-card' + (lvl >= 4 ? " hi" : "") + '" style="--fxc:' + color + '">' +
+        (card.is_new ? '<div class="rv-new">НОВАЯ</div>' : "") +
+        '<div class="rv-emoji">' + (card.emoji || "?") + "</div>" +
+        '<div class="rv-name">' + rvEsc(card.name) + "</div>" +
+        '<div class="rv-rar">' + rvEsc(card.rarity_title || "") + "</div>" +
+        '<div class="rv-stats">' +
+          "<div><b>" + (card.hp || 0) + "</b><span>HP</span></div>" +
+          "<div><b>" + (card.atk || 0) + "</b><span>атака</span></div>" +
+          "<div><b>" + (card.points || 0) + "</b><span>очки</span></div>" +
+        "</div>" +
+        (card.ability
+          ? '<div class="rv-block"><div class="t">Способность</div><div class="v"><b>' +
+            rvEsc(card.ability) + "</b>" +
+            (card.ability_text ? "<br>" + rvEsc(card.ability_text) : "") + "</div></div>"
+          : "") +
+        (card.description
+          ? '<div class="rv-block"><div class="t">Описание</div><div class="v">' +
+            rvEsc(card.description) + "</div></div>"
+          : "") +
+        '<div class="rv-tap">' + (lvl >= 3 ? "\u2728 " : "") + "нажми, чтобы продолжить</div>" +
+        "</div>";
+      ov.innerHTML = html;
+      document.body.appendChild(ov);
+      if (tg && tg.HapticFeedback){
+        try{
+          if (lvl >= 3) tg.HapticFeedback.notificationOccurred("success");
+          tg.HapticFeedback.impactOccurred(lvl >= 4 ? "heavy" : "light");
+        }catch(e){}
+      }
+      var closed = false;
+      function close(){
+        if (closed) return;
+        closed = true;
+        ov.classList.add("out");
+        setTimeout(function(){ ov.remove(); resolve(); }, 240);
+      }
+      ov.onclick = close;
+      setTimeout(close, lvl >= 5 ? 3000 : lvl >= 3 ? 2400 : 1600);
+    });
+  }
+  function revealCards(cards, done){
+    if (!cards || !cards.length){ if (done) done(); return; }
+    var index = 0;
+    function next(){
+      if (index >= cards.length){ if (done) done(); return; }
+      rvShow(cards[index++]).then(next);
+    }
+    next();
+  }
+  window.__revealCards = revealCards;
+  window.__revealOne = function(card, done){ revealCards([card], done); };
+
+  /* ---------- Снег: крупные размытые хлопья поверх экрана ---------- */
+  function snowFront(){
+    if (document.querySelector(".__snowfront")) return;
+    var box = document.createElement("div");
+    box.className = "__snowfront";
+    document.body.appendChild(box);
+    for (var i = 0; i < 9; i++){
+      var flake = document.createElement("span");
+      flake.textContent = "\u2744";
+      flake.style.cssText =
+        "left:" + (Math.random() * 100).toFixed(1) + "vw;" +
+        "font-size:" + (14 + Math.random() * 26).toFixed(0) + "px;" +
+        "filter:blur(" + (Math.random() * 5).toFixed(1) + "px);" +
+        "opacity:" + (0.16 + Math.random() * 0.34).toFixed(2) + ";" +
+        "animation-duration:" + (16 + Math.random() * 16).toFixed(1) + "s;" +
+        "animation-delay:" + (Math.random() * 12).toFixed(1) + "s";
+      box.appendChild(flake);
+    }
   }
 
   backBar();

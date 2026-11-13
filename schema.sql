@@ -879,3 +879,16 @@ create table if not exists chat_settings (
     updated_at timestamptz not null default now(),
     primary key (chat_id, key)
 );
+-- ===================================================================== --
+-- Паки карточек из магазина: купил — открывай с анимацией.
+-- В паке ровно одна карта, пачку можно открывать по пять штук.
+-- ===================================================================== --
+
+create table if not exists card_packs (
+    id         bigserial primary key,
+    user_id    bigint not null references players(user_id) on delete cascade,
+    opened     boolean not null default false,
+    source     text not null default 'shop',
+    created_at timestamptz not null default now()
+);
+create index if not exists card_packs_user_idx on card_packs (user_id, opened);
