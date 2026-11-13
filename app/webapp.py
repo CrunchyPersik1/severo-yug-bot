@@ -6706,6 +6706,7 @@ function loadImg(key, src){
   return im;
 }
 loadImg("hero", "/static/hero_knight_m.png");
+loadImg("fighter", "/images/event/fighter_sheet.png");
 loadImg("idle", "/images/event/elf_idle.png");
 loadImg("walk", "/images/event/elf_walk.png");
 loadImg("atk", "/images/event/elf_atk.png");
@@ -6802,6 +6803,7 @@ function loop(){
   G.p.atkAnim = Math.max(0, G.p.atkAnim - dt);
   G.p.dashCd = Math.max(0, G.p.dashCd - dt);
   G.p.dashT = Math.max(0, G.p.dashT - dt);
+  G.p.hurtT = Math.max(0, (G.p.hurtT || 0) - dt);
   // эльф
   const dx = G.p.x - G.e.x, dy = G.p.y - G.e.y, dist = Math.hypot(dx, dy) || 1;
   const speed = 70 * (G.lv.speed || 1);
@@ -6833,6 +6835,7 @@ function loop(){
   G.arrows = G.arrows.filter(function(a){
     if (Math.hypot(a.x - G.p.x, a.y - (G.p.y - 26)) < 26){
       G.p.hp -= 7 + Math.floor(Math.random() * 6);
+      G.p.hurtT = 0.3;
       return false;
     }
     return a.x > -30 && a.x < G.w + 30 && a.y > -30 && a.y < G.h + 30;
@@ -6874,19 +6877,41 @@ function drawGround(ctx){
     ctx.fillRect(x + 20, y - 8, 3, 11);
   }
 }
+/* Боевой персонаж — свой спрайт-лист 32x32.
+   Ряды: 0 покой, 1 ходьба, 6 атака, 8 урон. Если кадры сместятся,
+   правится одной строкой в FIGHTER. */
+const FIGHTER = {
+  frame: 32,
+  rows: {idle: 0, walk: 1, attack: 6, hurt: 8},
+  counts: {idle: 5, walk: 5, attack: 6, hurt: 3},
+  scale: 2.2
+};
 function drawPlayer(ctx){
-  const im = IMG.hero;
-  const frame = G.p.atkAnim > 0 ? 4 + (Math.floor(G.t * 18) % 4)
-    : G.p.moving ? 4 + (Math.floor(G.t * 10) % 4) : Math.floor(G.t * 5) % 4;
+  const state = (G.p.hurtT || 0) > 0 ? "hurt" : G.p.atkAnim > 0 ? "attack"
+    : G.p.moving ? "walk" : "idle";
+  const im = IMG.fighter;
+  const row = FIGHTER.rows[state];
+  const count = FIGHTER.counts[state];
+  const frame = Math.floor(G.t * (state === "idle" ? 6 : 12)) % count;
   ctx.save();
   ctx.translate(G.p.x, G.p.y);
   ctx.scale(G.p.face, 1);
   if (im.complete && im.naturalWidth){
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(im, frame * 16, 0, 16, 16, -26, -52, 52, 52);
+    const size = FIGHTER.frame * FIGHTER.scale;
+    ctx.drawImage(
+      im,
+      frame * FIGHTER.frame, row * FIGHTER.frame, FIGHTER.frame, FIGHTER.frame,
+      -size / 2, -size + 8, size, size
+    );
+  } else if (IMG.hero.complete && IMG.hero.naturalWidth){
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(IMG.hero, 0, 0, 16, 16, -26, -52, 52, 52);
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(-12, -40, 24, 40);
   }
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.ellipse(0, 6, 22, 5, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 function drawElf(ctx){
