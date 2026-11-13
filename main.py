@@ -17,7 +17,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, Request, Response
 
-from app import admin_settings
 from app.ban import BanMiddleware
 from app.battle_service import BattleService
 from app.boss_repo import BossRepo
@@ -106,7 +105,7 @@ async def _ticker(
             await _safe_tick("счастливая минута", lambda: event.tick(bot, db))
             # Живой курс биржи: шаг каждые 15 секунд + оповещения о росте.
             alerts = await _safe_tick("биржа", stocks.tick)
-            if alerts and await admin_settings.on(db, "alerts_stocks"):
+            if alerts:
                 with contextlib.suppress(Exception):
                     await stocks_alerts.broadcast(bot, db, alerts)
         except asyncio.CancelledError:

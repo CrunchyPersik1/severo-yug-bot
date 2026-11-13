@@ -701,6 +701,36 @@ class Database:
             "crystals": int(row["crystals"]),
         }
 
+    async def chat_setting(self, chat_id: int, key: str) -> str | None:
+        """Настройка конкретного чата: группы или лички (chat_id = id игрока)."""
+        async with self._p().acquire() as con:
+            return await con.fetchval(
+                "select value from chat_settings where chat_id = $1 and key = $2",
+                int(chat_id),
+                str(key),
+            )
+
+    async def set_chat_setting(self, chat_id: int, key: str, value: str) -> None:
+        async with self._p().acquire() as con:
+            await con.execute(
+                "insert into chat_settings (chat_id, key, value, updated_at) "
+                "values ($1, $2, $3, now()) "
+                "on conflict (chat_id, key) do update "
+                "set value = excluded.value, updated_at = now()",
+                int(chat_id),
+                str(key),
+                str(value),
+            )
+
+    async def chats_alerts_off(self, key: str = "alerts_stocks") -> set[int]:
+        """Кто выключил уведомления у себя: id групп и id личек."""
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select chat_id from chat_settings where key = $1 and value = '0'",
+                str(key),
+            )
+        return {int(row["chat_id"]) for row in rows}
+
     async def grant_bundle(self, user_id: int, bundle: dict[str, Any]) -> list[str]:
         """Выдаёт набор наград отдельной транзакцией (ежедневка, мегаквест)."""
         from . import bundles as bundles_mod

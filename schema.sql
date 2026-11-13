@@ -870,3 +870,12 @@ create table if not exists gem_drops (
     created_at timestamptz not null default now()
 );
 create index if not exists gem_drops_user_idx on gem_drops (user_id, created_at desc);
+-- Настройки по чату: уведомления выключаются там, где админ это настроил,
+-- а не у всех и не везде. chat_id для лички равен id игрока.
+create table if not exists chat_settings (
+    chat_id    bigint  not null,
+    key        text    not null,
+    value      text    not null default '0',
+    updated_at timestamptz not null default now(),
+    primary key (chat_id, key)
+);

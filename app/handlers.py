@@ -277,9 +277,12 @@ async def cmd_admin(
 
     # /admin settings — панель переключателей: биржа, мини-аппки, дроп и т.д.
     if len(head) >= 2 and head[1].lower() in ("settings", "настройки", "сеттингс"):
-        state = await admin_settings.load(db)
+        chat = message.chat
+        is_group = chat.type in ("group", "supergroup")
+        state = await admin_settings.load(db, chat.id)
         await message.answer(
-            admin_settings.text(state), reply_markup=admin_settings.keyboard(state)
+            admin_settings.text(state, chat.title or "", is_group),
+            reply_markup=admin_settings.keyboard(state),
         )
         return
 
@@ -317,18 +320,24 @@ async def cb_admin_settings(query: CallbackQuery, db: Database) -> None:
         await query.answer("Только для админа", show_alert=True)
         return
     key = (query.data or "").split(":", 2)[-1]
+    msg = query.message
+    chat_id = msg.chat.id if msg is not None else None
+    chat_title = (msg.chat.title or "") if msg is not None else ""
+    is_group = bool(msg is not None and msg.chat.type in ("group", "supergroup"))
     note = "Обновил"
     if key != "refresh":
         try:
-            now_on = await admin_settings.toggle(db, key)
-            note = ("Включил: " if now_on else "Выключил: ") + admin_settings.BY_KEY[key]["title"]
+            now_on = await admin_settings.toggle(db, chat_id, key)
+            where = " · чат" if key in admin_settings.CHAT_BY_KEY else " · игра"
+            note = ("Включил: " if now_on else "Выключил: ") + admin_settings.BY_KEY[key]["title"] + where
         except ValueError as error:
             await query.answer(str(error), show_alert=True)
             return
-    state = await admin_settings.load(db)
+    state = await admin_settings.load(db, chat_id)
     with contextlib.suppress(Exception):
-        await query.message.edit_text(
-            admin_settings.text(state), reply_markup=admin_settings.keyboard(state)
+        await msg.edit_text(
+            admin_settings.text(state, chat_title, is_group),
+            reply_markup=admin_settings.keyboard(state),
         )
     await query.answer(note)
 

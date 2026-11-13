@@ -38,15 +38,22 @@ async def broadcast(bot: Bot, db: Database, alerts: list[dict[str, Any]]) -> Non
     if not alerts:
         return
     text = render_alerts(alerts)
+    # Кто выключил уведомления у себя — тот их не получит. Остальные как жили:
+    # отключение в одной группе не трогает ни другие группы, ни лички.
+    off = await db.chats_alerts_off("alerts_stocks")
 
-    # Личка всем игрокам.
+    # Личка всем игрокам (chat_id лички = id игрока).
     for user_id in await db.all_player_ids():
+        if int(user_id) in off:
+            continue
         with contextlib.suppress(Exception):
             await bot.send_message(user_id, text)
         await asyncio.sleep(0.05)
 
     # Группы — только в общий чат: без message_thread_id, иначе улетит в топики.
     for chat_id in await db.broadcast_targets():
+        if int(chat_id) in off:
+            continue
         try:
             await bot.send_message(chat_id, text)
         except Exception:  # noqa: BLE001
