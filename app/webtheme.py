@@ -293,6 +293,46 @@ POLISH = r"""<style>
     background:var(--acc);color:var(--acc-ink);font-size:10px;font-weight:900;
     border-radius:8px;padding:3px 9px;letter-spacing:.6px}
   .rv-tap{margin-top:14px;text-align:center;font-size:11px;color:var(--muted)}
+  /* ===== ПРЕМИУМ: карта летит из далека, вспышка, конфетти и огонь ===== */
+  .rv.ultra{background:#04070d}
+  .rv.ultra .rv-card{animation:__rvfly .78s cubic-bezier(.2,.9,.2,1) both,
+      __rvshimmer 3.2s linear .8s infinite}
+  .rv.ultra .rv-card::after{content:"";position:absolute;inset:-2px;border-radius:22px;
+    padding:2px;pointer-events:none;
+    background:conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#000,var(--fxc));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.85;
+    animation:__rvspin 4.5s linear infinite}
+  .rv.ultra .rv-card::before{content:"";position:absolute;inset:-40%;pointer-events:none;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.5) 50%,transparent 58%);
+    animation:__rvshine 2.6s linear infinite}
+  .rv .rv-burst{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;z-index:1;
+    background:radial-gradient(circle,#fff,var(--fxc) 40%,transparent 70%);
+    animation:__rvwhite .5s ease-out both}
+  .rv .rv-jet{position:absolute;bottom:-30px;width:120px;height:70%;pointer-events:none;z-index:1;
+    opacity:.9;filter:blur(1px)}
+  .rv .rv-jet.left{left:-20px;transform:rotate(14deg);
+    background:linear-gradient(to top,rgba(255,120,0,.0) 0%,#ff8a00 30%,#ffd166 60%,rgba(255,209,102,0) 100%);
+    clip-path:polygon(0% 100%,100% 100%,62% 0%,38% 0%);animation:__rvjet 1.6s ease-out both}
+  .rv .rv-jet.right{right:-20px;transform:rotate(-14deg);
+    background:linear-gradient(to top,rgba(255,120,0,.0) 0%,#ff8a00 30%,#ffd166 60%,rgba(255,209,102,0) 100%);
+    clip-path:polygon(0% 100%,100% 100%,62% 0%,38% 0%);animation:__rvjet 1.6s ease-out both}
+  .rv .rv-conf{position:absolute;bottom:0;width:9px;height:14px;border-radius:2px;
+    pointer-events:none;z-index:3;animation:__rvconf 2.2s cubic-bezier(.2,.6,.4,1) both}
+  @keyframes __rvfly{
+    0%{transform:scale(.08) translateZ(0);filter:blur(6px) brightness(1.6);opacity:0}
+    55%{transform:scale(1.06);filter:blur(0) brightness(1.2);opacity:1}
+    100%{transform:scale(1);filter:none}
+  }
+  @keyframes __rvwhite{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
+    40%{opacity:1}100%{transform:translate(-50%,-50%) scale(60);opacity:0}}
+  @keyframes __rvshine{from{transform:translateX(-60%) rotate(0)}to{transform:translateX(60%) rotate(0)}}
+  @keyframes __rvshimmer{0%,100%{box-shadow:0 0 34px -6px var(--fxc)}50%{box-shadow:0 0 62px -2px var(--fxc)}}
+  @keyframes __rvjet{0%{transform:scaleY(.05) translateY(30%);opacity:0}
+    25%{opacity:.95}70%{opacity:.7}100%{transform:scaleY(1) translateY(0);opacity:0}}
+  @keyframes __rvconf{0%{transform:translate(0,0) rotate(0);opacity:1}
+    100%{transform:translate(var(--cx,0),var(--cy,-320px)) rotate(var(--cr,540deg));opacity:0}}
   @keyframes __rvspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
   @keyframes __rvflash{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
     35%{opacity:1}100%{transform:translate(-50%,-50%) scale(30);opacity:0}}
@@ -520,14 +560,35 @@ BOOTSTRAP = POLISH + r"""<script>
       ov.className = "rv";
       ov.style.setProperty("--fxc", color);
       var html = "";
+      var ultra = lvl >= 4;
+      if (ultra){ ov.className = "rv ultra"; }
       if (lvl >= 3) html += '<div class="rv-rays"></div><div class="rv-flash"></div>';
-      if (lvl >= 4){
-        for (var i = 0; i < 20; i++){
-          var dx = Math.round(Math.random() * 300 - 150);
-          var dy = Math.round(-80 - Math.random() * 220);
+      if (ultra){
+        // белая вспышка на весь экран
+        html += '<div class="rv-burst"></div>';
+        // огонь из двух «труб» по краям снизу
+        html += '<div class="rv-jet left"></div><div class="rv-jet right"></div>';
+        // конфетти: вылетают из обоих нижних углов
+        var palette = [color, "#ffffff", "#ffd166", "#ff8a00"];
+        for (var c = 0; c < 34; c++){
+          var side = c % 2 === 0 ? -1 : 1;
+          var cx = side * (40 + Math.random() * 260);
+          var cy = -(180 + Math.random() * 320);
+          var rot = (side * (240 + Math.random() * 720)) | 0;
+          html += '<div class="rv-conf" style="' +
+            (side < 0 ? "left:6px;" : "right:6px;") +
+            "background:" + palette[c % palette.length] + ";" +
+            "--cx:" + cx + "px;--cy:" + cy + "px;--cr:" + rot + "deg;" +
+            'animation-delay:' + (0.15 + Math.random() * 0.5).toFixed(2) + 's"></div>';
+        }
+        // частицы цвета редкости прямо из карты
+        for (var i = 0; i < 26; i++){
+          var dx = Math.round(Math.random() * 320 - 160);
+          var dy = Math.round(-60 - Math.random() * 240);
           html += '<div class="rv-spark" style="left:' + (44 + Math.random() * 12) +
-            "%;top:" + (44 + Math.random() * 12) + "%;--dx:" + dx + "px;--dy:" + dy +
-            'px;animation-delay:' + (Math.random() * 0.35).toFixed(2) + 's"></div>';
+            "%;top:" + (42 + Math.random() * 14) + "%;--dx:" + dx + "px;--dy:" + dy +
+            'px;background:' + color + ';box-shadow:0 0 14px ' + color + ';' +
+            'animation-delay:' + (Math.random() * 0.6).toFixed(2) + 's"></div>';
         }
       }
       html += '<div class="rv-card' + (lvl >= 4 ? " hi" : "") + '" style="--fxc:' + color + '">' +
@@ -557,6 +618,9 @@ BOOTSTRAP = POLISH + r"""<script>
         try{
           if (lvl >= 3) tg.HapticFeedback.notificationOccurred("success");
           tg.HapticFeedback.impactOccurred(lvl >= 4 ? "heavy" : "light");
+          if (lvl >= 4) setTimeout(function(){
+            try { tg.HapticFeedback.impactOccurred("heavy"); } catch(e){}
+          }, 520);
         }catch(e){}
       }
       var closed = false;
@@ -567,7 +631,7 @@ BOOTSTRAP = POLISH + r"""<script>
         setTimeout(function(){ ov.remove(); resolve(); }, 240);
       }
       ov.onclick = close;
-      setTimeout(close, lvl >= 5 ? 3000 : lvl >= 3 ? 2400 : 1600);
+      setTimeout(close, lvl >= 4 ? 4200 : lvl >= 3 ? 2400 : 1600);
     });
   }
   function revealCards(cards, done){

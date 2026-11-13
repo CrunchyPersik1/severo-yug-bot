@@ -4011,6 +4011,19 @@ async def api_theme_set(request: Request) -> JSONResponse:
 # Главное приложение игры
 # --------------------------------------------------------------------------- #
 
+# Миниатюры для плиток хаба: файл лежит в images/hub/<id>.(webp|png|jpg).
+# Нет файла — плитка рисуется как раньше, без арта.
+HUB_ART_DIR = Path(__file__).resolve().parent.parent / "images" / "hub"
+
+
+def _hub_thumb(section_id: str) -> str | None:
+    for ext in ("webp", "png", "jpg", "jpeg"):
+        path = HUB_ART_DIR / f"{section_id}.{ext}"
+        if path.is_file():
+            return f"/images/hub/{section_id}.{ext}"
+    return None
+
+
 HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "santa", "title": "Ивент · Санта Егор", "note": "эльфы, сюжет и петы", "kind": "app", "path": "/santa"},
     {"id": "pets", "title": "Питомник", "note": "яйца и инкубатор", "kind": "app", "path": "/pets"},
@@ -4107,7 +4120,11 @@ async def api_hub(request: Request) -> JSONResponse:
                 ],
             },
             "sections": [
-                dict(section, url=f"{request.base_url}".rstrip("/"))
+                dict(
+                    section,
+                    url=f"{request.base_url}".rstrip("/"),
+                    thumb=_hub_thumb(str(section["id"])),
+                )
                 for section in (
                     [
                         {
@@ -4209,8 +4226,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   text-align:left;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
 .tile::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
   background:linear-gradient(90deg,var(--acc),transparent 70%);opacity:.75}
-.tile .tt{font-size:14.5px;font-weight:800;letter-spacing:.2px}
-.tile .tn{font-size:11.5px;color:var(--muted)}
+.tile .tt{font-size:14.5px;font-weight:800;letter-spacing:.2px;position:relative;z-index:2}
+.tile .tn{font-size:11.5px;color:var(--muted);position:relative;z-index:2}
+.tile .tart{position:absolute;top:0;right:0;bottom:0;width:52%;z-index:1;
+  background-size:cover;background-position:center top;
+  clip-path:polygon(26% 0,100% 0,100% 100%,0 100%);
+  opacity:.95;image-rendering:pixelated}
+.tile .tart::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,var(--panel) 0%, rgba(0,0,0,0) 45%)}
+.tile.withart{padding-right:calc(52% + 8px);min-height:96px;justify-content:center}
 .tile:active{transform:scale(.975)}
 
 .panel{display:none}
@@ -4426,8 +4450,10 @@ function renderTicker(){
 }
 function renderTiles(){
   document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>
-    '<div class="tile" data-sec="' + sec.id + '"><div class="tt">' + esc(sec.title) +
-    '</div><div class="tn">' + esc(sec.note) + '</div></div>').join("");
+    '<div class="tile' + (sec.thumb ? " withart" : "") + '" data-sec="' + sec.id + '">' +
+    (sec.thumb ? '<div class="tart" style="background-image:url(' + esc(sec.thumb) + ')"></div>' : '') +
+    '<div class="tt">' + esc(sec.title) + '</div>' +
+    '<div class="tn">' + esc(sec.note) + '</div></div>').join("");
   document.querySelectorAll("[data-sec]").forEach(el => el.onclick = () => open(el.dataset.sec));
   document.querySelectorAll("[data-home]").forEach(b => b.onclick = () => show("p-home"));
 }
