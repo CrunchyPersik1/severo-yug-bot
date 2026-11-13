@@ -1684,6 +1684,8 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
             "📦 <b>«кейс»</b> — открыть кейс",
             "⚔️ <b>«пвп»</b> ответом — вызвать на бой",
             "🎲 <b>/casino</b> — ставка очками или картой",
+            "",
+            "🤖 <i>сделано deepseek</i>",
         ]
     )
     rows: list[list[InlineKeyboardButton]] = []
