@@ -9246,13 +9246,16 @@ DUNGEON_PAGE = r"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Прототип · Подземелье Тимура</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
-html,body{margin:0;height:100dvh;overflow:hidden;background:#07060a;
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;
+  touch-action:manipulation}
+html,body{margin:0;height:100vh;height:100dvh;overflow:hidden;background:#07060a;
+  overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%}
+canvas,#cv,#fx,#joy{touch-action:none}
   font-family:"Press Start 2P",ui-monospace,monospace;color:#e6dcc8;
   image-rendering:pixelated;font-size:11px;line-height:1.5}
 #cv{display:block;width:100%;height:100%;touch-action:none;background:#0d0a10;
@@ -10206,9 +10209,20 @@ const TG_INIT = readInitData();
     if (window.Telegram && Telegram.WebApp){
       Telegram.WebApp.ready();
       if (Telegram.WebApp.expand) Telegram.WebApp.expand();
+      // свайп вниз не должен закрывать мини-аппку во время игры
+      if (Telegram.WebApp.disableVerticalSwipes){
+        try { Telegram.WebApp.disableVerticalSwipes(); } catch (e){}
+      }
     }
   } catch (e){}
 })();
+// double-tap не зумит, а палец по сцене не тянет мини-апп
+document.addEventListener("touchmove", function(e){
+  const el = e.target;
+  if (el && el.closest && el.closest(".panel,.sheet,.list,textarea,input,.scroll")) return;
+  if (e.cancelable) e.preventDefault();
+}, {passive: false});
+document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive: false});
 // Открыли ссылкой в браузере — кооп не заработает, честно предупреждаем
 // и показываем, что именно не пришло: по этой строке сразу видно причину.
 (function(){
