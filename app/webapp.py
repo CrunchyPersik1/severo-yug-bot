@@ -6343,6 +6343,29 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
 .node.locked{opacity:.45}
 @keyframes __pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 .paths{position:absolute;inset:0;z-index:1}
+.storyStage{position:relative;border-radius:16px;overflow:hidden;margin:0 0 14px;
+  min-height:calc(100vh - 150px);display:flex;flex-direction:column;justify-content:flex-end;
+  background:url("/images/event/map.jpg") center/cover no-repeat;border:1px solid #243350}
+.storyStage::before{content:"";position:absolute;inset:0;
+  background:linear-gradient(to bottom, rgba(4,8,16,.55) 0%, rgba(4,8,16,.15) 35%, rgba(4,8,16,.92) 100%)}
+.storyStage .exit{position:absolute;top:10px;left:10px;z-index:3;border:0;border-radius:10px;
+  background:rgba(8,14,24,.8);color:#dbe9ff;font-family:inherit;font-size:12px;font-weight:800;
+  padding:8px 12px;border:1px solid #2c4566}
+.storyStage .portrait{position:absolute;left:12px;bottom:186px;z-index:2}
+.storyStage .portrait img{width:96px;height:96px;object-fit:cover;border-radius:14px;
+  border:2px solid #2c4566;box-shadow:0 10px 26px rgba(0,0,0,.5)}
+.storyStage .namebar{position:absolute;left:12px;bottom:154px;z-index:2}
+.storyStage .namebar span{display:inline-block;background:#0b1220;border:2px solid #2c4566;
+  border-radius:10px;padding:4px 12px;font-size:13px;font-weight:900;letter-spacing:1px;
+  text-transform:uppercase;color:#fff}
+.storyStage .hotbar{position:relative;z-index:2;margin:0 10px 10px;padding:14px 15px;
+  border-radius:14px;background:rgba(6,10,18,.92);border:1px solid #2c4566;
+  font-size:13.5px;line-height:1.55;color:#e8f1ff;min-height:74px}
+.storyStage .hotbar b{color:#9fc7ff}
+.storyStage .actions{position:relative;z-index:2;display:flex;gap:8px;margin:0 10px 12px}
+.storyStage .actions button{flex:1;border:0;border-radius:12px;padding:14px;font-family:inherit;
+  font-size:13.5px;font-weight:900;background:var(--acc);color:var(--acc-ink)}
+.storyStage .actions .ghost{background:#0f1b2e;color:#93a6c4;border:1px solid #2c4566}
 /* сюжетка */
 .scene{position:relative;border-radius:16px;padding:14px;margin:12px 0;
   background:linear-gradient(160deg,#12233a,#0a131f);border:1px solid #243350}
@@ -6400,9 +6423,17 @@ h1{margin:0 0 4px;font-size:19px;font-weight:900}
     <div class="chip" id="gms">💎 …</div>
     <div class="chip" id="eggs">🥚 …</div>
   </div>
-  <div id="storyBox"></div>
-  <div class="map" id="map"><svg class="paths" id="paths"></svg></div>
-  <div id="shopBox"></div>
+  <div class="storyStage" id="storyStage">
+    <button class="exit" id="exitBtn">‹ Выйти</button>
+    <div class="portrait"><img id="stPortret" src="/images/event/santa_confused.jpg" alt=""></div>
+    <div class="namebar"><span id="stName">Санта</span></div>
+    <div class="hotbar" id="stText">…</div>
+    <div class="actions" id="stActions"></div>
+  </div>
+  <div id="mapWrap" style="display:none">
+    <div class="map" id="map"><svg class="paths" id="paths"></svg></div>
+  </div>
+  <div id="shopBox" style="display:none"></div>
 </div>
 
 <div class="fight" id="fight">
@@ -6455,29 +6486,91 @@ function bubble(who, name, emotion, text){
   return '<div class="line"><img src="' + portrait(who, emotion) + '" alt="">' +
     '<div class="bub"><b>' + esc(name) + ':</b> ' + esc(text) + '</div></div>';
 }
-function renderStory(){
-  const box = document.getElementById("storyBox");
-  if (S.story_done){
-    const ch = (S.choices || []).find(c => c.id === S.choice);
-    const good = (ch && ch.discount) > 0;
-    const bad = (ch && ch.discount) < 0;
-    box.innerHTML = scene(
-      bubble("santa", "Санта Егор", good ? "joy" : bad ? "angry" : "think",
-             ch ? ch.story : "Санта кивает: дело сделано.") +
-      bubble("elf", "Эльфы-амиры", good ? "joy" : bad ? "sad" : "confused",
-             good ? "Мы почувствовали добро. Приходи чаще, санта щедрый!"
-                  : bad ? "Мы так и знали. Уходи, пока не позвали остальных."
-                        : "Ладно. Жить можно."));
+/* Сюжет идёт по репликам: игрок сам нажимает «далее» и читает.
+   Выбор — только в самом конце, после всей сцены. */
+const SCRIPT = [
+  {who: "santa", em: "confused", text: "Хо-хо… Не думал, что всё так обернётся."},
+  {who: "santa", em: "sad", text: "Я шёл в Уфу с подарками. А на перевале меня ждали."},
+  {who: "elf", em: "angry", text: "Стоять, Санта. Дальше ты не пройдёшь."},
+  {who: "santa", em: "confused", text: "Амиры? Вы же мои эльфы… Что случилось?"},
+  {who: "elf", em: "sad", text: "Ты забыл про нас. Только списки, приказы и сроки."},
+  {who: "elf", em: "angry", text: "Мы не получаем ни добра, ни любви. Только работу."},
+  {who: "santa", em: "think", text: "…Вот оно что. Я и правда закрутился."},
+  {who: "santa", em: "plain", text: "Хо-хо! Я подготовил для тебя задания, чтобы ты получил свои подарки!"},
+  {who: "santa", em: "joy", text: "Победи каждого эльфа — и я дам тебе хорошую награду!"},
+  {who: "elf", em: "confused", text: "А он вообще изменится? Или снова за своё?"},
+  {who: "santa", em: "think", text: "Помоги мне решить, как быть с ними. Это твой выбор."},
+];
+const EPILOGUE = {
+  praise: [
+    {who: "santa", em: "joy", text: "Эльфы, я был неправ. Давайте больше тепла и меньше приказов!"},
+    {who: "elf", em: "joy", text: "Вот это по-нашему! Спасибо, Санта."},
+  ],
+  gifts: [
+    {who: "santa", em: "joy", text: "Устроим вам праздник, эльфы! С подарками и снегом."},
+    {who: "elf", em: "joy", text: "Уже лучше. Но дисциплину не отменяй."},
+  ],
+  rules: [
+    {who: "santa", em: "plain", text: "Оставим как есть. У нас же всё по плану."},
+    {who: "elf", em: "confused", text: "Ну ладно… Жить можно."},
+  ],
+  strict: [
+    {who: "santa", em: "angry", text: "Хватит болтовни. Работа не ждёт, эльфы."},
+    {who: "elf", em: "sad", text: "Мы так и знали… Уходи, Санта."},
+  ],
+};
+let step = 0, script = SCRIPT, mode = "script";
+function portraitSrc(who, em){
+  return (who === "elf" ? "/images/event/elf_" : "/images/event/santa_") + em + ".jpg";
+}
+function storyShow(){
+  document.getElementById("mapWrap").style.display = "none";
+  document.getElementById("shopBox").style.display = "none";
+  document.getElementById("storyStage").style.display = "flex";
+}
+function storyPaint(){
+  const line = script[step];
+  if (!line){ return storyButtons(); }
+  document.getElementById("stPortret").src = portraitSrc(line.who, line.em);
+  document.getElementById("stName").textContent = line.who === "elf" ? "Эльф-амир" : "Санта";
+  document.getElementById("stText").innerHTML = "<b>" +
+    (line.who === "elf" ? "Эльф-амир" : "Санта Егор") + ":</b> " + esc(line.text);
+  const acts = document.getElementById("stActions");
+  acts.innerHTML = '<button id="nextBtn">ДАЛЕЕ</button>';
+  document.getElementById("nextBtn").onclick = function(){
+    step += 1;
+    if (step < script.length) storyPaint(); else storyButtons();
+  };
+}
+function storyButtons(){
+  const acts = document.getElementById("stActions");
+  if (mode === "epilogue"){
+    acts.innerHTML = '<button id="finBtn">К ЭЛЬФАМ</button>';
+    document.getElementById("finBtn").onclick = function(){ storyDone(); };
     return;
   }
-  box.innerHTML = scene(
-    bubble("santa", "Санта Егор", "confused", S.story.intro) +
-    bubble("elf", "Эльф-амир", "angry",
-           "Ты слишком серьёзен, Санта. Мы не получаем ни добра, ни любви!") +
-    '<div class="choices" id="choices">' + (S.choices || []).map(c =>
-      '<button data-ch="' + c.id + '">' + esc(c.title) + '<br><span class="sub">' +
-      esc(c.note) + '</span></button>').join("") + '</div>');
+  acts.innerHTML = (S.choices || []).map(c =>
+    '<button data-ch="' + c.id + '">' + esc(c.title) + '</button>').join("");
   document.querySelectorAll("[data-ch]").forEach(b => b.onclick = () => choose(b.dataset.ch));
+  document.getElementById("stText").innerHTML =
+    "<b>Санта Егор:</b> " + esc("Что скажешь? Как мне поступить с эльфами?");
+}
+function storyDone(){
+  document.getElementById("storyStage").style.display = "none";
+  document.getElementById("mapWrap").style.display = "block";
+  document.getElementById("shopBox").style.display = "block";
+  renderMap(); renderShop();
+}
+function renderStory(){
+  if (S.story_done){
+    document.getElementById("storyStage").style.display = "none";
+    document.getElementById("mapWrap").style.display = "block";
+    document.getElementById("shopBox").style.display = "block";
+    return;
+  }
+  storyShow();
+  if (mode === "epilogue") return;
+  if (step === 0) storyPaint();
 }
 function renderMap(){
   const map = document.getElementById("map");
@@ -6545,7 +6638,12 @@ function renderShop(){
   document.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => buy(b.dataset.buy));
 }
 function render(){
-  renderWallet(); renderStory(); renderMap(); renderShop();
+  renderWallet();
+  renderStory();
+  if (S.story_done){
+    renderMap();
+    renderShop();
+  }
 }
 async function load(){
   try{
@@ -6565,8 +6663,14 @@ async function choose(id){
   const d = await post("/api/santa/story", {choice: id});
   busy = false;
   if (d.error){ toast(d.error); return; }
-  S = d.state; render();
-  toast(d.story);
+  S = d.state;
+  // после решения показываем развязку репликами, потом открываем карту
+  script = EPILOGUE[id] || [];
+  step = 0;
+  mode = "epilogue";
+  if (!script.length){ storyDone(); return; }
+  storyShow();
+  storyPaint();
 }
 async function buy(id){
   if (busy) return;
@@ -6718,6 +6822,7 @@ async function finishFight(win){
   render();
   toast("Эльф повержен! " + (d.granted || []).join(", "));
 }
+document.getElementById("exitBtn").onclick = function(){ location.href = "/hub"; };
 if (tg){ tg.ready(); tg.expand(); }
 load();
 </script>
