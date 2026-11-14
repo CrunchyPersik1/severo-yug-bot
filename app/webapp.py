@@ -9379,12 +9379,14 @@ DUNGEON_PAGE = r"""<!doctype html>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;
   touch-action:manipulation}
 html,body{margin:0;height:100vh;height:100dvh;overflow:hidden;background:#07060a;
-  overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%}
-canvas,#cv,#fx,#joy{touch-action:none}
+  overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%;
   font-family:"Press Start 2P",ui-monospace,monospace;color:#e6dcc8;
   image-rendering:pixelated;font-size:11px;line-height:1.5}
-#cv{display:block;width:100%;height:100%;touch-action:none;background:#0d0a10;
-  image-rendering:pixelated}
+canvas,#cv,#fx,#joy{touch-action:none}
+/* Канвас всегда на весь экран: не зависит от высоты родителя и не даёт
+   чёрной полосы снизу, когда WebGL-режим выключен. */
+#cv{position:fixed;inset:0;display:block;width:100%;height:100%;
+  touch-action:none;background:#0d0a10;image-rendering:pixelated;z-index:1}
 .hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
   justify-content:space-between;gap:6px;z-index:12}
 .frame{background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
