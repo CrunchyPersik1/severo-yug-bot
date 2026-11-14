@@ -9389,6 +9389,21 @@ canvas,#cv,#fx,#joy{touch-action:none}
   touch-action:none;background:#0d0a10;image-rendering:pixelated;z-index:1}
 .hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
   justify-content:space-between;gap:6px;z-index:12}
+/* Телепорт: кнопка в HUD и выпадающий список локаций */
+.zmenu{position:fixed;top:52px;left:6px;z-index:15;width:min(250px,74vw);display:none;
+  background:linear-gradient(#2a1c10f8,#140d06fa);border:2px solid #6b4a22;border-radius:10px;
+  box-shadow:0 10px 26px #000a;overflow:hidden}
+.zmenu.on{display:block}
+.zmenu .zph{font-size:8px;letter-spacing:1.2px;color:#a37f3a;padding:7px 10px;
+  border-bottom:1px solid #4a3418;display:flex;justify-content:space-between;align-items:center}
+.zlist{max-height:46vh;overflow-y:auto;overscroll-behavior:contain;padding:4px;
+  -webkit-overflow-scrolling:touch}
+.zitem{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
+  text-align:left;border:0;background:transparent;color:#e6dcc8;font-family:inherit;
+  font-size:9px;padding:8px;border-radius:7px;line-height:1.3}
+.zitem:active{background:#3a2a12}
+.zitem.cur{color:#f6c94a}
+.zitem small{color:#a37f3a;font-size:8px;white-space:nowrap}
 .frame{background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
   border-radius:9px;padding:3px;display:flex;gap:3px;
   box-shadow:inset 0 0 0 2px #120c06,0 3px 10px #000a}
@@ -9679,6 +9694,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <div class="hudtop">
   <div class="frame grp">
     <button class="ic" data-tab="clicker" title="Назад в кликер">◀</button>
+    <button class="ic" id="zbtn" title="Телепорт по локациям">🌀</button>
     <button class="ic" data-tab="bag" title="Сумка">🎒</button>
     <button class="ic" data-tab="quests" title="Задания">📜</button>
     <button class="ic" id="questbtn" title="Квест НПС">🎯</button>
@@ -9690,6 +9706,11 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <button class="ic" id="offbtn" title="Кто оффлайн">😴</button>
     <button class="ic" data-tab="settings" title="Настройки">⚙</button>
   </div>
+</div>
+
+<div class="zmenu" id="zmenu">
+  <div class="zph"><span>ЛОКАЦИИ</span><span id="zcur">—</span></div>
+  <div class="zlist" id="zlist"></div>
 </div>
 
 <div class="wmenu" id="wpanel">
@@ -10365,7 +10386,7 @@ document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passi
 const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
 // Сейф-зона вокруг босса: внутри неё мобы не бьют и не подходят.
 // Круг босса (r=60) целиком внутри, поэтому заходить в бой можно.
-const SAFE_R = 105;
+const SAFE_R = 190;
 const COOP = {open: false, id: 0, room: null, timer: 0, log: [], busy: false, coopSeen: false, rewarded: 0};
 
 async function coopApi(path, body){
@@ -10796,7 +10817,7 @@ document.getElementById("qclose").onclick = function(){
 /* ---------- таблица лидеров ---------- */
 async function openTop(){
   const box = document.getElementById("top");
-  const list = document.getElementById("tplist");
+  const list = document.getElementById("zlist");
   if (!box || !list) return;
   box.classList.add("on");
   list.textContent = "Загружаю…";
@@ -11242,11 +11263,11 @@ function heroApply(hero, heal){
   HERO_OFFER = hero.upgrade || null;
   HERO_ARMOR = hero.armor_offer || null;
   P.armor = hero.armor | 0;
-  // проснуться там, где уснул
-  if (hero.zone != null && hero.x != null && hero.y != null){
-    P.x = Math.max(60, Math.min(WORLD.w - 60, hero.x));
-    P.y = Math.max(60, Math.min(WORLD.h - 60, hero.y));
-  }
+  // Всегда появляемся в своей локации: как только взят уровень следующей,
+  // спавн переезжает туда, а не остаётся там, где вышли в прошлый раз.
+  const spawnNow = spawnPoint(level);
+  P.x = spawnNow.x;
+  P.y = spawnNow.y;
   P.max = heroMax(level);
   if (heal !== false) P.hp = P.max;
   if (!QUEST) questLoad();
@@ -11531,15 +11552,66 @@ function spawnOne(zi){
              c: type.c, sz: type.sz, nm: type.n,
              tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
 }
+/* Точка спавна по уровню: своя локация, по 25 уровней на каждую. */
+function spawnPoint(lvl){
+  const zi = ownZone(lvl);
+  return { x: WORLD.w / 2, y: WORLD.h - (zi + 1) * ZONE_H + ZONE_H * 0.56 };
+}
 function reset(){
-  P.x = WORLD.w / 2; P.y = WORLD.h - 260;
+  const sp = spawnPoint(stats.lvl);
+  P.x = sp.x; P.y = sp.y;
   P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
   spawnMobs(18);
 }
+/* ---------- телепорт по локациям ---------- */
+function zoneCenter(i){
+  return { x: WORLD.w / 2, y: WORLD.h - (i + 1) * ZONE_H + ZONE_H / 2 };
+}
+function buildTeleport(){
+  const list = document.getElementById("tplist");
+  if (!list) return;
+  const cur = zoneIndex(P.y);
+  list.innerHTML = ZONES.map(function(z, i){
+    const need = 1 + i * 25;
+    const locked = stats.lvl < need;
+    return '<button class="zitem' + (i === cur ? " cur" : "") + '" data-tp="' + i + '">' +
+      '<span>' + (i + 1) + ". " + z.n + '</span>' +
+      '<small>' + (locked ? "ур. " + need : "ур. " + need) + '</small></button>';
+  }).join("");
+  document.querySelectorAll("[data-tp]").forEach(function(b){
+    b.onclick = function(){
+      const i = Number(b.dataset.tp);
+      const c = zoneCenter(i);
+      P.x = c.x; P.y = c.y;
+      cam.x = P.x - cv.width / 2; cam.y = P.y - cv.height / 2;
+      closeTeleport();
+      toast(ZONES[i].n + " · нужен ур. " + (1 + i * 25));
+    };
+  });
+  const label = document.getElementById("zcur");
+  if (label) label.textContent = "ЛОК " + (cur + 1);
+}
+function openTeleport(){
+  buildTeleport();
+  document.getElementById("zmenu").classList.add("on");
+}
+function closeTeleport(){
+  document.getElementById("zmenu").classList.remove("on");
+}
 /* ---------- ввод ---------- */
 const keys = {};
+(function bindTeleport(){
+  const btn = document.getElementById("zbtn");
+  if (btn) btn.onclick = function(ev){ ev.stopPropagation(); openTeleport(); };
+  document.addEventListener("pointerdown", function(ev){
+    const box = document.getElementById("zmenu");
+    if (!box || !box.classList.contains("on")) return;
+    if (box.contains(ev.target) || ev.target === btn) return;
+    closeTeleport();
+  }, true);
+})();
 addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
 addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 let joyV = {x: 0, y: 0}, joyId = null;
@@ -12173,7 +12245,8 @@ function render(dt){
   }
   if (TOWN.complete && TOWN.naturalWidth){
     ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.5;
-    for (let gy = 0; gy < WORLD.h; gy += 32){
+    // первая локация — открытая площадка спавна, без городской плитки
+    for (let gy = 0; gy < WORLD.h - ZONE_H; gy += 32){
       for (let gx = 0; gx < WORLD.w; gx += 32){
         ctx.drawImage(TOWN, 0, 0, 16, 16, gx, gy, 32, 32);
       }

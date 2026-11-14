@@ -91,8 +91,8 @@ def test_status_texts():
     assert dungeon.status_text("failed") == "все пали"
 
 
-def test_wait_is_ten_seconds():
-    assert dungeon.WAIT_SECONDS == 10
+def test_wait_is_five_seconds():
+    assert dungeon.WAIT_SECONDS == 5
     assert dungeon.MAX_PLAYERS == 2
     assert dungeon.PLAYER_HP == 120
 

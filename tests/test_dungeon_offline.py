@@ -19,8 +19,12 @@ def test_offline_comes_from_socket_and_http():
 
 
 def test_wake_up_on_own_spot():
-    assert "проснуться там, где уснул" in DUNGEON_PAGE
-    assert "hero.zone != null" in DUNGEON_PAGE
+    # Спавн считается от уровня и всегда попадает в свою локацию,
+    # а не в ту, где игрок вышел в прошлый раз.
+    assert "function spawnPoint(lvl)" in DUNGEON_PAGE
+    assert "спавн переезжает туда" in DUNGEON_PAGE
+    assert "spawnPoint(level)" in DUNGEON_PAGE
+    assert "ownZone(lvl)" in DUNGEON_PAGE
 
 
 def test_repo_has_offline_helpers():

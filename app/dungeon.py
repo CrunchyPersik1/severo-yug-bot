@@ -27,7 +27,7 @@ ZONES: tuple[tuple[str, float], ...] = (
     ("Бездна", 7.0),
 )
 
-WAIT_SECONDS = 10.0         # сколько ждём второго игрока на точке
+WAIT_SECONDS = 5.0          # сколько ждём второго игрока на точке
 JOIN_GRACE = 20.0           # столько после старта ещё можно подсесть в бой
 MAX_PLAYERS = 2             # один босс на двоих — больше не пускаем
 PLAYER_HP = 120             # столько же, сколько у героя на странице
@@ -70,7 +70,7 @@ def zone_cap(zone: int) -> int:
 def zone_mob_hp(zone: int) -> int:
     return ZONE_MOB_HP[max(0, min(9, int(zone)))]
 
-BOSS_COINS = 120            # награда за босса в первой локации
+BOSS_COINS = 400            # награда за босса в первой локации
 COOP_COIN_BONUS = 1.5       # вдвоём — больше
 CHAT_COOLDOWN = 1.2         # секунд между сообщениями чата
 CHAT_MAX = 80               # символов в сообщении
