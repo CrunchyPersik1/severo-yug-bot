@@ -4233,7 +4233,8 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   padding:var(--sp-3) var(--sp-4);position:sticky;top:0;z-index:8;
   background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);
   border-bottom:1px solid var(--line)}
-.brand{font-weight:800;letter-spacing:1.4px;font-size:13px;color:var(--muted)}
+.brand{font-weight:800;letter-spacing:1.2px;font-size:12.5px;color:var(--muted);
+  white-space:nowrap}
 .brand i{color:var(--acc);font-style:normal;margin:0 1px}
 .chips{display:flex;gap:6px;align-items:center}
 .chip{border-radius:var(--r-pill);padding:6px 10px;font-size:var(--fs-sm);
@@ -4287,35 +4288,40 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2)}
 .tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2);
-  padding:var(--sp-3);text-align:left;display:flex;flex-direction:column;justify-content:flex-end;
-  gap:2px;position:relative;overflow:hidden;min-height:104px;
+  padding:var(--sp-3);text-align:left;display:flex;flex-direction:column;justify-content:center;
+  gap:2px;position:relative;overflow:hidden;min-height:108px;
   transition:transform .14s ease,border-color .14s ease}
 .tile .tt{font-size:var(--fs-md);font-weight:700;letter-spacing:-.1px;
-  position:relative;z-index:2;line-height:1.25}
-.tile .tn{font-size:var(--fs-xs);color:var(--muted);position:relative;z-index:2;line-height:1.3}
-.tile .tart{position:absolute;inset:0;z-index:0;background-size:cover;
-  background-position:center top;background-color:#0e1622;opacity:.92;
+  position:relative;z-index:2;line-height:1.25;max-width:56%}
+.tile .tn{font-size:var(--fs-xs);color:var(--muted);position:relative;z-index:2;
+  line-height:1.3;max-width:56%}
+/* Миниатюра — узкая полоса справа: скриншот виден сверху, а не раздут на всю плитку */
+.tile .tart{position:absolute;top:0;right:0;bottom:0;width:46%;z-index:0;
+  background-size:cover;background-position:top center;background-color:#0e1622;
+  opacity:.9;-webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 26%);
+  mask-image:linear-gradient(90deg,transparent 0%,#000 26%);
   transition:transform .5s cubic-bezier(.2,.7,.2,1),filter .3s ease}
-.tile:active .tart{transform:scale(1.06);filter:saturate(1.15) brightness(1.08)}
-.live{position:absolute;top:var(--sp-2);right:var(--sp-2);z-index:3;display:inline-flex;
-  align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:9.5px;
-  font-weight:800;letter-spacing:.8px;text-transform:uppercase;
-  background:rgba(10,16,24,.72);border:1px solid rgba(99,164,255,.45);color:var(--acc2);
-  backdrop-filter:blur(6px)}
+.tile:active .tart{transform:scale(1.04);filter:saturate(1.12) brightness(1.06)}
+.live{position:relative;z-index:3;display:inline-flex;align-self:flex-start;
+  align-items:center;gap:5px;margin-bottom:6px;padding:3px 8px;border-radius:999px;
+  font-size:9.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;
+  background:rgba(10,16,24,.72);border:1px solid rgba(99,164,255,.45);color:var(--acc2)}
 .live i{width:5px;height:5px;border-radius:50%;background:var(--acc);
   box-shadow:0 0 8px var(--acc);animation:pulse 1.8s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.7)}}
-.tile.withart::after{content:"";position:absolute;inset:0;z-index:1;
-  background:linear-gradient(100deg,var(--panel) 22%,color-mix(in srgb,var(--panel) 70%,transparent) 48%,transparent 82%)}
-.tile.withart{padding-bottom:var(--sp-3)}
-.tile.feat{grid-column:1 / -1;min-height:158px;padding:var(--sp-4);
+.tile.withart::after{content:"";position:absolute;left:0;right:34%;top:0;bottom:0;z-index:1;
+  background:linear-gradient(90deg,var(--panel) 55%,transparent)}
+.tile.withart{padding-right:44%}
+.tile.feat .tt,.tile.feat .tn{max-width:52%}
+.tile.feat{padding-right:42%}
+.tile.feat{grid-column:1 / -1;min-height:132px;padding:var(--sp-4);
   border-color:color-mix(in srgb,var(--acc) 34%,var(--line));
   box-shadow:0 10px 30px -18px rgba(99,164,255,.9),inset 0 1px 0 rgba(255,255,255,.05)}
 .tile.feat .tt{font-size:19px;font-weight:800;letter-spacing:-.3px}
 .tile.feat .tn{font-size:var(--fs-sm)}
 .tile.feat .tart{background-position:center 30%}
-.tile.feat::before{content:"";position:absolute;inset:0;z-index:1;
-  background:radial-gradient(120% 90% at 85% 0%,rgba(99,164,255,.22),transparent 60%)}
+.tile.feat::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(85% 130% at 100% 0%,rgba(99,164,255,.20),transparent 62%)}
 .tile:active{transform:scale(.985);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 .tile{animation:rise .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
