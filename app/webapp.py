@@ -11080,7 +11080,7 @@ document.getElementById("chtext").addEventListener("keydown", function(e){
 /* ---------- дроп оружия ---------- */
 // С моба падает 5% и только то, что влезает в кап локации.
 // С босса — лучшее, что в этой локации бывает (от 80% капа).
-const MOB_DROP_CHANCE = 0.05;
+let MOB_DROP_CHANCE = 0.05;
 
 function rollWeapon(zi, fromBoss){
   const cap = zoneCap(zi);
@@ -11402,6 +11402,8 @@ function heroApply(hero, heal){
   if (bag.length) P.bag = bag;
   const weapon = hero.weapon ? weaponById(hero.weapon) : null;
   if (weapon) P.weapon = weapon;
+  // Мыш: шанс оружия с мобов растёт на эффект надетого пета
+  if (hero.drop_bonus) MOB_DROP_CHANCE = 0.05 * (1 + Number(hero.drop_bonus));
   HERO_OFFER = hero.upgrade || null;
   HERO_ARMOR = hero.armor_offer || null;
   P.armor = hero.armor | 0;
@@ -13305,6 +13307,15 @@ async def api_dungeon_hero(request: Request) -> JSONResponse:
     if repo is None:
         return JSONResponse({"error": "Прогресс ещё не включён"}, status_code=400)
     hero = await repo.load(int(user["id"]))
+    # Мыш повышает шанс оружия с мобов: страница берёт это значение
+    try:
+        from . import petfx
+
+        hero["drop_bonus"] = await petfx.effect_from_pool(
+            state.db._p(), int(user["id"]), "weapon"
+        )
+    except Exception:  # noqa: BLE001
+        hero["drop_bonus"] = 0.0
     return JSONResponse({"ok": True, "hero": hero})
 
 

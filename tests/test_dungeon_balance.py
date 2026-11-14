@@ -6,7 +6,9 @@ from app.webapp import DUNGEON_PAGE, QUESTS_PAGE
 
 def test_mob_drop_is_five_percent():
     assert dungeon.MOB_DROP_CHANCE == 0.05
-    assert DUNGEON_PAGE.count("MOB_DROP_CHANCE = 0.05") == 1
+    # базовый шанс 5%, пет Мыш поднимает его множителем с сервера
+    assert "let MOB_DROP_CHANCE = 0.05;" in DUNGEON_PAGE
+    assert "MOB_DROP_CHANCE = 0.05 * (1 + Number(hero.drop_bonus))" in DUNGEON_PAGE
     assert "Math.random() < 0.22" not in DUNGEON_PAGE
 
 

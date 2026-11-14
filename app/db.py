@@ -2088,6 +2088,30 @@ class Database:
                     "insert into cases (user_id, source) values ($1, 'battle')",
                     winner_id,
                 )
+                # Петы: Лео добавляет очки за победу, Дик иногда даёт лишний кейс
+                try:
+                    from . import petfx
+
+                    points_bonus = await petfx.effect_from_pool(
+                        self._p(), winner_id, "pvp_points"
+                    )
+                    if points_bonus > 0:
+                        await con.execute(
+                            "update players set bonus_points = bonus_points + $2 "
+                            "where user_id = $1",
+                            winner_id,
+                            int(round(4000 * (1.0 + points_bonus))),
+                        )
+                    case_bonus = await petfx.effect_from_pool(
+                        self._p(), winner_id, "pvp_case"
+                    )
+                    if case_bonus > 0 and __import__("random").random() < case_bonus:
+                        await con.execute(
+                            "insert into cases (user_id, source) values ($1, 'pet_dik')",
+                            winner_id,
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
                 await con.execute(
                     "update players set losses = losses + 1, pvp_streak = 0 "
                     "where user_id = $1",
