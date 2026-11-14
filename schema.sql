@@ -961,3 +961,12 @@ create table if not exists eggs_owned (
     got_at  timestamptz not null default now()
 );
 create index if not exists eggs_owned_user_idx on eggs_owned (user_id, used);
+
+create table if not exists dungeon_shop_bought (
+    user_id bigint not null,
+    day date not null,
+    weapon_id text not null,
+    created_at timestamptz not null default now(),
+    primary key (user_id, day, weapon_id)
+);
+

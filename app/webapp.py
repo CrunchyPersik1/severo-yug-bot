@@ -9694,6 +9694,33 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <body>
 <canvas id="cv"></canvas>
 <canvas id="fx"></canvas>
+<div id="nshop">
+  <div class="nshead"><span>🏪 НАСИБУЛЛИН · ОРУЖИЕ ДНЯ</span><button id="nsclose">✕</button></div>
+  <div class="nscoins">Монеты: <b id="nscoins">0</b></div>
+  <div class="nslist" id="nslist"></div>
+</div>
+<style>
+#nshop{position:fixed;left:6px;right:6px;bottom:6px;z-index:22;display:none;
+  background:linear-gradient(#2a1c10f8,#140d06fa);border:3px solid #6b4a22;border-radius:12px;
+  box-shadow:inset 0 0 0 2px #120c06,0 -8px 26px #000a;padding:10px;max-height:70vh;
+  flex-direction:column;color:#e6dcc8;font-family:"Press Start 2P",ui-monospace,monospace}
+#nshop.on{display:flex}
+.nshead{display:flex;justify-content:space-between;align-items:center;font-size:9px;
+  color:#a37f3a;letter-spacing:.8px;padding-bottom:8px;border-bottom:1px solid #4a3418}
+.nshead button{border:1px solid #6b4a22;background:#1b1208;color:#f6c94a;border-radius:7px;
+  width:28px;height:28px;font-family:inherit;font-size:12px}
+.nscoins{font-size:9px;color:#c9a227;padding:7px 2px}
+.nscoins b{color:#f6c94a}
+.nslist{overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-bottom:4px}
+.nsrow{display:flex;align-items:center;gap:8px;background:#1b1208;border:1px solid #4a3418;
+  border-radius:8px;padding:8px}
+.nsrow .nm{flex:1;min-width:0;font-size:8.5px;line-height:1.4;color:#ffd98a}
+.nsrow .nm small{display:block;color:#a37f3a;font-size:7.5px;margin-top:3px}
+.nsrow button{border:0;border-radius:7px;padding:8px 10px;font-family:inherit;font-size:8px;
+  background:#c9a227;color:#1a1205;font-weight:900;white-space:nowrap}
+.nsrow button[disabled]{background:#3a2a12;color:#8a7a5a}
+</style>
+
 <div id="arena">
   <button id="aexit">✕</button>
   <div class="ahud boss"><span class="nm" id="abName">БОСС</span>
@@ -9742,6 +9769,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     <button class="ic" data-tab="clicker" title="Назад в кликер">◀</button>
     <button class="ic" id="zbtn" title="Телепорт по локациям">🌀</button>
     <button class="ic" id="bossbtn" title="Арена босса">👹</button>
+    <button class="ic" id="nshopbtn" title="Лавка Насибуллина">🏪</button>
     <button class="ic" data-tab="bag" title="Сумка">🎒</button>
     <button class="ic" data-tab="quests" title="Задания">📜</button>
     <button class="ic" id="questbtn" title="Квест НПС">🎯</button>
@@ -12138,6 +12166,46 @@ function arenaLoop(){
   if (b) b.onclick = startArena;
 })();
 
+
+/* ---------- лавка Насибуллина ---------- */
+let NSHOP = null;
+async function openShop(){
+  const box = document.getElementById("nshop");
+  box.classList.add("on");
+  document.getElementById("nslist").textContent = "загружаю…";
+  const data = await coopApi("/api/dungeon/shop");
+  if (!data || !data.ok){
+    document.getElementById("nslist").textContent = (data && data.error) || "лавка закрыта";
+    return;
+  }
+  NSHOP = data;
+  document.getElementById("nscoins").textContent = data.coins;
+  document.getElementById("nslist").innerHTML = data.stock.map(function(w){
+    const dis = w.bought ? "disabled" : "";
+    return '<div class="nsrow"><div class="nm">' + w.name +
+      '<small>' + (w.bought ? "куплено" : w.price + " монет") + '</small></div>' +
+      '<button data-nsbuy="' + w.id + '" ' + dis + '>' +
+      (w.bought ? "есть" : "купить") + '</button></div>';
+  }).join("");
+  document.querySelectorAll("[data-nsbuy]").forEach(function(b){
+    b.onclick = function(){ buyWeapon(b.dataset.nsbuy); };
+  });
+}
+async function buyWeapon(id){
+  const data = await coopApi("/api/dungeon/shop/buy", {method: "POST", body: JSON.stringify({id: id})});
+  if (!data || !data.ok){ toast((data && data.error) || "не вышло"); return; }
+  P.coins = data.hero.coins;
+  P.bag = data.hero.bag;
+  toast("Куплено: " + data.item.name + " · −" + data.item.price);
+  openShop();
+}
+(function bindNshop(){
+  const b = document.getElementById("nshopbtn");
+  if (b) b.onclick = openShop;
+  const c = document.getElementById("nsclose");
+  if (c) c.onclick = function(){ document.getElementById("nshop").classList.remove("on"); };
+})();
+
 const TOWN = new Image();
 TOWN.src = "/static/town.png";
 const FARM = {};
@@ -13105,6 +13173,85 @@ async def ws_dungeon(websocket: WebSocket) -> None:
             spot = hub.snapshot_spot(user_id)
             hub.drop(user_id)          # сначала перестаём быть «живым»
             await _save_spot(state, user_id, spot, force=True)
+
+@router.get("/api/dungeon/shop")
+async def api_dungeon_shop(request: Request) -> JSONResponse:
+    """Витрина Насибуллина: что продаётся сегодня и сколько стоит."""
+    from . import dungeon_shop as shop_mod
+
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+
+    user_id = int(user["id"])
+    repo = state.hero
+    hero = await repo.load(user_id)
+    day = shop_mod.day_key()
+    async with state.db.pool.acquire() as con:
+        rows = await con.fetch(
+            "select weapon_id from dungeon_shop_bought where user_id = $1 and day = $2",
+            user_id, day,
+        )
+    bought = [row["weapon_id"] for row in rows]
+    return JSONResponse({"ok": True, **shop_mod.payload(int(hero.get("coins") or 0), bought, day)})
+
+
+@router.post("/api/dungeon/shop/buy")
+async def api_dungeon_shop_buy(request: Request) -> JSONResponse:
+    """Купить оружие дня: монеты списываются, ствол падает в сумку."""
+    from . import dungeon_shop as shop_mod
+
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    weapon_id = str(body.get("id") or "")
+    user_id = int(user["id"])
+    day = shop_mod.day_key()
+    item = shop_mod.find(weapon_id, day)
+    if item is None:
+        return JSONResponse({"error": "Такого оружия сегодня нет."}, status_code=400)
+
+    hero = await state.hero.load(user_id)
+    coins = int(hero.get("coins") or 0)
+    async with state.db.pool.acquire() as con:
+        already = await con.fetchval(
+            "select 1 from dungeon_shop_bought where user_id = $1 and day = $2 and weapon_id = $3",
+            user_id, day, weapon_id,
+        )
+    if already:
+        return JSONResponse({"error": "Это оружие уже куплено сегодня."}, status_code=400)
+    if coins < item["price"]:
+        return JSONResponse({"error": "Не хватает монет: нужно " + str(item["price"])}, status_code=400)
+
+    bag = list(hero.get("bag") or [])
+    bag.append(weapon_id)
+    saved = await state.hero.save(
+        user_id,
+        {
+            "level": int(hero.get("level") or 1),
+            "exp": int(hero.get("exp") or 0),
+            "coins": coins - item["price"],
+            "kills": int(hero.get("kills") or 0),
+            "weapon": hero.get("weapon") or weapon_id,
+            "bag": bag,
+        },
+    )
+    async with state.db.pool.acquire() as con:
+        await con.execute(
+            "insert into dungeon_shop_bought (user_id, day, weapon_id) values ($1, $2, $3)"
+            " on conflict do nothing",
+            user_id, day, weapon_id,
+        )
+    return JSONResponse({"ok": True, "hero": saved, "bought": weapon_id, "item": item})
+
 
 @router.get("/api/dungeon/hero")
 async def api_dungeon_hero(request: Request) -> JSONResponse:
