@@ -6,8 +6,9 @@ from app.webapp import DUNGEON_PAGE
 def test_npc_stands_near_spawn():
     assert "const NPC = {" in DUNGEON_PAGE
     assert "function npcSpot(){" in DUNGEON_PAGE
-    # позиция считается от мира: чуть правее спавна в первой локации
-    assert "return {x: WORLD.w / 2 + 78, y: WORLD.h - 248};" in DUNGEON_PAGE
+    # Тимур слева от спавна, Насибуллин — справа, на одной линии лавок
+    assert "return {x: WORLD.w / 2 - 190, y: WORLD.h - 200};" in DUNGEON_PAGE
+    assert "return {x: WORLD.w / 2 + 190, y: WORLD.h - 200};" in DUNGEON_PAGE
     assert "function npcDraw(t){" in DUNGEON_PAGE
     assert "npcDraw(animT);" in DUNGEON_PAGE
     # имя и «!» над головой

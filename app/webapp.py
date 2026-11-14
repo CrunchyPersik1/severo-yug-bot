@@ -10704,8 +10704,36 @@ const NPC = {
 };
 
 function npcSpot(){
-  // стоит в первой локации рядом со спавном: чуть правее базы
-  return {x: WORLD.w / 2 + 78, y: WORLD.h - 248};
+  // слева от спавна, на линии торговых точек
+  return {x: WORLD.w / 2 - 190, y: WORLD.h - 200};
+}
+function nasSpot(){
+  // Насибуллин — справа от спавна, напротив Тимура
+  return {x: WORLD.w / 2 + 190, y: WORLD.h - 200};
+}
+function nasDist(){
+  const spot = nasSpot();
+  return Math.hypot(P.x - spot.x, P.y - spot.y);
+}
+function nasDraw(){
+  const spot = nasSpot();
+  if (Math.abs(spot.y - P.y) > 900) return;
+  const x = spot.x, y = spot.y;
+  ctx.save();
+  ctx.font = "7px 'Press Start 2P',monospace";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#9fc7ff";
+  ctx.fillText("НАСИБУЛЛИН", x, y - 52);
+  if (nasDist() < 110){
+    ctx.fillStyle = "#0d1016ee";
+    ctx.fillRect(x - 40, y - 74, 80, 14);
+    ctx.strokeStyle = "#6b4a22"; ctx.lineWidth = 2;
+    ctx.strokeRect(x - 40, y - 74, 80, 14);
+    ctx.fillStyle = "#ffd98a";
+    ctx.font = "7px 'Press Start 2P',monospace";
+    ctx.fillText("ТОРГОВАТЬ", x, y - 64);
+  }
+  ctx.restore();
 }
 function npcDist(){
   const spot = npcSpot();
@@ -11083,10 +11111,10 @@ function offlineSpot(spot, index){
 
 /* ---------- торговые точки на спавне ---------- */
 function spawnMarketSpots(){
-  const cx = WORLD.w / 2, cy = WORLD.h - ZONE_H * 0.44;
+  const q = npcSpot(), sh = nasSpot();
   return [
-    {x: cx - 230, y: cy, n: "ТИМУР", c: "#c9a227", k: "quest"},
-    {x: cx + 230, y: cy, n: "НАСИБУЛЛИН", c: "#6fa8ff", k: "shop"}
+    {x: q.x, y: q.y, n: "ТИМУР", c: "#c9a227", k: "quest"},
+    {x: sh.x, y: sh.y, n: "НАСИБУЛЛИН", c: "#6fa8ff", k: "shop"}
   ];
 }
 function drawSpawnMarket(ctx){
@@ -12486,7 +12514,18 @@ function loop(now){
 
   // кнопка «говорить» появляется рядом с НПС
   const talkBtn = document.getElementById("talkbtn");
-  if (talkBtn) talkBtn.classList.toggle("on", npcDist() < 150 && !questShown);
+  if (talkBtn){
+    const nearShop = nasDist() < 130;
+    const nearQuest = npcDist() < 150 && !questShown;
+    talkBtn.classList.toggle("on", nearShop || nearQuest);
+    if (nearShop){
+      talkBtn.textContent = "🏪 ТОРГОВАТЬ · Насибуллин";
+      talkBtn.onclick = function(){ openShop(); };
+    } else if (nearQuest){
+      talkBtn.textContent = "💬 ГОВОРИТЬ · Тимур";
+      talkBtn.onclick = questOpen;
+    }
+  }
   // НПС окликает при первом подходе, но панель не распахивает: раньше она
   // открывалась сама, мобы продолжали бить, и квест было не прочитать.
   if (!NPC.met && npcDist() < 110){
@@ -12591,6 +12630,7 @@ function render(dt){
     ctx.restore();
   }
   drawSpawnMarket(ctx);
+  nasDraw();
   // декорации текущей локации
   const zc = zoneIndex(P.y);
   const zin = ZONES[zc];
