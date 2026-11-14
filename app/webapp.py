@@ -11110,6 +11110,13 @@ function offlineSpot(spot, index){
 }
 
 /* ---------- торговые точки на спавне ---------- */
+const TILES = {
+  furniture: new Image(), meat: new Image(), resources: new Image(), veg: new Image()
+};
+TILES.furniture.src = "/images/tiles/furniture.png";
+TILES.meat.src = "/images/tiles/meat.png";
+TILES.resources.src = "/images/tiles/resources.png";
+TILES.veg.src = "/images/tiles/vegetation.png";
 function spawnMarketSpots(){
   const q = npcSpot(), sh = nasSpot();
   return [
@@ -11125,9 +11132,24 @@ function drawSpawnMarket(ctx){
     // тень
     ctx.fillStyle = "#00000044";
     ctx.beginPath(); ctx.ellipse(s.x, s.y + 26, 46, 12, 0, 0, 7); ctx.fill();
-    // прилавок
-    ctx.fillStyle = "#4a3418"; ctx.fillRect(s.x - 40, s.y + 6, 80, 22);
-    ctx.fillStyle = "#6b4a22"; ctx.fillRect(s.x - 40, s.y + 2, 80, 7);
+    // прилавок и полка из тайлсета Pixel Crawler
+    ctx.imageSmoothingEnabled = false;
+    if (TILES.furniture.complete && TILES.furniture.naturalWidth){
+      // полка со товаром за спиной торговца
+      ctx.drawImage(TILES.furniture, 0, 0, 96, 96, s.x - 44, s.y - 62, 88, 88);
+      // витрина-прилавок перед торговцем
+      ctx.drawImage(TILES.furniture, 0, 40, 96, 32, s.x - 44, s.y + 4, 88, 30);
+    } else {
+      ctx.fillStyle = "#4a3418"; ctx.fillRect(s.x - 40, s.y + 6, 80, 22);
+      ctx.fillStyle = "#6b4a22"; ctx.fillRect(s.x - 40, s.y + 2, 80, 7);
+    }
+    // товар на прилавке: мясо у Тимура, ресурсы у Насибуллина
+    const goods = s.k === "quest" ? TILES.meat : TILES.resources;
+    if (goods.complete && goods.naturalWidth){
+      ctx.drawImage(goods, 0, 0, 16, 16, s.x - 30, s.y + 2, 20, 20);
+      ctx.drawImage(goods, 32, 0, 16, 16, s.x - 4, s.y + 4, 18, 18);
+      ctx.drawImage(goods, 16, 16, 16, 16, s.x + 18, s.y + 2, 20, 20);
+    }
     // тент
     ctx.fillStyle = s.c + "cc";
     ctx.beginPath();
@@ -11135,6 +11157,11 @@ function drawSpawnMarket(ctx){
     ctx.lineTo(s.x + 48, s.y - 6); ctx.closePath(); ctx.fill();
     ctx.fillStyle = "#1b1208";
     ctx.fillRect(s.x - 2, s.y - 46, 4, 40);
+    // растительность у входа
+    if (TILES.veg.complete && TILES.veg.naturalWidth){
+      ctx.drawImage(TILES.veg, 0, 0, 16, 16, s.x - 62, s.y + 18, 22, 22);
+      ctx.drawImage(TILES.veg, 16, 0, 16, 16, s.x + 44, s.y + 20, 20, 20);
+    }
     // вывеска
     ctx.font = "bold 9px ui-monospace,monospace";
     ctx.textAlign = "center";
