@@ -4185,34 +4185,43 @@ HUB_PAGE = r"""<!doctype html>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --bg:#1b1613; --panel:#241d19; --panel2:#2e251f; --line:#3d3229;
-  --ink:#f4ece4; --muted:#a8968a; --acc:#dc8a3f; --acc2:#f0b276; --acc-ink:#1b1206;
+  /* Ледяная ночь: один акцент на весь хаб, деньги — единственный тёплый цвет. */
+  --bg:#0a1018; --panel:#111a26; --panel2:#172230; --line:#233247;
+  --ink:#e9f0f8; --muted:#93a3b8; --acc:#63a4ff; --acc2:#9cc3ff; --acc-ink:#061018;
+  --money:#ffcb6b;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --r-1:10px; --r-2:14px; --r-pill:999px;
+  --fs-xs:11px; --fs-sm:12.5px; --fs-md:14px; --fs-lg:17px;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --edge:0 8px 24px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:28px}
-.top{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:15px 16px 13px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:8;
-  background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(12px)}
-.brand{font-weight:900;letter-spacing:2.5px;font-size:15px}
-.brand i{color:var(--acc);font-style:normal}
-.chips{display:flex;gap:7px;align-items:center}
-.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;
-  padding:7px 12px;font-size:12.5px;font-weight:800;white-space:nowrap}
-.chip.bal{color:var(--acc2)}
-.chip.lvl{color:var(--ink)}
-.chip.cr{color:#6fe3f7;background:#0e2a33;border-color:#164e63}
+  background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:28px;
+  -webkit-font-smoothing:antialiased}
+.top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4);position:sticky;top:0;z-index:8;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line)}
+.brand{font-weight:800;letter-spacing:1.4px;font-size:13px;color:var(--muted)}
+.brand i{color:var(--acc);font-style:normal;margin:0 1px}
+.chips{display:flex;gap:6px;align-items:center}
+.chip{border-radius:var(--r-pill);padding:6px 10px;font-size:var(--fs-sm);
+  font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.lvl{color:var(--muted);background:transparent;padding-left:0;font-size:var(--fs-xs);
+  letter-spacing:.4px;text-transform:uppercase}
+.chip.cr{color:var(--acc2);background:color-mix(in srgb,var(--acc) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 32%,transparent)}
+.chip.bal{color:var(--money);font-family:var(--mono);font-size:var(--fs-sm);
+  font-weight:600;background:var(--panel);border:1px solid var(--line)}
 
-.wrap{padding:14px 15px 0;max-width:560px;margin:0 auto}
+.wrap{padding:var(--sp-4) var(--sp-4) 0;max-width:560px;margin:0 auto}
 
-.tickwrap{margin:2px 0 20px;position:relative;padding-bottom:16px}
-.tickwrap::after{content:"";position:absolute;left:-15px;right:-15px;bottom:0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--acc) 22%,var(--acc2) 50%,var(--acc) 78%,transparent);
-  opacity:.55}
-.tickwrap::before{content:"";position:absolute;left:0;right:0;bottom:-14px;height:28px;
-  background:radial-gradient(60% 100% at 50% 0%,color-mix(in srgb,var(--acc) 16%,transparent),transparent 72%);
-  pointer-events:none}
+.tickwrap{margin:0 0 var(--sp-4);position:relative;padding:var(--sp-3);
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2)}
+.tickwrap::after{content:"";position:absolute;left:var(--sp-3);right:var(--sp-3);bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--line),transparent)}
 .market{display:flex;flex-direction:column;gap:6px;transition:opacity .5s ease,transform .5s ease}
 .market.out{opacity:0;transform:translateY(-9px)}
 /* Сетка вместо flex: цены больше не выпирают за края.
@@ -4237,21 +4246,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .mk-dots i{width:16px;height:3px;border-radius:99px;background:var(--line);display:block;transition:.3s}
 .mk-dots i.on{background:var(--acc);width:26px}
 
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px 13px;
-  text-align:left;display:flex;flex-direction:column;gap:4px;position:relative;overflow:hidden}
-.tile::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
-  background:linear-gradient(90deg,var(--acc),transparent 70%);opacity:.75}
-.tile .tt{font-size:14.5px;font-weight:800;letter-spacing:.2px;position:relative;z-index:2}
-.tile .tn{font-size:11.5px;color:var(--muted);position:relative;z-index:2}
-.tile .tart{position:absolute;top:0;right:0;bottom:0;width:52%;z-index:1;
-  background-size:cover;background-position:center;background-color:#0d1524;
-  clip-path:polygon(26% 0,100% 0,100% 100%,0 100%);
-  opacity:.95;image-rendering:pixelated}
-.tile .tart::after{content:"";position:absolute;inset:0;
-  background:linear-gradient(90deg,var(--panel) 0%, rgba(0,0,0,0) 45%)}
-.tile.withart{padding-right:calc(52% + 8px);min-height:96px;justify-content:center}
-.tile:active{transform:scale(.975)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2)}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2);
+  padding:var(--sp-3);text-align:left;display:flex;flex-direction:column;justify-content:flex-end;
+  gap:2px;position:relative;overflow:hidden;min-height:104px;
+  transition:transform .14s ease,border-color .14s ease}
+.tile .tt{font-size:var(--fs-md);font-weight:700;letter-spacing:-.1px;
+  position:relative;z-index:2;line-height:1.25}
+.tile .tn{font-size:var(--fs-xs);color:var(--muted);position:relative;z-index:2;line-height:1.3}
+.tile .tart{position:absolute;inset:0;z-index:0;background-size:cover;
+  background-position:center top;background-color:#0e1622;opacity:.92}
+.tile.withart::after{content:"";position:absolute;inset:0;z-index:1;
+  background:linear-gradient(100deg,var(--panel) 22%,color-mix(in srgb,var(--panel) 70%,transparent) 48%,transparent 82%)}
+.tile.withart{padding-bottom:var(--sp-3)}
+.tile.feat{grid-column:1 / -1;min-height:150px;padding:var(--sp-4)}
+.tile.feat .tt{font-size:var(--fs-lg);font-weight:800}
+.tile.feat .tn{font-size:var(--fs-sm)}
+.tile.feat .tart{background-position:center 30%}
+.tile:active{transform:scale(.985);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 
 .panel{display:none}
 .panel.on{display:block}
@@ -4337,7 +4349,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   <div class="brand">СЕВЕРО<i>/</i>ЮГ</div>
   <div class="chips">
     <div class="chip lvl" id="lvl">ур. …</div>
-    <div class="chip cr" id="cr">💎 …</div>
+    <div class="chip cr" id="cr">…</div>
     <div class="chip bal" id="bal">…</div>
   </div>
 </div>
@@ -4465,8 +4477,10 @@ function renderTicker(){
   }, 5000);
 }
 function renderTiles(){
+  const firstApp = (S.data.sections.find(s => s.kind === "app") || {}).id;
   document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>
-    '<div class="tile' + (sec.thumb ? " withart" : "") + '" data-sec="' + sec.id + '">' +
+    '<div class="tile' + (sec.thumb ? " withart" : "") +
+    (sec.id === firstApp ? " feat" : "") + '" data-sec="' + sec.id + '">' +
     (sec.thumb ? '<div class="tart" style="background-image:url(' + esc(sec.thumb) + ')"></div>' : '') +
     '<div class="tt">' + esc(sec.title) + '</div>' +
     '<div class="tn">' + esc(sec.note) + '</div></div>').join("");
