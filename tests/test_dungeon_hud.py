@@ -43,10 +43,11 @@ def test_offline_button_lists_players():
 
 
 def test_controls_do_not_overlap_menu():
-    # джойстик и кнопки подняты над меню, полосы — выше них
-    assert "left:14px;bottom:150px" in DUNGEON_PAGE
-    assert "right:14px;bottom:150px" in DUNGEON_PAGE
-    # полосы теперь компактной строкой сверху, а не поверх игры
+    # Игровое поле — полоса между HUD и панелью управления,
+    # а джойстик и кнопки стоят в свободной полосе под полем.
+    assert "top:92px;bottom:252px" in DUNGEON_PAGE
+    assert "left:14px;bottom:118px" in DUNGEON_PAGE
+    assert "right:14px;bottom:118px" in DUNGEON_PAGE
     assert "top:54px" in DUNGEON_PAGE
 
 

@@ -9385,8 +9385,11 @@ html,body{margin:0;height:100vh;height:100dvh;overflow:hidden;background:#07060a
 canvas,#cv,#fx,#joy{touch-action:none}
 /* Канвас всегда на весь экран: не зависит от высоты родителя и не даёт
    чёрной полосы снизу, когда WebGL-режим выключен. */
-#cv{position:fixed;inset:0;display:block;width:100%;height:100%;
-  touch-action:none;background:#0d0a10;image-rendering:pixelated;z-index:1}
+/* Игровое поле занимает полосу между верхним HUD и нижней панелью:
+   интерфейс больше не перекрывает персонажа. */
+#cv{position:fixed;left:0;right:0;top:92px;bottom:252px;width:auto;height:auto;
+  display:block;touch-action:none;background:#0d0a10;image-rendering:pixelated;z-index:1;
+  border-top:1px solid #2a2016;border-bottom:1px solid #2a2016}
 .hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
   justify-content:space-between;gap:6px;z-index:12}
 /* Телепорт: кнопка в HUD и выпадающий список локаций */
@@ -9494,7 +9497,7 @@ canvas,#cv,#fx,#joy{touch-action:none}
   display:none;pointer-events:none;white-space:nowrap}
 .safebadge.on{display:block}
 
-.joy{position:fixed;left:14px;bottom:150px;width:118px;height:118px;border-radius:50%;
+.joy{position:fixed;left:14px;bottom:118px;width:112px;height:112px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,#2a1e12,#120c06);
   border:3px solid #6b4a22;z-index:11;touch-action:none;
   box-shadow:0 0 0 3px #120c06,inset 0 0 22px #000000cc,0 0 18px #00000088}
@@ -9503,7 +9506,7 @@ canvas,#cv,#fx,#joy{touch-action:none}
 .joy i{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;
   border-radius:50%;background:radial-gradient(circle at 35% 30%,#5a4020,#241608);
   border:3px solid #c9a227;box-shadow:0 0 12px #000000aa,inset 0 0 8px #00000088}
-.btns{position:fixed;right:14px;bottom:150px;display:flex;align-items:flex-end;gap:10px;z-index:11}
+.btns{position:fixed;right:14px;bottom:118px;display:flex;align-items:flex-end;gap:10px;z-index:11}
 .ab{width:58px;height:58px;border:0;border-radius:50%;color:#f0d79a;
   font-size:24px;font-family:inherit;position:relative;
   display:flex;align-items:center;justify-content:center;
@@ -9543,7 +9546,8 @@ canvas,#cv,#fx,#joy{touch-action:none}
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
-#fx{position:fixed;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;
+#fx{position:fixed;left:0;right:0;top:92px;bottom:252px;width:auto;height:auto;
+  z-index:6;pointer-events:none;
   display:block;opacity:0;transition:opacity .35s;background:transparent}
 body.fxon #fx{opacity:1}
 #gfx{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
@@ -9756,7 +9760,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <button class="talkbtn" id="talkbtn">💬 ГОВОРИТЬ · Тимур</button>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
-<div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:150px">
+<div class="btns" style="left:50%;transform:translateX(-50%);right:auto;bottom:118px">
   <button class="ab" id="bag2" style="width:52px;height:52px;font-size:18px">🎒</button>
 </div>
 <div class="btns">
@@ -10678,7 +10682,11 @@ function nearBoss(x, y, pad){
   }
   return null;
 }
-function inSafeZone(x, y){ return !!nearBoss(x, y, SAFE_R); }
+function inSafeZone(x, y){
+  // спавн целиком в сейфе: вся первая локация, до границы со второй
+  if (y > WORLD.h - ZONE_H + 70) return true;
+  return !!nearBoss(x, y, SAFE_R);
+}
 
 function bossEngage(bs){
   if (TG_INIT){ coopJoin(bs ? bs.zone : zoneIndex(P.y)); return; }
@@ -11001,6 +11009,40 @@ function offlineSpot(spot, index){
   };
 }
 
+/* ---------- торговые точки на спавне ---------- */
+function spawnMarketSpots(){
+  const cx = WORLD.w / 2, cy = WORLD.h - ZONE_H * 0.44;
+  return [
+    {x: cx - 230, y: cy, n: "ТИМУР", c: "#c9a227", k: "quest"},
+    {x: cx + 230, y: cy, n: "НАСИБУЛЛИН", c: "#6fa8ff", k: "shop"}
+  ];
+}
+function drawSpawnMarket(ctx){
+  // только в первой локации
+  if (zoneIndex(P.y) !== 0) return;
+  spawnMarketSpots().forEach(function(s){
+    ctx.save();
+    // тень
+    ctx.fillStyle = "#00000044";
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 26, 46, 12, 0, 0, 7); ctx.fill();
+    // прилавок
+    ctx.fillStyle = "#4a3418"; ctx.fillRect(s.x - 40, s.y + 6, 80, 22);
+    ctx.fillStyle = "#6b4a22"; ctx.fillRect(s.x - 40, s.y + 2, 80, 7);
+    // тент
+    ctx.fillStyle = s.c + "cc";
+    ctx.beginPath();
+    ctx.moveTo(s.x - 48, s.y - 6); ctx.lineTo(s.x, s.y - 52);
+    ctx.lineTo(s.x + 48, s.y - 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#1b1208";
+    ctx.fillRect(s.x - 2, s.y - 46, 4, 40);
+    // вывеска
+    ctx.font = "bold 9px ui-monospace,monospace";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f6c94a";
+    ctx.fillText(s.n, s.x, s.y + 48);
+    ctx.restore();
+  });
+}
 function drawOffline(spot, index, t){
   const pos = offlineSpot(spot, index);
   if (Math.abs(pos.y - P.y) > ZONE_H * 1.6) return;
@@ -12253,6 +12295,7 @@ function render(dt){
     }
     ctx.restore();
   }
+  drawSpawnMarket(ctx);
   // декорации текущей локации
   const zc = zoneIndex(P.y);
   const zin = ZONES[zc];
