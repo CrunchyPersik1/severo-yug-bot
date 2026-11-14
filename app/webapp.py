@@ -9769,7 +9769,6 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   <div class="frame grp">
     <button class="ic" data-tab="clicker" title="Назад в кликер">◀</button>
     <button class="ic" id="zbtn" title="Телепорт по локациям">🌀</button>
-    <button class="ic" id="bossbtn" title="Арена босса">👹</button>
     <button class="ic" id="nshopbtn" title="Лавка Насибуллина">🏪</button>
     <button class="ic" data-tab="bag" title="Сумка">🎒</button>
     <button class="ic" data-tab="quests" title="Задания">📜</button>
@@ -12069,6 +12068,12 @@ function startArena(){
   const cv = document.getElementById("acv");
   const r = cv.getBoundingClientRect();
   ARENA.on = true; ARENA.t = 0; ARENA.arrows = []; ARENA.hits = [];
+  ARENA.cover = [
+    {x: r.width * 0.30, y: r.height * 0.22, w: 64, h: 30},
+    {x: r.width * 0.62, y: r.height * 0.64, w: 70, h: 30},
+    {x: r.width * 0.20, y: r.height * 0.70, w: 58, h: 26}
+  ];
+  ARENA.flash = 0; ARENA.shake = 0;
   ARENA.hero = {x: r.width * 0.3, y: r.height * 0.5, hp: P.max, max: P.max,
                 atkCd: 0, dashCd: 0, dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1};
   const hp = Math.round(380 * Math.pow(1.55, zi));
@@ -12121,14 +12126,27 @@ function bindArena(){
   };
   document.getElementById("aexit").onclick = function(){ closeArena(false); };
 }
+function arenaBlocked(x, y, pad){
+  for (let i = 0; i < (ARENA.cover || []).length; i++){
+    const c = ARENA.cover[i];
+    if (x > c.x - pad && x < c.x + c.w + pad &&
+        y > c.y - pad && y < c.y + c.h + pad) return true;
+  }
+  return false;
+}
 function arenaAttack(){
   const h = ARENA.hero, b = ARENA.boss;
   if (!h || h.atkCd > 0) return;
   h.atkCd = 0.36;
-  if (Math.hypot(b.x - h.x, b.y - h.y) < 92){
+  if (Math.hypot(b.x - h.x, b.y - h.y) < 100){
     b.hp -= ARENA.dmg;
-    b.hurt = 0.25;
-    ARENA.hits.push({x: b.x, y: b.y - 50, t: .7, v: ARENA.dmg});
+    b.hurt = 0.28;
+    ARENA.flash = 0.16;
+    for (let i = 0; i < 8; i++){
+      ARENA.hits.push({x: b.x + (Math.random() - .5) * 40, y: b.y - 40,
+                       t: .5 + Math.random() * .3, v: Math.round(ARENA.dmg / 2),
+                       vx: (Math.random() - .5) * 160, vy: -60 - Math.random() * 90});
+    }
   }
 }
 function arenaLoop(){
@@ -12140,6 +12158,8 @@ function arenaLoop(){
   const dt = Math.min(0.05, 1 / 60);
   ARENA.t += dt;
   const zc = zoneIndex(P.y);
+  ARENA.flash = Math.max(0, (ARENA.flash || 0) - dt);
+  ARENA.shake = Math.max(0, (ARENA.shake || 0) - dt);
   ctx.fillStyle = ZONES[zc].g; ctx.fillRect(0, 0, w, h);
   for (let i = 0; i < 80; i++){
     const x = (i * 137) % w, y = (i * 89) % h;
@@ -12149,8 +12169,11 @@ function arenaLoop(){
   const h1 = ARENA.hero, b = ARENA.boss;
   h1.atkCd = Math.max(0, h1.atkCd - dt); h1.dashCd = Math.max(0, h1.dashCd - dt);
   h1.dashT = Math.max(0, h1.dashT - dt); h1.hurt = Math.max(0, h1.hurt - dt);
-  h1.x += ARENA.joy.dx * 210 * dt; h1.y += ARENA.joy.dy * 210 * dt;
-  if (h1.dashT > 0){ h1.x += h1.dvx * dt; h1.y += h1.dvy * dt; }
+  const nx = h1.x + ARENA.joy.dx * 210 * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
+  const ny = h1.y + ARENA.joy.dy * 210 * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
+  h1.moving = Math.abs(ARENA.joy.dx) + Math.abs(ARENA.joy.dy) > 0.08;
+  if (!arenaBlocked(nx, h1.y, 14)) h1.x = nx;
+  if (!arenaBlocked(h1.x, ny, 14)) h1.y = ny;
   h1.x = Math.max(24, Math.min(w - 24, h1.x)); h1.y = Math.max(30, Math.min(h - 24, h1.y));
   if (Math.abs(ARENA.joy.dx) > .1) h1.face = ARENA.joy.dx > 0 ? 1 : -1;
   const dx = h1.x - b.x, dy = h1.y - b.y, dist = Math.hypot(dx, dy) || 1;
@@ -12165,7 +12188,7 @@ function arenaLoop(){
     }
   } else if (b.state === "windup"){
     if (b.tell <= 0){
-      if (dist < 170){ h1.hp -= b.dmg; h1.hurt = 0.3; }
+      if (dist < 170){ h1.hp -= b.dmg; h1.hurt = 0.3; ARENA.shake = 0.3; }
       b.state = "walk"; b.cd = 1600;
     }
   } else if (b.state === "volley"){
@@ -12185,6 +12208,15 @@ function arenaLoop(){
     return a.t > 0 && a.x > -30 && a.x < w + 30 && a.y > -30 && a.y < h + 30;
   });
   ARENA.hits = ARENA.hits.filter(function(x){ x.t -= dt; x.y -= 28 * dt; return x.t > 0; });
+  // укрытия
+  (ARENA.cover || []).forEach(function(c){
+    ctx.fillStyle = "rgba(60,70,60,.9)";
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.fillStyle = "rgba(150,170,140,.55)";
+    ctx.fillRect(c.x, c.y, c.w, 5);
+    ctx.strokeStyle = "#3a4a36"; ctx.lineWidth = 2;
+    ctx.strokeRect(c.x + 1, c.y + 1, c.w - 2, c.h - 2);
+  });
   const im = BOSS_IMG[b.key];
   const row = (b.state === "windup" || b.state === "volley") ? 2 : 1;
   const frame = Math.floor(ARENA.t * 7) % 4;
@@ -12202,7 +12234,8 @@ function arenaLoop(){
   if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
     ctx.save(); ctx.translate(h1.x, h1.y); ctx.scale(h1.face, 1);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(ARENA_HERO, 0, 0, 16, 16, -26, -56, 52, 52);
+    const f = (h1.moving || h1.atkCd > 0.18) ? (Math.floor(ARENA.t * 10) % 4) : 0;
+    ctx.drawImage(ARENA_HERO, f * 16, 0, 16, 16, -26, -56, 52, 52);
     ctx.restore();
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
@@ -12211,9 +12244,14 @@ function arenaLoop(){
   ARENA.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, 7); ctx.fill(); });
   ctx.font = "bold 14px ui-monospace,monospace"; ctx.textAlign = "center";
   ARENA.hits.forEach(function(x){
+    if (x.vx){ x.x += x.vx * dt; x.y += (x.vy || -80) * dt; x.vy += 260 * dt; }
     ctx.globalAlpha = Math.max(0, x.t); ctx.fillStyle = "#ff6b6b";
     ctx.fillText("-" + Math.round(x.v), x.x, x.y); ctx.globalAlpha = 1;
   });
+  if (ARENA.flash > 0){
+    ctx.fillStyle = "rgba(255,255,255," + (ARENA.flash * 3) + ")";
+    ctx.fillRect(0, 0, w, h);
+  }
   document.getElementById("apHp").style.width = Math.max(0, h1.hp / h1.max * 100) + "%";
   document.getElementById("apHpTxt").textContent = Math.max(0, Math.round(h1.hp));
   document.getElementById("abHp").style.width = Math.max(0, b.hp / b.max * 100) + "%";
@@ -12221,10 +12259,8 @@ function arenaLoop(){
   if (b.hp <= 0) return closeArena(true);
   if (h1.hp <= 0) return closeArena(false);
 }
-(function bindBossBtn(){
-  const b = document.getElementById("bossbtn");
-  if (b) b.onclick = startArena;
-})();
+/* Босс открывается у круга в локации: отдельной кнопки в HUD нет. */
+function bossCircleNear(){ return nearBoss(P.x, P.y, 0); }
 
 
 /* ---------- лавка Насибуллина ---------- */
@@ -12551,8 +12587,12 @@ function loop(now){
   if (talkBtn){
     const nearShop = nasDist() < 130;
     const nearQuest = npcDist() < 150 && !questShown;
-    talkBtn.classList.toggle("on", nearShop || nearQuest);
-    if (nearShop){
+    talkBtn.classList.toggle("on", nearShop || nearQuest || !!bossCircleNear());
+    const nearBossSpot = bossCircleNear();
+    if (nearBossSpot){
+      talkBtn.textContent = "⚔ БОСС · " + ZONES[zoneIndex(P.y)].n;
+      talkBtn.onclick = function(){ startArena(); };
+    } else if (nearShop){
       talkBtn.textContent = "🏪 ТОРГОВАТЬ · Насибуллин";
       talkBtn.onclick = function(){ openShop(); };
     } else if (nearQuest){
