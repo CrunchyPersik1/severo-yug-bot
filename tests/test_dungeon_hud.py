@@ -45,7 +45,9 @@ def test_offline_button_lists_players():
 def test_controls_do_not_overlap_menu():
     # Игровое поле — полоса между HUD и панелью управления,
     # а джойстик и кнопки стоят в свободной полосе под полем.
-    assert "top:92px;bottom:252px" in DUNGEON_PAGE
+    # высота поля считается явно: с height:auto canvas схлопывался
+    assert "height:calc(100vh - 344px)" in DUNGEON_PAGE
+    assert "height:calc(100dvh - 344px)" in DUNGEON_PAGE
     assert "left:14px;bottom:118px" in DUNGEON_PAGE
     assert "right:14px;bottom:118px" in DUNGEON_PAGE
     assert "top:54px" in DUNGEON_PAGE

@@ -9387,9 +9387,14 @@ canvas,#cv,#fx,#joy{touch-action:none}
    чёрной полосы снизу, когда WebGL-режим выключен. */
 /* Игровое поле занимает полосу между верхним HUD и нижней панелью:
    интерфейс больше не перекрывает персонажа. */
-#cv{position:fixed;left:0;right:0;top:92px;bottom:252px;width:auto;height:auto;
+/* Высота считается явно: у canvas с height:auto берётся внутренний размер
+   (150px), и поле схлопывалось в полоску. */
+#cv{position:fixed;left:0;right:0;top:92px;width:100%;height:calc(100vh - 344px);
   display:block;touch-action:none;background:#0d0a10;image-rendering:pixelated;z-index:1;
   border-top:1px solid #2a2016;border-bottom:1px solid #2a2016}
+@supports (height:100dvh){
+  #cv{height:calc(100dvh - 344px)}
+}
 .hudtop{position:fixed;top:6px;left:6px;right:6px;display:flex;align-items:flex-start;
   justify-content:space-between;gap:6px;z-index:12}
 /* Телепорт: кнопка в HUD и выпадающий список локаций */
@@ -9408,9 +9413,9 @@ canvas,#cv,#fx,#joy{touch-action:none}
 .zitem.cur{color:#f6c94a}
 .zitem small{color:#a37f3a;font-size:8px;white-space:nowrap}
 .frame{background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
-  border-radius:9px;padding:3px;display:flex;gap:3px;
+  border-radius:8px;padding:2px;display:flex;gap:2px;
   box-shadow:inset 0 0 0 2px #120c06,0 3px 10px #000a}
-.ic{width:36px;height:36px;border:0;border-radius:7px;font-size:15px;line-height:1;
+.ic{width:32px;height:32px;border:0;border-radius:6px;font-size:14px;line-height:1;
   background:radial-gradient(circle at 40% 30%,#4a3520,#241708);
   color:#f0d79a;font-family:inherit;padding:0;
   box-shadow:inset 0 0 0 1px #00000055}
@@ -9486,7 +9491,8 @@ canvas,#cv,#fx,#joy{touch-action:none}
 .statbar span{position:absolute;inset:0;display:flex;align-items:center;
   justify-content:center;font:900 7.5px/1 ui-monospace,monospace;color:#fff;
   text-shadow:0 1px 3px #000;white-space:nowrap;overflow:hidden}
-.talkbtn{position:fixed;left:50%;transform:translateX(-50%);bottom:274px;z-index:12;
+.talkbtn{position:fixed;left:50%;transform:translateX(-50%);bottom:300px;z-index:12;
+  max-width:74vw;font-size:8px;line-height:1.4;
   display:none;background:linear-gradient(#3a2a1a,#1c1309);border:2px solid #6b4a22;
   border-radius:999px;padding:9px 16px;color:#ffd98a;font-family:inherit;
   font-size:9px;font-weight:800;letter-spacing:.4px;box-shadow:0 3px 12px #000a}
@@ -9546,7 +9552,7 @@ canvas,#cv,#fx,#joy{touch-action:none}
 .fhp i{display:block;height:100%;background:linear-gradient(#4ade80,#16a34a);width:100%;
   transition:width .15s}
 .acts{display:flex;gap:10px;justify-content:center;padding-bottom:6px}
-#fx{position:fixed;left:0;right:0;top:92px;bottom:252px;width:auto;height:auto;
+#fx{position:fixed;left:0;right:0;top:92px;width:100%;height:calc(100vh - 344px);
   z-index:6;pointer-events:none;
   display:block;opacity:0;transition:opacity .35s;background:transparent}
 body.fxon #fx{opacity:1}
