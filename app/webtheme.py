@@ -8,7 +8,15 @@
 from __future__ import annotations
 
 POLISH = r"""<style>
-  :root{ --radius:14px; --edge:0 6px 20px rgba(0,0,0,.20); }
+  :root{
+    --radius:14px; --edge:0 6px 20px rgba(0,0,0,.20);
+    /* шкала, общая для всех страниц: отступы, радиусы, типографика */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+    --r-1:10px; --r-2:14px; --r-pill:999px;
+    --fs-xs:11px; --fs-sm:12.5px; --fs-md:14px; --fs-lg:17px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --money:var(--acc2);
+  }
   *{ -webkit-tap-highlight-color:transparent }
   html{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility }
   body{
