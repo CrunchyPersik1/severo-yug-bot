@@ -9681,12 +9681,7 @@ body.fxon #fx{opacity:1}
   box-shadow:0 4px 0 #0b0f16;font-size:10px;color:#9aa4b8}
 .cact button:disabled{opacity:.45;box-shadow:0 4px 0 #000a}
 /* перебиваем общий стиль темы: он тянет тост на всю ширину */
-body #toast{position:fixed!important;left:50%!important;right:auto!important;
-  width:auto!important;max-width:76vw;bottom:342px;
-  background:#1a1410f5;color:#ffe9b8;border:2px solid #6b4a22;
-  border-radius:8px;padding:7px 12px;font-size:7px;line-height:1.5;
-  text-align:center;transform:translate(-50%,320%);transition:.22s;z-index:60;
-  box-shadow:0 0 0 2px #120c06,0 6px 16px #000000aa;animation:none!important}
+body #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:300px;max-width:74vw;text-align:center;line-height:1.45;pointer-events:none;background:#140d06f2;border:2px solid #6b4a22;border-radius:8px;color:#f6d79a;font-family:'Press Start 2P',ui-monospace,monospace;font-size:8px;padding:9px 12px;z-index:25;opacity:0;transition:opacity .18s}
 body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 /* переключатель разделов мини-аппки */
 .apps{position:fixed;top:54px;left:50%;transform:translateX(-50%);z-index:9;
@@ -9833,7 +9828,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   <div class="statbar hp"><i id="hpfill"></i><span id="hptxt">HP 120 / 120</span></div>
   <div class="statbar xp"><i id="xpfill"></i><span id="xptxt">УР. 1 · 0 / 60</span></div>
 </div>
-<div class="safebadge" id="safebadge">🛡 СЕЙФ-ЗОНА · тут не бьют</div>
+<div class="safebadge" id="safebadge">🛡 СЕЙФ · тут не бьют</div>
 <button class="talkbtn" id="talkbtn">💬 ГОВОРИТЬ · Тимур</button>
 
 <div class="joy" id="joy"><i id="knob"></i></div>
@@ -10787,11 +10782,12 @@ function nearBoss(x, y, pad){
   }
   return null;
 }
+function safeTop(){
+  // граница сейфа: нижняя четверть первой локации, во всю ширину карты
+  return WORLD.h - ZONE_H * 0.25;
+}
 function inSafeZone(x, y){
-  // сейф — только нижняя четверть первой локации: спавн и две лавки,
-  // дальше начинается обычная игра
-  if (y > WORLD.h - ZONE_H * 0.25) return true;
-  return !!nearBoss(x, y, SAFE_R);
+  return y > safeTop();
 }
 
 function bossEngage(bs){
@@ -10985,7 +10981,8 @@ async function heroArmor(){
 function solidRects(){
   const rects = [];
   const here = zoneIndex(P.y);
-  for (let z = Math.max(0, here - 1); z <= Math.min(ZONES.length - 1, here + 1); z++){
+  for (let z = Math.max(1, here - 1); z <= Math.min(ZONES.length - 1, here + 1); z++){
+    // z === 0 — спавн: хитбоксов домов там нет
     const base = (ZONES.length - 1 - z) * ZONE_H;
     VILLAGE.forEach(function(v){
       if (v.kind !== "cottage") return;
@@ -11830,7 +11827,7 @@ function attack(){
   if (inSafeZone(P.x, P.y)){
     if (!P.safeHint || performance.now() - P.safeHint > 4000){
       P.safeHint = performance.now();
-      toast("В сейф-зоне не дерутся — выйди из круга");
+      toast("В сейф-зоне не дерутся — выйди из зоны");
     }
     hits.push({x: P.x, y: P.y - 34, t: 0.5, v: "", c: "#8fd8ff"});
     return;
@@ -12246,7 +12243,9 @@ async function openShop(){
   document.getElementById("nslist").innerHTML = data.stock.map(function(w){
     const dis = w.bought ? "disabled" : "";
     return '<div class="nsrow"><div class="nm">' + w.name +
-      '<small>' + (w.bought ? "куплено" : w.price + " монет") + '</small></div>' +
+      '<small>' + (w.bought ? "куплено" : w.price + " монет") +
+      (w.dmg ? ' · урон ' + w.dmg + ' · дальн. ' + w.range + ' · скор. ' + w.spd : '') +
+      '</small></div>' +
       '<button data-nsbuy="' + w.id + '" ' + dis + '>' +
       (w.bought ? "есть" : "купить") + '</button></div>';
   }).join("");
@@ -12565,7 +12564,7 @@ function loop(now){
   // открывалась сама, мобы продолжали бить, и квест было не прочитать.
   if (!NPC.met && npcDist() < 110){
     NPC.met = true;
-    toast(NPC.name + ": «" + NPC.greet[0] + "» — нажми 💬, чтобы взять задание");
+    toast(NPC.name + " ждёт · нажми 💬");
   }
   // сейф-зона: показываем, что тут можно стоять и не отбиваться
   const safeBadge = document.getElementById("safebadge");
@@ -12664,6 +12663,21 @@ function render(dt){
     }
     ctx.restore();
   }
+  // граница сейф-зоны: пунктир во всю ширину карты
+  const st = safeTop();
+  if (Math.abs(st - P.y) < 900){
+    ctx.save();
+    ctx.setLineDash([12, 10]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(120,220,160,.55)";
+    ctx.beginPath(); ctx.moveTo(0, st); ctx.lineTo(WORLD.w, st); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = "bold 12px ui-monospace,monospace";
+    ctx.fillStyle = "rgba(160,240,190,.75)";
+    ctx.textAlign = "left";
+    ctx.fillText("СЕЙФ-ЗОНА ↓", 14, st - 8);
+    ctx.restore();
+  }
   drawSpawnMarket(ctx);
   nasDraw();
   // декорации текущей локации
@@ -12699,6 +12713,8 @@ function render(dt){
   for (let zi = 0; zi < ZONES.length; zi++){
     const base = zi * ZONE_H;
     if (Math.abs(base - P.y) > ZONE_H * 1.5) continue;
+    // первая локация — спавн: никаких изб, только лавки
+    if (zi === 0) continue;
     VILLAGE.forEach(function(v){
       const vy = base + v.y;
       const vx = (zi % 2) ? (WORLD.w - v.x) : v.x;
@@ -13270,7 +13286,10 @@ async def api_dungeon_shop(request: Request) -> JSONResponse:
             user_id, day,
         )
     bought = [row["weapon_id"] for row in rows]
-    return JSONResponse({"ok": True, **shop_mod.payload(int(hero.get("coins") or 0), bought, day)})
+    level = int(hero.get("level") or 1)
+    return JSONResponse(
+        {"ok": True, **shop_mod.payload(int(hero.get("coins") or 0), bought, day, level)}
+    )
 
 
 @router.post("/api/dungeon/shop/buy")
@@ -13290,7 +13309,8 @@ async def api_dungeon_shop_buy(request: Request) -> JSONResponse:
     weapon_id = str(body.get("id") or "")
     user_id = int(user["id"])
     day = shop_mod.day_key()
-    item = shop_mod.find(weapon_id, day)
+    hero_level = int((await state.hero.load(user_id)).get("level") or 1)
+    item = shop_mod.find(weapon_id, day, hero_level)
     if item is None:
         return JSONResponse({"error": "Такого оружия сегодня нет."}, status_code=400)
 
