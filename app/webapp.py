@@ -4306,6 +4306,15 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .tile.withart{padding-right:40%}
 .tile.accent{border-color:color-mix(in srgb,var(--acc) 34%,var(--line));
   box-shadow:0 10px 30px -20px rgba(99,164,255,.85)}
+/* Витрина: одна плитка на две колонки, арт справа, текст слева */
+.tile.feat{grid-column:1 / -1;min-height:148px;padding:var(--sp-4);padding-right:46%;
+  border-color:color-mix(in srgb,var(--acc) 38%,var(--line));
+  box-shadow:0 14px 34px -22px rgba(99,164,255,.95),inset 0 1px 0 rgba(255,255,255,.05)}
+.tile.feat .tt{font-size:18px;font-weight:800;letter-spacing:-.3px;max-width:100%}
+.tile.feat .tn{font-size:var(--fs-sm);max-width:100%;-webkit-line-clamp:2}
+.tile.feat .tart{width:48%;background-position:center top}
+.tile.feat::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(80% 130% at 100% 0%,rgba(99,164,255,.18),transparent 62%)}
 .tile:active{transform:scale(.985);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 .tile{animation:rise .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -4526,7 +4535,7 @@ function renderTiles(){
   const featured2 = featured || (S.data.sections.find(x => x.kind === "app") || {}).id;
   document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>
     '<div class="tile' + (sec.thumb ? " withart" : "") +
-    (sec.id === featured2 ? " accent" : "") + '" data-sec="' + sec.id + '">' +
+    (sec.id === featured2 ? " feat" : "") + '" data-sec="' + sec.id + '">' +
     (sec.thumb ? '<div class="tart" style="background-image:url(' + esc(sec.thumb) + ')"></div>' : '') +
     (sec.id === featured ? '<span class="live"><i></i>событие</span>' : '') +
     '<div class="tt">' + esc(sec.title) + '</div>' +
