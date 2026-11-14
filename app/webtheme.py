@@ -652,6 +652,28 @@ BOOTSTRAP = POLISH + r"""<script>
     next();
   }
   window.__revealCards = revealCards;
+
+ // Сброс зума: WebView запоминает pinch/double-tap и остаётся увеличенным,
+ // а meta viewport уже не даёт это отменить. Один перезапуск страницы
+ // возвращает масштаб 1 — с защитой от цикла.
+ (function resetZoom(){
+   try {
+     var vv = window.visualViewport;
+     if (!vv) return;
+     var fix = function(){
+       if (Math.abs((vv.scale || 1) - 1) < 0.02) return;
+       var tries = Number(sessionStorage.getItem("__zoomTries") || 0);
+       if (tries >= 2) return;                 // две попытки и хватит
+       var last = Number(sessionStorage.getItem("__zoomFix") || 0);
+       if (Date.now() - last < 5000) return;
+       sessionStorage.setItem("__zoomTries", String(tries + 1));
+       sessionStorage.setItem("__zoomFix", String(Date.now()));
+       location.reload();
+     };
+     if (Math.abs((vv.scale || 1) - 1) > 0.02) fix();
+     vv.addEventListener("resize", fix);
+   } catch (e) {}
+ })();
   window.__revealOne = function(card, done){ revealCards([card], done); };
 
   /* ---------- Снег: крупные размытые хлопья поверх экрана ---------- */
