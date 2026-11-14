@@ -9694,11 +9694,54 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 <body>
 <canvas id="cv"></canvas>
 <canvas id="fx"></canvas>
+<div id="arena">
+  <button id="aexit">✕</button>
+  <div class="ahud boss"><span class="nm" id="abName">БОСС</span>
+    <div class="abar foe"><i id="abHp"></i></div><span class="vp" id="abHpTxt">0</span></div>
+  <canvas id="acv"></canvas>
+  <div class="ahud"><span class="nm">ТЫ</span>
+    <div class="abar"><i id="apHp"></i></div><span class="vp" id="apHpTxt">0</span></div>
+  <div class="acontrols">
+    <div class="ajoy" id="ajoy"><i id="aknob"></i></div>
+    <div class="abt"><button id="adash">💨</button><button id="aattack">⚔</button></div>
+  </div>
+</div>
+<style>
+#arena{position:fixed;inset:0;z-index:30;background:#07060a;display:none;
+  flex-direction:column;overflow:hidden;touch-action:none}
+#arena.on{display:flex}
+#acv{flex:1;display:block;width:100%;height:100%;touch-action:none;
+  image-rendering:pixelated;background:#10130c;min-height:0}
+.ahud{display:flex;align-items:center;gap:8px;padding:7px 10px;
+  background:rgba(10,8,6,.94);border-bottom:1px solid #3a2a1a}
+.ahud .nm{font-size:9px;color:#f6c94a;letter-spacing:.6px;white-space:nowrap}
+.abar{flex:1;height:10px;border-radius:6px;background:#241a10;overflow:hidden;
+  border:1px solid #4a3418}
+.abar i{display:block;height:100%;width:100%;background:#7fbf4a;transition:width .15s}
+.abar.foe i{background:#d8434a}
+.ahud .vp{font-size:9px;color:#c9a227;min-width:52px;text-align:right}
+.acontrols{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  gap:10px;padding:10px 14px 14px;background:rgba(10,8,6,.96);border-top:1px solid #3a2a1a}
+.ajoy{position:relative;width:104px;height:104px;border-radius:50%;
+  background:radial-gradient(circle at 50% 40%,#3a2a1a,#1a1208);
+  border:2px solid #6b4a22;touch-action:none}
+.ajoy i{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;
+  border-radius:50%;background:#8a6a2a;border:2px solid #f6c94a;display:block}
+.abt{display:flex;align-items:center;gap:10px}
+.abt button{border-radius:50%;border:2px solid #6b4a22;font-family:inherit;font-weight:900}
+#adash{width:58px;height:58px;font-size:22px;background:#1b1208;color:#9fc7ff}
+#aattack{width:78px;height:78px;font-size:30px;
+  background:radial-gradient(circle at 40% 30%,#f0b276,#b45309);color:#1a1205}
+#aexit{position:absolute;top:8px;right:8px;z-index:3;width:34px;height:34px;border-radius:9px;
+  border:2px solid #6b4a22;background:#1b1208;color:#f6c94a;font-size:16px;font-family:inherit}
+</style>
+
 
 <div class="hudtop">
   <div class="frame grp">
     <button class="ic" data-tab="clicker" title="Назад в кликер">◀</button>
     <button class="ic" id="zbtn" title="Телепорт по локациям">🌀</button>
+    <button class="ic" id="bossbtn" title="Арена босса">👹</button>
     <button class="ic" data-tab="bag" title="Сумка">🎒</button>
     <button class="ic" data-tab="quests" title="Задания">📜</button>
     <button class="ic" id="questbtn" title="Квест НПС">🎯</button>
@@ -11912,6 +11955,189 @@ const TORSO = new Image();
 TORSO.src = "/static/lpc_torso.png";
 const KENNEY = new Image();
 KENNEY.src = "/static/kenney.png";
+
+/* ---------- арена боссов ---------- */
+const BOSS_KINDS = {
+  anomaly: "/images/boss/anomaly.png",
+  knight: "/images/boss/knight.png",
+  thief: "/images/boss/thief.png"
+};
+const BOSS_IMG = {};
+Object.keys(BOSS_KINDS).forEach(function(k){
+  const im = new Image(); im.src = BOSS_KINDS[k]; BOSS_IMG[k] = im;
+});
+const ARENA_HERO = new Image(); ARENA_HERO.src = "/static/hero_knight_m.png";
+const ARENA = {on:false, t:0, raf:0, boss:null, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0}};
+function bossKeyForZone(zi){
+  const keys = Object.keys(BOSS_KINDS);
+  return keys[(zi * 7 + 3) % keys.length];
+}
+function startArena(){
+  const zi = zoneIndex(P.y), now = Date.now();
+  if ((ARENA.cd[zi] || 0) > now){
+    toast("Босс восстанавливается: " + Math.ceil((ARENA.cd[zi] - now) / 1000) + " с");
+    return;
+  }
+  const cv = document.getElementById("acv");
+  const r = cv.getBoundingClientRect();
+  ARENA.on = true; ARENA.t = 0; ARENA.arrows = []; ARENA.hits = [];
+  ARENA.hero = {x: r.width * 0.3, y: r.height * 0.5, hp: P.max, max: P.max,
+                atkCd: 0, dashCd: 0, dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1};
+  const hp = Math.round(380 * Math.pow(1.55, zi));
+  ARENA.boss = {key: bossKeyForZone(zi), x: r.width * 0.72, y: r.height * 0.5,
+                hp: hp, max: hp, dmg: Math.round(9 + zi * 2.6), sp: 62 + zi * 3,
+                face: -1, state: "walk", cd: 900, hurt: 0, tell: 0};
+  ARENA.dmg = Number((document.getElementById("wdmg") || {}).textContent) || 24;
+  document.getElementById("arena").classList.add("on");
+  document.getElementById("abName").textContent = ARENA.boss.key.toUpperCase() + " · ЛОК " + (zi + 1);
+  bindArena();
+  cancelAnimationFrame(ARENA.raf);
+  ARENA.raf = requestAnimationFrame(arenaLoop);
+}
+function closeArena(win){
+  const zi = zoneIndex(P.y);
+  ARENA.on = false;
+  cancelAnimationFrame(ARENA.raf);
+  document.getElementById("arena").classList.remove("on");
+  ARENA.cd[zi] = Date.now() + 5000;
+  if (win){
+    const coins = 400 + zi * 300, exp = 40 + zi * 30;
+    P.coins = (P.coins || 0) + coins;
+    stats.exp += exp;
+    try { heroSave(); } catch (e) {}
+    toast("БОСС ПОВЕРЖЕН · +" + coins + " монет · +" + exp + " опыта");
+  }
+}
+function bindArena(){
+  const joy = document.getElementById("ajoy"), knob = document.getElementById("aknob");
+  function move(ev){
+    const r = joy.getBoundingClientRect();
+    const dx = ev.clientX - (r.left + r.width / 2), dy = ev.clientY - (r.top + r.height / 2);
+    const len = Math.hypot(dx, dy) || 1, cap = Math.min(len, 40);
+    ARENA.joy.dx = dx / len * (cap / 40);
+    ARENA.joy.dy = dy / len * (cap / 40);
+    knob.style.transform = "translate(" + (ARENA.joy.dx * 28) + "px," + (ARENA.joy.dy * 28) + "px)";
+  }
+  joy.onpointerdown = function(e){ try{ joy.setPointerCapture(e.pointerId); }catch(x){} move(e); };
+  joy.onpointermove = function(e){ move(e); };
+  joy.onpointerup = joy.onpointercancel = function(){
+    ARENA.joy.dx = 0; ARENA.joy.dy = 0; knob.style.transform = "translate(0,0)";
+  };
+  document.getElementById("aattack").onclick = arenaAttack;
+  document.getElementById("adash").onclick = function(){
+    const h = ARENA.hero;
+    if (h.dashCd > 0) return;
+    h.dashCd = 1.4; h.dashT = 0.18;
+    const l = Math.hypot(ARENA.joy.dx, ARENA.joy.dy) || 1;
+    h.dvx = ARENA.joy.dx / l * 620; h.dvy = ARENA.joy.dy / l * 620;
+  };
+  document.getElementById("aexit").onclick = function(){ closeArena(false); };
+}
+function arenaAttack(){
+  const h = ARENA.hero, b = ARENA.boss;
+  if (!h || h.atkCd > 0) return;
+  h.atkCd = 0.36;
+  if (Math.hypot(b.x - h.x, b.y - h.y) < 92){
+    b.hp -= ARENA.dmg;
+    b.hurt = 0.25;
+    ARENA.hits.push({x: b.x, y: b.y - 50, t: .7, v: ARENA.dmg});
+  }
+}
+function arenaLoop(){
+  ARENA.raf = requestAnimationFrame(arenaLoop);
+  if (!ARENA.on) return;
+  const cv = document.getElementById("acv");
+  const ctx = cv.getContext("2d");
+  const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+  const dt = Math.min(0.05, 1 / 60);
+  ARENA.t += dt;
+  const zc = zoneIndex(P.y);
+  ctx.fillStyle = ZONES[zc].g; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 80; i++){
+    const x = (i * 137) % w, y = (i * 89) % h;
+    ctx.fillStyle = i % 4 ? "rgba(255,255,255,.05)" : "rgba(255,255,255,.12)";
+    ctx.fillRect(x, y, 2, 2);
+  }
+  const h1 = ARENA.hero, b = ARENA.boss;
+  h1.atkCd = Math.max(0, h1.atkCd - dt); h1.dashCd = Math.max(0, h1.dashCd - dt);
+  h1.dashT = Math.max(0, h1.dashT - dt); h1.hurt = Math.max(0, h1.hurt - dt);
+  h1.x += ARENA.joy.dx * 210 * dt; h1.y += ARENA.joy.dy * 210 * dt;
+  if (h1.dashT > 0){ h1.x += h1.dvx * dt; h1.y += h1.dvy * dt; }
+  h1.x = Math.max(24, Math.min(w - 24, h1.x)); h1.y = Math.max(30, Math.min(h - 24, h1.y));
+  if (Math.abs(ARENA.joy.dx) > .1) h1.face = ARENA.joy.dx > 0 ? 1 : -1;
+  const dx = h1.x - b.x, dy = h1.y - b.y, dist = Math.hypot(dx, dy) || 1;
+  b.hurt = Math.max(0, b.hurt - dt); b.tell = Math.max(0, b.tell - dt);
+  if (b.state === "walk"){
+    if (dist > 110){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
+    b.cd -= dt * 1000;
+    if (b.cd <= 0){
+      b.cd = 2200;
+      if (dist < 150){ b.state = "windup"; b.tell = 0.55; }
+      else { b.state = "volley"; b.tell = 0.45; }
+    }
+  } else if (b.state === "windup"){
+    if (b.tell <= 0){
+      if (dist < 170){ h1.hp -= b.dmg; h1.hurt = 0.3; }
+      b.state = "walk"; b.cd = 1600;
+    }
+  } else if (b.state === "volley"){
+    if (b.tell <= 0){
+      const n = 3 + Math.min(4, Math.floor(zc / 2));
+      for (let i = 0; i < n; i++){
+        const a = Math.atan2(dy, dx) + (i - (n - 1) / 2) * 0.22;
+        ARENA.arrows.push({x: b.x, y: b.y - 30, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, t: 3});
+      }
+      b.state = "walk"; b.cd = 1900;
+    }
+  }
+  b.face = dx >= 0 ? 1 : -1;
+  ARENA.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt; });
+  ARENA.arrows = ARENA.arrows.filter(function(a){
+    if (Math.hypot(a.x - h1.x, a.y - (h1.y - 22)) < 24){ h1.hp -= 8; h1.hurt = 0.25; return false; }
+    return a.t > 0 && a.x > -30 && a.x < w + 30 && a.y > -30 && a.y < h + 30;
+  });
+  ARENA.hits = ARENA.hits.filter(function(x){ x.t -= dt; x.y -= 28 * dt; return x.t > 0; });
+  const im = BOSS_IMG[b.key];
+  const row = (b.state === "windup" || b.state === "volley") ? 2 : 1;
+  const frame = Math.floor(ARENA.t * 7) % 4;
+  if (im && im.complete && im.naturalWidth){
+    ctx.save(); ctx.translate(b.x, b.y); ctx.scale(b.face, 1);
+    ctx.imageSmoothingEnabled = false;
+    if (b.hurt > 0) ctx.globalAlpha = .75;
+    ctx.drawImage(im, frame * 48, row * 32, 48, 32, -72, -120, 144, 96);
+    ctx.restore();
+  }
+  if (b.state === "windup"){
+    ctx.strokeStyle = "rgba(255,90,90,.7)"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(b.x, b.y, 170, 0, 7); ctx.stroke();
+  }
+  if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
+    ctx.save(); ctx.translate(h1.x, h1.y); ctx.scale(h1.face, 1);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(ARENA_HERO, 0, 0, 16, 16, -26, -56, 52, 52);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
+  }
+  ctx.fillStyle = "#ffd166";
+  ARENA.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, 7); ctx.fill(); });
+  ctx.font = "bold 14px ui-monospace,monospace"; ctx.textAlign = "center";
+  ARENA.hits.forEach(function(x){
+    ctx.globalAlpha = Math.max(0, x.t); ctx.fillStyle = "#ff6b6b";
+    ctx.fillText("-" + Math.round(x.v), x.x, x.y); ctx.globalAlpha = 1;
+  });
+  document.getElementById("apHp").style.width = Math.max(0, h1.hp / h1.max * 100) + "%";
+  document.getElementById("apHpTxt").textContent = Math.max(0, Math.round(h1.hp));
+  document.getElementById("abHp").style.width = Math.max(0, b.hp / b.max * 100) + "%";
+  document.getElementById("abHpTxt").textContent = Math.max(0, Math.round(b.hp));
+  if (b.hp <= 0) return closeArena(true);
+  if (h1.hp <= 0) return closeArena(false);
+}
+(function bindBossBtn(){
+  const b = document.getElementById("bossbtn");
+  if (b) b.onclick = startArena;
+})();
+
 const TOWN = new Image();
 TOWN.src = "/static/town.png";
 const FARM = {};
