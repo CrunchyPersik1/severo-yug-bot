@@ -4157,16 +4157,7 @@ async def api_hub(request: Request) -> JSONResponse:
                     thumb=_hub_thumb(str(section["id"])),
                 )
                 for section in (
-                    [
-                        {
-                            "id": "quests",
-                            "title": "ЗАДАНИЯ",
-                            "note": "квесты и PvP",
-                            "kind": "app",
-                            "path": "/quests",
-                        }
-                    ]
-                    + (
+                    (
                         [
                             {
                                 "id": "event",
@@ -4292,11 +4283,12 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
   gap:2px;position:relative;overflow:hidden;min-height:108px;
   transition:transform .14s ease,border-color .14s ease}
 .tile .tt{font-size:var(--fs-md);font-weight:700;letter-spacing:-.1px;
-  position:relative;z-index:2;line-height:1.25;max-width:56%}
+  position:relative;z-index:2;line-height:1.25;max-width:62%}
 .tile .tn{font-size:var(--fs-xs);color:var(--muted);position:relative;z-index:2;
-  line-height:1.3;max-width:56%}
+  line-height:1.35;max-width:62%;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
 /* Миниатюра — узкая полоса справа: скриншот виден сверху, а не раздут на всю плитку */
-.tile .tart{position:absolute;top:0;right:0;bottom:0;width:46%;z-index:0;
+.tile .tart{position:absolute;top:0;right:0;bottom:0;width:42%;z-index:0;
   background-size:cover;background-position:top center;background-color:#0e1622;
   opacity:.9;-webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 26%);
   mask-image:linear-gradient(90deg,transparent 0%,#000 26%);
@@ -4311,17 +4303,9 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.7)}}
 .tile.withart::after{content:"";position:absolute;left:0;right:34%;top:0;bottom:0;z-index:1;
   background:linear-gradient(90deg,var(--panel) 55%,transparent)}
-.tile.withart{padding-right:44%}
-.tile.feat .tt,.tile.feat .tn{max-width:52%}
-.tile.feat{padding-right:42%}
-.tile.feat{grid-column:1 / -1;min-height:132px;padding:var(--sp-4);
-  border-color:color-mix(in srgb,var(--acc) 34%,var(--line));
-  box-shadow:0 10px 30px -18px rgba(99,164,255,.9),inset 0 1px 0 rgba(255,255,255,.05)}
-.tile.feat .tt{font-size:19px;font-weight:800;letter-spacing:-.3px}
-.tile.feat .tn{font-size:var(--fs-sm)}
-.tile.feat .tart{background-position:center 30%}
-.tile.feat::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-  background:radial-gradient(85% 130% at 100% 0%,rgba(99,164,255,.20),transparent 62%)}
+.tile.withart{padding-right:40%}
+.tile.accent{border-color:color-mix(in srgb,var(--acc) 34%,var(--line));
+  box-shadow:0 10px 30px -20px rgba(99,164,255,.85)}
 .tile:active{transform:scale(.985);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 .tile{animation:rise .32s cubic-bezier(.2,.8,.2,1) both}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -4538,12 +4522,13 @@ function renderTicker(){
   }, 5000);
 }
 function renderTiles(){
-  const firstApp = (S.data.sections.find(s => s.kind === "app") || {}).id;
+  const featured = S.data.sections.some(x => x.id === "santa") ? "santa" : "";
+  const featured2 = featured || (S.data.sections.find(x => x.kind === "app") || {}).id;
   document.getElementById("tiles").innerHTML = S.data.sections.map(sec =>
     '<div class="tile' + (sec.thumb ? " withart" : "") +
-    (sec.id === firstApp ? " feat" : "") + '" data-sec="' + sec.id + '">' +
+    (sec.id === featured2 ? " accent" : "") + '" data-sec="' + sec.id + '">' +
     (sec.thumb ? '<div class="tart" style="background-image:url(' + esc(sec.thumb) + ')"></div>' : '') +
-    (sec.id === firstApp ? '<span class="live"><i></i>событие</span>' : '') +
+    (sec.id === featured ? '<span class="live"><i></i>событие</span>' : '') +
     '<div class="tt">' + esc(sec.title) + '</div>' +
     '<div class="tn">' + esc(sec.note) + '</div></div>').join("");
   document.querySelectorAll("[data-sec]").forEach(el => el.onclick = () => open(el.dataset.sec));
