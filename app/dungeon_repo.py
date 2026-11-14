@@ -548,6 +548,18 @@ class DungeonBossRepo:
         reward = None
         if status == "dead":
             reward = dungeon.boss_reward(boss["zone"], alive)
+            # Петы: Честер добавляет монет, Лелик — Югов за босса
+            try:
+                from . import petfx
+
+                coins_bonus = await petfx.effect_from_pool(self.pool, user_id, "boss_coins")
+                if coins_bonus > 0 and reward.get("coins"):
+                    reward["coins"] = int(round(int(reward["coins"]) * (1.0 + coins_bonus)))
+                yugi_bonus = await petfx.effect_from_pool(self.pool, user_id, "boss_yugi")
+                if yugi_bonus > 0 and reward.get("yugi"):
+                    reward["yugi"] = int(round(int(reward["yugi"]) * (1.0 + yugi_bonus)))
+            except Exception:  # noqa: BLE001
+                pass
             reward["weapon"] = dungeon.boss_weapon(
                 int(boss["id"]) * 100_003 + int(user_id), int(boss["zone"])
             )

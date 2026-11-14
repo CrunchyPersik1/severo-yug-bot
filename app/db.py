@@ -1650,6 +1650,15 @@ class Database:
         amount = int(amount)
         if amount == 0:
             return 0
+        # Пет Одди добавляет процент к опыту: считается один раз на начисление.
+        try:
+            from . import petfx
+
+            bonus = await petfx.effect_from_pool(self._p(), user_id, "xp")
+            if bonus > 0:
+                amount = int(round(amount * (1.0 + bonus)))
+        except Exception:  # noqa: BLE001 - опыт важнее бонуса
+            pass
         query = (
             "update players set xp = xp + $2::integer, updated_at = now() "
             "where user_id = $1 returning xp"
@@ -2963,6 +2972,15 @@ class Database:
                 )
                 accepted, tokens_left, dropped = yugi_mod.tap_take(available, count)
                 gain = yugi_mod.tap_power(state["upgrades"]) * accepted
+                # Пет Патейто: процент к Югам за тап
+                try:
+                    from . import petfx
+
+                    bonus = await petfx.effect_from_pool(self._p(), user_id, "yugi")
+                    if bonus > 0:
+                        gain = gain * (1.0 + bonus)
+                except Exception:  # noqa: BLE001
+                    pass
                 state["total"], state["balance"] = yugi_mod.add_earned(
                     state["total"], state["balance"], gain
                 )

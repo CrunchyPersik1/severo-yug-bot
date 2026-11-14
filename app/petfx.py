@@ -28,6 +28,22 @@ async def multi(db: Any, user_id: int) -> dict[str, float]:
     return {current["kind"]: current["effect"]} if current else {}
 
 
+async def effect_from_pool(pool: Any, user_id: int, kind: str) -> float:
+    """Бонус надетого пета без объекта Database: по пулу соединений."""
+    async with pool.acquire() as con:
+        row = await con.fetchrow(
+            "select pet_id, level from pets_owned "
+            "where user_id = $1 and equipped order by pet_id limit 1",
+            int(user_id),
+        )
+    if row is None:
+        return 0.0
+    pet = pets.get(str(row["pet_id"]))
+    if pet is None or pet.kind != kind:
+        return 0.0
+    return float(pet.effect(int(row["level"])))
+
+
 def scale(base: float, effect: float) -> float:
     """Базовое число с бонусом пета: 100 * (1 + 0.25)."""
     return float(base) * (1.0 + max(0.0, float(effect)))
