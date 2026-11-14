@@ -10683,8 +10683,9 @@ function nearBoss(x, y, pad){
   return null;
 }
 function inSafeZone(x, y){
-  // спавн целиком в сейфе: вся первая локация, до границы со второй
-  if (y > WORLD.h - ZONE_H + 70) return true;
+  // сейф — только нижняя четверть первой локации: спавн и две лавки,
+  // дальше начинается обычная игра
+  if (y > WORLD.h - ZONE_H * 0.25) return true;
   return !!nearBoss(x, y, SAFE_R);
 }
 
