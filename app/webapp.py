@@ -10790,9 +10790,8 @@ function inSafeZone(x, y){
 }
 
 function bossEngage(bs){
-  if (TG_INIT){ coopJoin(bs ? bs.zone : zoneIndex(P.y)); return; }
-  toast("Нет данных Телеграма — бой локальный, без напарника");
-  startBattle();                          // вне Телеграма — старый локальный бой
+  // Круг босса запускает бой с движением и уворотом, а не панель кооп-босса.
+  startArena();
 }
 
 document.getElementById("chit").onclick = coopHit;
