@@ -4199,7 +4199,21 @@ HUB_PAGE = r"""<!doctype html>
 html,body{margin:0;padding:0;overscroll-behavior:none}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   background:var(--bg);color:var(--ink);min-height:100vh;padding-bottom:28px;
-  -webkit-font-smoothing:antialiased}
+  -webkit-font-smoothing:antialiased;position:relative;overflow-x:hidden}
+/* зимняя пыль: два слоя точек, медленный дрейф — фон, а не эффект */
+body::before{content:"";position:fixed;inset:-10% -10% 0;z-index:0;pointer-events:none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 18%,rgba(156,195,255,.55),transparent 60%),
+    radial-gradient(1.5px 1.5px at 72% 32%,rgba(156,195,255,.40),transparent 60%),
+    radial-gradient(1px 1px at 45% 62%,rgba(255,255,255,.35),transparent 60%),
+    radial-gradient(1.5px 1.5px at 88% 74%,rgba(156,195,255,.45),transparent 60%),
+    radial-gradient(1px 1px at 12% 84%,rgba(255,255,255,.30),transparent 60%);
+  background-size:420px 420px,560px 560px,360px 360px,640px 640px,300px 300px;
+  animation:drift 44s linear infinite;opacity:.7}
+@keyframes drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(-40px,60px,0)}}
+body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(120% 60% at 50% -10%,rgba(99,164,255,.13),transparent 60%)}
+.wrap,.top{position:relative;z-index:1}
 .top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
   padding:var(--sp-3) var(--sp-4);position:sticky;top:0;z-index:8;
   background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);
@@ -4211,15 +4225,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .chip.lvl{color:var(--muted);background:transparent;padding-left:0;font-size:var(--fs-xs);
   letter-spacing:.4px;text-transform:uppercase}
-.chip.cr{color:var(--acc2);background:color-mix(in srgb,var(--acc) 14%,transparent);
-  border:1px solid color-mix(in srgb,var(--acc) 32%,transparent)}
+.chip.cr{display:inline-flex;align-items:center;gap:5px;color:var(--acc2);
+  background:color-mix(in srgb,var(--acc) 16%,transparent);
+  border:1px solid color-mix(in srgb,var(--acc) 38%,transparent)}
+.chip.cr::before{content:"";width:7px;height:7px;transform:rotate(45deg);
+  background:linear-gradient(135deg,#dff0ff,#63a4ff);box-shadow:0 0 8px rgba(99,164,255,.8)}
 .chip.bal{color:var(--money);font-family:var(--mono);font-size:var(--fs-sm);
-  font-weight:600;background:var(--panel);border:1px solid var(--line)}
+  font-weight:600;border:1px solid color-mix(in srgb,var(--money) 28%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,var(--money) 12%,var(--panel)),var(--panel))}
 
 .wrap{padding:var(--sp-4) var(--sp-4) 0;max-width:560px;margin:0 auto}
 
 .tickwrap{margin:0 0 var(--sp-4);position:relative;padding:var(--sp-3);
-  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2)}
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2);
+  overflow:hidden}
+.tickwrap::before{content:"";position:absolute;left:0;right:0;bottom:0;height:60%;
+  background:linear-gradient(180deg,transparent,rgba(99,164,255,.10));pointer-events:none}
+.mk-rate{align-self:center;margin-top:4px;padding:2px 9px;border-radius:999px;
+  background:rgba(63,174,106,.16);color:#7ee2a8;font-family:var(--mono);font-size:13px}
+.mk-rate.down{background:rgba(226,141,146,.16);color:#f0a3a7}
 .tickwrap::after{content:"";position:absolute;left:var(--sp-3);right:var(--sp-3);bottom:0;height:1px;
   background:linear-gradient(90deg,transparent,var(--line),transparent)}
 .market{display:flex;flex-direction:column;gap:6px;transition:opacity .5s ease,transform .5s ease}
@@ -4255,15 +4279,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   position:relative;z-index:2;line-height:1.25}
 .tile .tn{font-size:var(--fs-xs);color:var(--muted);position:relative;z-index:2;line-height:1.3}
 .tile .tart{position:absolute;inset:0;z-index:0;background-size:cover;
-  background-position:center top;background-color:#0e1622;opacity:.92}
+  background-position:center top;background-color:#0e1622;opacity:.92;
+  transition:transform .5s cubic-bezier(.2,.7,.2,1),filter .3s ease}
+.tile:active .tart{transform:scale(1.06);filter:saturate(1.15) brightness(1.08)}
+.live{position:absolute;top:var(--sp-2);right:var(--sp-2);z-index:3;display:inline-flex;
+  align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:9.5px;
+  font-weight:800;letter-spacing:.8px;text-transform:uppercase;
+  background:rgba(10,16,24,.72);border:1px solid rgba(99,164,255,.45);color:var(--acc2);
+  backdrop-filter:blur(6px)}
+.live i{width:5px;height:5px;border-radius:50%;background:var(--acc);
+  box-shadow:0 0 8px var(--acc);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.7)}}
 .tile.withart::after{content:"";position:absolute;inset:0;z-index:1;
   background:linear-gradient(100deg,var(--panel) 22%,color-mix(in srgb,var(--panel) 70%,transparent) 48%,transparent 82%)}
 .tile.withart{padding-bottom:var(--sp-3)}
-.tile.feat{grid-column:1 / -1;min-height:150px;padding:var(--sp-4)}
-.tile.feat .tt{font-size:var(--fs-lg);font-weight:800}
+.tile.feat{grid-column:1 / -1;min-height:158px;padding:var(--sp-4);
+  border-color:color-mix(in srgb,var(--acc) 34%,var(--line));
+  box-shadow:0 10px 30px -18px rgba(99,164,255,.9),inset 0 1px 0 rgba(255,255,255,.05)}
+.tile.feat .tt{font-size:19px;font-weight:800;letter-spacing:-.3px}
 .tile.feat .tn{font-size:var(--fs-sm)}
 .tile.feat .tart{background-position:center 30%}
+.tile.feat::before{content:"";position:absolute;inset:0;z-index:1;
+  background:radial-gradient(120% 90% at 85% 0%,rgba(99,164,255,.22),transparent 60%)}
 .tile:active{transform:scale(.985);border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
+.tile{animation:rise .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
 .panel{display:none}
 .panel.on{display:block}
@@ -4482,6 +4522,7 @@ function renderTiles(){
     '<div class="tile' + (sec.thumb ? " withart" : "") +
     (sec.id === firstApp ? " feat" : "") + '" data-sec="' + sec.id + '">' +
     (sec.thumb ? '<div class="tart" style="background-image:url(' + esc(sec.thumb) + ')"></div>' : '') +
+    (sec.id === firstApp ? '<span class="live"><i></i>событие</span>' : '') +
     '<div class="tt">' + esc(sec.title) + '</div>' +
     '<div class="tn">' + esc(sec.note) + '</div></div>').join("");
   document.querySelectorAll("[data-sec]").forEach(el => el.onclick = () => open(el.dataset.sec));
