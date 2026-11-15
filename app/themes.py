@@ -161,6 +161,8 @@ def vip_only(theme: Theme) -> bool:
 
 
 TROFIM_THEME = "trofim"
+# Ники, за которыми закреплена тема «Трофим».
+TROFIM_HANDLES = frozenset({"troxa25", "trofim", "трофим"})
 
 
 def is_trofim(user_id: int, username: str | None = None,
@@ -176,7 +178,10 @@ def is_trofim(user_id: int, username: str | None = None,
     ids = {int(part) for part in raw.replace(" ", "").split(",") if part.isdigit()}
     if ids and int(user_id) in ids:
         return True
-    handle = (username or "").lower()
+    handle = (username or "").lower().lstrip("@")
+    # известные ники владельца темы
+    if handle in TROFIM_HANDLES:
+        return True
     if handle.startswith("trofim") or handle.startswith("трофим"):
         return True
     name = (first_name or "").lower()

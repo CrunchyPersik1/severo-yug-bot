@@ -4,6 +4,8 @@ from app import casino, themes
 
 
 def test_trofim_detected_by_name_and_env(monkeypatch):
+    assert themes.is_trofim(5, "troxa25", None) is True
+    assert themes.is_trofim(5, "@troxa25", None) is True
     assert themes.is_trofim(5, "trofim_x", None) is True
     assert themes.is_trofim(5, None, "Трофим") is True
     assert themes.is_trofim(5, "vasya", "Вася") is False
