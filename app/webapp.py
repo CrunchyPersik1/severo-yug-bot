@@ -9749,7 +9749,7 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 .abar.foe i{background:#d8434a}
 .ahud .vp{font-size:9px;color:#c9a227;min-width:52px;text-align:right}
 .acontrols{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
-  gap:10px;padding:10px 14px 14px;background:rgba(10,8,6,.96);border-top:1px solid #3a2a1a}
+  gap:10px;padding:12px 16px 30px;background:rgba(10,8,6,.96);border-top:1px solid #3a2a1a}
 .ajoy{position:relative;width:104px;height:104px;border-radius:50%;
   background:radial-gradient(circle at 50% 40%,#3a2a1a,#1a1208);
   border:2px solid #6b4a22;touch-action:none}
@@ -12078,7 +12078,8 @@ function arenaSetup(){
                 sp: 70 + zi * 4, face: 1, state: "idle", cd: 1200,
                 hurt: 0, tell: 0, phase: 1};
   ARENA.zi = zi;
-  ARENA.dmg = Number((document.getElementById("wdmg") || {}).textContent) || 24;
+  // урон фиксирован по локации и не зависит от оружия в подземелье
+  ARENA.dmg = 45 + zi * 35;
   document.getElementById("abName").textContent =
     ARENA.boss.key.toUpperCase() + " · " + ZONES[zi].n;
 }
@@ -12131,9 +12132,10 @@ function bindArena(){
   document.getElementById("adash").onclick = function(){
     const h = ARENA.hero;
     if (!h || h.dashCd > 0) return;
-    h.dashCd = 1.2; h.dashT = 0.16;
-    const l = Math.hypot(ARENA.joy.dx, ARENA.joy.dy) || 1;
-    h.dvx = ARENA.joy.dx / l * 700; h.dvy = ARENA.joy.dy / l * 700;
+    h.dashCd = 1.1; h.dashT = 0.2;
+    const l = Math.hypot(ARENA.joy.dx, ARENA.joy.dy);
+    if (l < 0.05){ h.dvx = (h.face || 1) * 900; h.dvy = 0; }
+    else { h.dvx = ARENA.joy.dx / l * 900; h.dvy = ARENA.joy.dy / l * 900; }
   };
   document.getElementById("aexit").onclick = function(){ closeArena(false); };
 }
@@ -12150,13 +12152,12 @@ function arenaBlocked(x, y, pad){
 function arenaAttack(){
   const h = ARENA.hero, b = ARENA.boss;
   if (!h || !b || h.atkCd > 0 || ARENA.over) return;
-  h.atkCd = 0.3;
-  if (Math.hypot(b.x - h.x, b.y - h.y) < 110){
-    b.hp -= ARENA.dmg;
-    b.hurt = 0.25;
-    ARENA.flash = 0.1;
-    ARENA.hits.push({x: b.x, y: b.y - 60, t: .7, v: ARENA.dmg});
-  }
+  h.atkCd = 0.5;                       // темп стрельбы из лука
+  h.atkAnim = 0.25;
+  const a = Math.atan2(b.y - h.y, b.x - h.x);
+  ARENA.shots = ARENA.shots || [];
+  ARENA.shots.push({x: h.x, y: h.y - 26,
+    vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, t: 1.6});
 }
 
 function bossShoot(pattern){
@@ -12225,7 +12226,7 @@ function arenaLoop(){
   h1.dashCd = Math.max(0, h1.dashCd - dt);
   h1.dashT = Math.max(0, h1.dashT - dt);
   h1.hurt = Math.max(0, h1.hurt - dt);
-  const sp = 300;
+  const sp = 430;
   const nx = h1.x + ARENA.joy.dx * sp * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
   const ny = h1.y + ARENA.joy.dy * sp * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
   h1.moving = Math.abs(ARENA.joy.dx) + Math.abs(ARENA.joy.dy) > 0.08;
@@ -12302,6 +12303,18 @@ function arenaLoop(){
     ctx.restore();
   }
 
+  // ---- стрелы игрока ----
+  ARENA.shots = (ARENA.shots || []).filter(function(a){
+    a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt;
+    if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 40)) < 46){
+      b.hp -= ARENA.dmg;
+      b.hurt = 0.25;
+      ARENA.flash = 0.1;
+      ARENA.hits.push({x: b.x, y: b.y - 60, t: .7, v: ARENA.dmg});
+      return false;
+    }
+    return a.t > 0 && a.x > -30 && a.x < w + 30 && a.y > -30 && a.y < h + 30;
+  });
   // ---- снаряды ----
   ARENA.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt; });
   ARENA.arrows = ARENA.arrows.filter(function(a){
@@ -12324,7 +12337,8 @@ function arenaLoop(){
     ctx.scale(b.face, 1);
     ctx.imageSmoothingEnabled = false;
     if (b.hurt > 0){ ctx.globalAlpha = .6; }
-    ctx.drawImage(im, 0, 0, 96, 96, -84, -120, 168, 168);
+    const fr = Math.floor(ARENA.t * 6) % 3;
+    ctx.drawImage(im, fr * 48, 0, 48, 32, -60, -96, 120, 80);
     ctx.restore();
   } else {
     ctx.fillStyle = "#d8434a";
@@ -12347,6 +12361,8 @@ function arenaLoop(){
   // снаряды и цифры
   ctx.fillStyle = "#ffb15c";
   ARENA.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, 7); ctx.fill(); });
+  ctx.fillStyle = "#ffe08a";
+  (ARENA.shots || []).forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 4, 0, 7); ctx.fill(); });
   ctx.textAlign = "center";
   ARENA.hits = ARENA.hits.filter(function(x){ x.t -= dt; x.y -= 34 * dt; return x.t > 0; });
   ctx.font = "bold 14px ui-monospace,monospace";

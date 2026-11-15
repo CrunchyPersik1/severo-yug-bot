@@ -12,9 +12,11 @@ def test_arena_markup():
 def test_arena_moves_like_a_game():
     # джойстик даёт скорость 300, рывок — импульс 700, удар бьёт в радиусе,
     # укрытия блокируют движение
-    assert "const sp = 300;" in DUNGEON_PAGE
-    assert "h.dvx = ARENA.joy.dx / l * 700" in DUNGEON_PAGE
-    assert "Math.hypot(b.x - h.x, b.y - h.y) < 110" in DUNGEON_PAGE
+    assert "const sp = 430;" in DUNGEON_PAGE
+    assert "* 900" in DUNGEON_PAGE
+    # лук: стрела летит в босса, урон фиксирован по локации
+    assert "ARENA.shots.push({" in DUNGEON_PAGE
+    assert "ARENA.dmg = 45 + zi * 35;" in DUNGEON_PAGE
     assert "function arenaBlocked(" in DUNGEON_PAGE
     assert "ARENA.cover = [" in DUNGEON_PAGE
 
