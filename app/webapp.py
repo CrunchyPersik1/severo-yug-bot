@@ -4478,51 +4478,82 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 
 /* ---------- обучение в приложении ---------- */
 const TUT_STEPS = [
-  {sel: "#bal", title: "1/6 · Очки",
-   text: "Это твой баланс. Очки дают карточки, задания и кликер — тратить их можно в магазине и на рынке."},
-  {sel: ".tile[data-sec='drop']", title: "2/6 · Карта дня",
-   text: "Раз в сутки выбиваешь карту. Редкость видна по цвету рамки — редкие приносят больше очков."},
-  {sel: ".tile[data-sec='yugi']", title: "3/6 · Кликер",
-   text: "Самый простой источник монет: тапай, качай здания, получай пассивный доход."},
-  {sel: ".tile[data-sec='cases']", title: "4/6 · Кейсы и рулетка",
-   text: "Кейсы и рулетка — шанс на карту и валюту. Шансы всегда показаны списком."},
-  {sel: ".tile[data-sec='dungeon']", title: "5/6 · Подземелье",
-   text: "Тут ходишь, бьёшь мобов и боссов за монеты и оружие. Есть джойстик и телепорт по локациям."},
-  {sel: "#__gear", title: "6/6 · Настройки",
-   text: "Шестерня — темы, эффекты и кнопка «Пройти обучение», если захочешь повторить."}
+  {sel: ".tile[data-sec='drop']", title: "1/8 · Что это за игра",
+   text: "Коллекционная игра: собираешь карточки персонажей, качаешь их и сражаешься с другими. Карты падают из карты дня, кейсов и рулетки."},
+  {sel: "#bal", title: "2/8 · Очки",
+   text: "Очки — главная валюта. Их приносят карточки, задания и кликер. Тратятся в магазине и на рынке."},
+  {sel: ".tile[data-sec='drop']", title: "3/8 · Карта дня",
+   text: "Бесплатная попытка раз в сутки, сброс в 12:00 по ЕКБ. Чем реже редкость — тем сильнее карта."},
+  {sel: ".tile[data-sec='cases']", title: "4/8 · Кейсы и рулетка",
+   text: "Кейс открывается лентой, рулетка крутит колесо. Шансы всегда показаны списком — видно, на что идёшь."},
+  {sel: ".tile[data-sec='yugi']", title: "5/8 · Кликер",
+   text: "Самый простой заработок: тапаешь, покупаешь здания, они приносят очки даже офлайн. С него удобно накопить на первый кейс."},
+  {sel: ".tile[data-sec='dungeon']", title: "6/8 · Подземелье",
+   text: "Ходишь по локациям, бьёшь мобов и боссов за монеты и оружие. Джойстик, рывок, телепорт и лавка оружия."},
+  {sel: ".tile[data-sec='pets']", title: "7/8 · Питомцы и ивент",
+   text: "Питомник даёт петов с пассивками, а в ивенте «Санта Егор» — сюжет, эльфы и боссы."},
+  {sel: "#__gear", title: "8/8 · Настройки",
+   text: "Шестерня: темы, эффекты карточек и это обучение. Пройти заново можно в любой момент."}
 ];
-let tutIndex = 0;
+let tutIndex = 0, tutPlaceTimer = 0;
+
+function tutMeasure(){
+  const step = TUT_STEPS[tutIndex];
+  const el = document.querySelector(step.sel);
+  const spot = document.getElementById("tutSpot");
+  const tip = document.getElementById("tutTip");
+  if (!el) return false;
+  // позиция с учётом прокрутки в момент замера, а не до неё
+  const r = el.getBoundingClientRect();
+  const pad = 10;
+  spot.style.left = Math.max(4, r.left - pad) + "px";
+  spot.style.top = Math.max(4, r.top - pad) + "px";
+  spot.style.width = Math.min(window.innerWidth - 8, r.width + pad * 2) + "px";
+  spot.style.height = (r.height + pad * 2) + "px";
+  const tipH = tip.offsetHeight || 170;
+  const below = r.bottom + 14;
+  const above = r.top - tipH - 14;
+  let top = below + tipH < window.innerHeight - 12 ? below : above;
+  top = Math.max(12, Math.min(window.innerHeight - tipH - 12, top));
+  tip.style.top = top + "px";
+  return true;
+}
+
+function tutScheduleMeasure(){
+  clearTimeout(tutPlaceTimer);
+  tutPlaceTimer = setTimeout(tutMeasure, 60);
+  requestAnimationFrame(tutMeasure);
+}
+
 function tutShow(i){
   tutIndex = Math.max(0, Math.min(TUT_STEPS.length - 1, i));
   const step = TUT_STEPS[tutIndex];
   const el = document.querySelector(step.sel);
-  const box = document.getElementById("tut");
-  const spot = document.getElementById("tutSpot");
-  const tip = document.getElementById("tutTip");
-  if (!el){ if (tutIndex < TUT_STEPS.length - 1) return tutShow(tutIndex + 1); return tutEnd(); }
-  box.classList.add("on");
-  el.scrollIntoView({block: "center", behavior: "smooth"});
-  const r = el.getBoundingClientRect();
-  const pad = 8;
-  spot.style.left = (r.left - pad) + "px";
-  spot.style.top = (r.top - pad) + "px";
-  spot.style.width = (r.width + pad * 2) + "px";
-  spot.style.height = (r.height + pad * 2) + "px";
+  if (!el){
+    if (tutIndex < TUT_STEPS.length - 1) return tutShow(tutIndex + 1);
+    return tutEnd();
+  }
+  document.getElementById("tut").classList.add("on");
   document.getElementById("tutTitle").textContent = step.title;
   document.getElementById("tutText").textContent = step.text;
-  const tipH = 150;
-  const below = r.bottom + 12;
-  const top = Math.min(window.innerHeight - tipH - 16, Math.max(12, below));
-  tip.style.top = top + "px";
   document.getElementById("tutNext").textContent =
     tutIndex === TUT_STEPS.length - 1 ? "Готово" : "Далее";
+  el.scrollIntoView({block: "center", behavior: "smooth"});
+  tutMeasure();
+  setTimeout(tutMeasure, 220);
+  setTimeout(tutMeasure, 420);
+  setTimeout(tutMeasure, 700);
 }
+
 function tutEnd(){
   document.getElementById("tut").classList.remove("on");
+  clearTimeout(tutPlaceTimer);
   try { localStorage.setItem("hub_tutorial", "done"); } catch (e) {}
 }
+
 function tutStart(){ tutIndex = 0; tutShow(0); }
 window.__startTutorial = tutStart;
+
 (function bindTutorial(){
   const next = document.getElementById("tutNext");
   if (next) next.onclick = function(){
@@ -4531,8 +4562,14 @@ window.__startTutorial = tutStart;
   };
   const skip = document.getElementById("tutSkip");
   if (skip) skip.onclick = tutEnd;
-  const wantTutorial = location.search.indexOf("tutorial=1") >= 0;
-  if (wantTutorial) setTimeout(tutStart, 350);
+  // держим рамку на месте при прокрутке и повороте экрана
+  window.addEventListener("scroll", function(){
+    if (document.getElementById("tut").classList.contains("on")) tutScheduleMeasure();
+  }, {passive: true});
+  window.addEventListener("resize", function(){
+    if (document.getElementById("tut").classList.contains("on")) tutScheduleMeasure();
+  });
+  if (location.search.indexOf("tutorial=1") >= 0) setTimeout(tutStart, 350);
 })();
 
 

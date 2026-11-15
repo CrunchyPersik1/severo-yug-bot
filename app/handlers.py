@@ -2614,6 +2614,34 @@ async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
     app_url = _base_url() if message.chat.type == "private" else ""
     text, keyboard = render.render_main_menu(await _bot_username(bot), app_url)
     await message.answer(text, reply_markup=keyboard)
+    # Новичку сразу предлагаем обучение: без него непонятно, что тут делать.
+    if user is not None:
+        fresh = False
+        try:
+            profile = await db.player_profile(user.id) or {}
+            fresh = not int(profile.get("wins") or 0) and not int(profile.get("kills") or 0)
+        except Exception:  # noqa: BLE001
+            fresh = False
+        if fresh:
+            hint = (
+                "🎓 Похоже, ты тут впервые.\n"
+                "Обучение займёт минуту: расскажу, что за игра, где брать карты "
+                "и как зарабатывать очки. Запустить можно командой /tutorial "
+                "или кнопкой «Обучение» ниже."
+            )
+            mark = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🎓 Пройти обучение",
+                            callback_data="tut:start",
+                        )
+                    ]
+                ]
+            )
+            await message.answer(hint, reply_markup=mark if not app_url else mark)
+    if False:
+        pass
     # Заодно подсказка про рефералку — но только в личке, чтобы не сорить в группах.
     if message.chat.type == "private":
         await message.answer(
@@ -2621,23 +2649,17 @@ async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
         )
 
 
-@router.message(Command("tutorial", "обучение"))
-async def cmd_tutorial(message: Message, bot: Bot) -> None:
-    """Обучение: шесть коротких сообщений с паузой и кнопкой в приложение."""
+async def _tutorial_sequence(bot: Bot, chat_id: int) -> None:
+    """Шаги обучения сообщениями: по одному каждые 5 секунд."""
     from . import tutorial as tutorial_mod
 
     steps = tutorial_mod.payload()
-    await message.answer(
-        "🎓 <b>Обучение</b>\n"
-        "Сейчас расскажу базу: 6 коротких сообщений, по одному каждые 5 секунд. "
-        "Потом позову в приложение, где обучение продолжится с подсветкой."
-    )
     for index, step in enumerate(steps[1:], start=2):
         await asyncio.sleep(5)
         try:
             await bot.send_message(
-                message.chat.id,
-                f"<b>{index}/6 · {step['title']}</b>\n{step['text']}",
+                chat_id,
+                f"<b>{index}/{len(steps)} · {step['title']}</b>\n{step['text']}",
             )
         except Exception:  # noqa: BLE001 - чат могли закрыть
             return
@@ -2653,10 +2675,32 @@ async def cmd_tutorial(message: Message, bot: Bot) -> None:
             ]
         ]
     )
-    await message.answer(
+    await bot.send_message(
+        chat_id,
         "Дальше — в приложении: покажу, куда нажимать, прямо на экране.",
         reply_markup=keyboard,
     )
+
+
+@router.callback_query(F.data == "tut:start")
+async def cb_tutorial(callback: CallbackQuery, bot: Bot) -> None:
+    await callback.answer()
+    if callback.message:
+        await _tutorial_sequence(bot, callback.message.chat.id)
+
+
+@router.message(Command("tutorial", "обучение"))
+async def cmd_tutorial(message: Message, bot: Bot) -> None:
+    """Обучение: короткие сообщения с паузой и кнопкой в приложение."""
+    from . import tutorial as tutorial_mod
+
+    steps = tutorial_mod.payload()
+    await message.answer(
+        "🎓 <b>Обучение</b>\n"
+        "Сейчас расскажу базу: 6 коротких сообщений, по одному каждые 5 секунд. "
+        "Потом позову в приложение, где обучение продолжится с подсветкой."
+    )
+    await _tutorial_sequence(bot, message.chat.id)
 
 
 @router.message(Command("promo", "промокод"))

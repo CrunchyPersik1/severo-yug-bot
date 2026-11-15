@@ -1701,6 +1701,14 @@ def render_main_menu(bot_name: str, app_url: str = "") -> tuple[str, InlineKeybo
                 )
             ]
         )
+    if app_url:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎓 Обучение", web_app=WebAppInfo(url=f"{app_url}/hub?tutorial=1")
+                )
+            ]
+        )
     rows.append(
         [
             InlineKeyboardButton(text="🎒 Коллекция", callback_data="my:home"),
