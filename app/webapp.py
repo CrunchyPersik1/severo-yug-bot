@@ -10791,6 +10791,7 @@ function inSafeZone(x, y){
 
 function bossEngage(bs){
   // Круг босса запускает бой с движением и уворотом, а не панель кооп-босса.
+  if (ARENA.on) return;
   startArena();
 }
 
@@ -12077,6 +12078,11 @@ function arenaSetup(){
                 hp: hp, max: hp, dmg: Math.round(10 + zi * 3),
                 sp: 70 + zi * 4, face: 1, state: "idle", cd: 1200,
                 hurt: 0, tell: 0, phase: 1};
+  // если точка спавна попала в укрытие — поднимаемся, пока не свободно
+  let guard = 0;
+  while (arenaBlocked(ARENA.hero.x, ARENA.hero.y, 18) && guard++ < 12){
+    ARENA.hero.y -= 26;
+  }
   ARENA.zi = zi;
   // урон фиксирован по локации и не зависит от оружия в подземелье
   ARENA.dmg = 45 + zi * 35;
@@ -12597,6 +12603,9 @@ function petDraw(){
 }
 
 function loop(now){
+  // Пока идёт бой на арене, мир подземелья не тикает: иначе круг босса
+  // снова «срабатывает» и бой перезапускается.
+  if (ARENA.on){ requestAnimationFrame(loop); return; }
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - (loop.last || now)) / 1000);
   loop.last = now;
