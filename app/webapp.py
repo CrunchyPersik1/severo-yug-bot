@@ -12253,7 +12253,16 @@ function arenaLoop(){
     b.cd = 500;
     ARENA.flash = 0.2;
   }
-  if (b.state === "idle" || b.state === "walk"){
+  // recover проверяем ПЕРВЫМ: иначе ветка с tell <= 0 перехватывала его
+  // каждый кадр, cd сбрасывался и босс застревал в одной атаке
+  if (b.state === "recover"){
+    b.cd -= dt * 1000;
+    if (b.chargeT > 0){
+      b.chargeT -= dt;
+      b.x += b.chargeVX * dt; b.y += b.chargeVY * dt;
+    }
+    if (b.cd <= 0) b.state = "walk";
+  } else if (b.state === "idle" || b.state === "walk"){
     if (dist > 150){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
     else if (dist < 90){ b.x -= dx / dist * b.sp * dt * 0.7; b.y -= dy / dist * b.sp * dt * 0.7; }
     b.cd -= dt * 1000;
@@ -12281,14 +12290,8 @@ function arenaLoop(){
     }
     b.state = "recover";
     b.cd = Math.max(700, 2200 - ARENA.zi * 140 - (b.phase - 1) * 260);
-  } else if (b.state === "recover"){
-    b.cd -= dt * 1000;
-    if (b.chargeT > 0){
-      b.chargeT -= dt;
-      b.x += b.chargeVX * dt; b.y += b.chargeVY * dt;
-    }
-    if (b.cd <= 0) b.state = "walk";
   }
+
   b.x = Math.max(30, Math.min(w - 30, b.x));
   b.y = Math.max(40, Math.min(h - 120, b.y));
 
