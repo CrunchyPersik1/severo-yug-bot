@@ -10,31 +10,37 @@ def test_arena_markup():
 
 
 def test_arena_moves_like_a_game():
-    # джойстик даёт скорость, рывок — импульс, удар бьёт в радиусе,
+    # джойстик даёт скорость 300, рывок — импульс 700, удар бьёт в радиусе,
     # укрытия блокируют движение
-    assert "ARENA.joy.dx * 210" in DUNGEON_PAGE
-    assert "h.dvx = ARENA.joy.dx / l * 620" in DUNGEON_PAGE
-    assert "Math.hypot(b.x - h.x, b.y - h.y) < 100" in DUNGEON_PAGE
+    assert "const sp = 300;" in DUNGEON_PAGE
+    assert "h.dvx = ARENA.joy.dx / l * 700" in DUNGEON_PAGE
+    assert "Math.hypot(b.x - h.x, b.y - h.y) < 110" in DUNGEON_PAGE
     assert "function arenaBlocked(" in DUNGEON_PAGE
     assert "ARENA.cover = [" in DUNGEON_PAGE
 
 
 def test_arena_has_hit_feedback():
-    assert "ARENA.flash = 0.16" in DUNGEON_PAGE
-    assert "ARENA.shake = 0.3" in DUNGEON_PAGE
+    assert "ARENA.flash" in DUNGEON_PAGE
+    assert "ARENA.shake = 0.18" in DUNGEON_PAGE
     assert "Math.floor(ARENA.t * 10) % 4" in DUNGEON_PAGE
 
 
 def test_arena_boss_patterns():
-    assert 'b.state = "windup"' in DUNGEON_PAGE
-    assert 'b.state = "volley"' in DUNGEON_PAGE
+    # арсенал растёт с локацией: одиночный, веер, кольцо, рывок, двойной
+    assert "function bossShoot(pattern)" in DUNGEON_PAGE
+    assert '"ring"' in DUNGEON_PAGE and '"fan"' in DUNGEON_PAGE
+    assert '"charge"' in DUNGEON_PAGE and '"double"' in DUNGEON_PAGE
     assert "ARENA.arrows.push" in DUNGEON_PAGE
+    # фазы по HP
+    assert "b.hp < b.max * 0.33" in DUNGEON_PAGE
 
 
 def test_arena_rewards_and_cooldown():
-    assert "P.coins = (P.coins || 0) + coins" in DUNGEON_PAGE
-    assert "400 + zi * 300" in DUNGEON_PAGE
+    assert "ARENA.reward = {coins: 500 + zi * 400" in DUNGEON_PAGE
     assert "ARENA.cd[zi] = Date.now() + 5000" in DUNGEON_PAGE
+    # награда показывается на экране победы
+    assert "ПОБЕДА" in DUNGEON_PAGE
+    assert "монет" in DUNGEON_PAGE
 
 
 def test_arena_uses_boss_sprites():

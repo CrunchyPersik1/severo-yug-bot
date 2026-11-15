@@ -12042,7 +12042,7 @@ TORSO.src = "/static/lpc_torso.png";
 const KENNEY = new Image();
 KENNEY.src = "/static/kenney.png";
 
-/* ---------- арена боссов ---------- */
+/* ---------- арена боссов: как бой с эльфами ---------- */
 const BOSS_KINDS = {
   anomaly: "/images/boss/anomaly.png",
   knight: "/images/boss/knight.png",
@@ -12053,39 +12053,50 @@ Object.keys(BOSS_KINDS).forEach(function(k){
   const im = new Image(); im.src = BOSS_KINDS[k]; BOSS_IMG[k] = im;
 });
 const ARENA_HERO = new Image(); ARENA_HERO.src = "/static/hero_knight_m.png";
-const ARENA = {on:false, t:0, raf:0, boss:null, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0}};
-function bossKeyForZone(zi){
-  const keys = Object.keys(BOSS_KINDS);
-  return keys[(zi * 7 + 3) % keys.length];
+const ARENA = {on:false, t:0, raf:0, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0},
+               cover:[], flash:0, shake:0, over:false, reward:null};
+
+function bossKeyForZone(zi){ return Object.keys(BOSS_KINDS)[zi % 3]; }
+
+function arenaSetup(){
+  const cv = document.getElementById("acv");
+  const r = cv.getBoundingClientRect();
+  const zi = zoneIndex(P.y), w = r.width || 360, h = r.height || 480;
+  ARENA.t = 0; ARENA.arrows = []; ARENA.hits = []; ARENA.over = false;
+  ARENA.reward = null; ARENA.flash = 0; ARENA.shake = 0; ARENA.joy = {dx:0, dy:0};
+  ARENA.cover = [
+    {x: w * 0.22, y: h * 0.30, w: 58, h: 26},
+    {x: w * 0.58, y: h * 0.58, w: 64, h: 26},
+    {x: w * 0.38, y: h * 0.78, w: 54, h: 24}
+  ];
+  // игрок — по центру снизу, босс — по центру сверху: оба сразу видны
+  ARENA.hero = {x: w / 2, y: h - 80, hp: P.max, max: P.max, atkCd: 0, dashCd: 0,
+                dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1, moving: false};
+  const hp = Math.round(900 * Math.pow(1.85, zi));
+  ARENA.boss = {key: bossKeyForZone(zi), x: w / 2, y: h * 0.26,
+                hp: hp, max: hp, dmg: Math.round(10 + zi * 3),
+                sp: 70 + zi * 4, face: 1, state: "idle", cd: 1200,
+                hurt: 0, tell: 0, phase: 1};
+  ARENA.zi = zi;
+  ARENA.dmg = Number((document.getElementById("wdmg") || {}).textContent) || 24;
+  document.getElementById("abName").textContent =
+    ARENA.boss.key.toUpperCase() + " · " + ZONES[zi].n;
 }
+
 function startArena(){
   const zi = zoneIndex(P.y), now = Date.now();
   if ((ARENA.cd[zi] || 0) > now){
     toast("Босс восстанавливается: " + Math.ceil((ARENA.cd[zi] - now) / 1000) + " с");
     return;
   }
-  const cv = document.getElementById("acv");
-  const r = cv.getBoundingClientRect();
-  ARENA.on = true; ARENA.t = 0; ARENA.arrows = []; ARENA.hits = [];
-  ARENA.cover = [
-    {x: r.width * 0.30, y: r.height * 0.22, w: 64, h: 30},
-    {x: r.width * 0.62, y: r.height * 0.64, w: 70, h: 30},
-    {x: r.width * 0.20, y: r.height * 0.70, w: 58, h: 26}
-  ];
-  ARENA.flash = 0; ARENA.shake = 0;
-  ARENA.hero = {x: r.width * 0.3, y: r.height * 0.5, hp: P.max, max: P.max,
-                atkCd: 0, dashCd: 0, dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1};
-  const hp = Math.round(380 * Math.pow(1.55, zi));
-  ARENA.boss = {key: bossKeyForZone(zi), x: r.width * 0.72, y: r.height * 0.5,
-                hp: hp, max: hp, dmg: Math.round(9 + zi * 2.6), sp: 62 + zi * 3,
-                face: -1, state: "walk", cd: 900, hurt: 0, tell: 0};
-  ARENA.dmg = Number((document.getElementById("wdmg") || {}).textContent) || 24;
+  ARENA.on = true;
+  arenaSetup();
   document.getElementById("arena").classList.add("on");
-  document.getElementById("abName").textContent = ARENA.boss.key.toUpperCase() + " · ЛОК " + (zi + 1);
   bindArena();
   cancelAnimationFrame(ARENA.raf);
   ARENA.raf = requestAnimationFrame(arenaLoop);
 }
+
 function closeArena(win){
   const zi = zoneIndex(P.y);
   ARENA.on = false;
@@ -12093,13 +12104,14 @@ function closeArena(win){
   document.getElementById("arena").classList.remove("on");
   ARENA.cd[zi] = Date.now() + 5000;
   if (win){
-    const coins = 400 + zi * 300, exp = 40 + zi * 30;
+    const coins = 500 + zi * 400, exp = 50 + zi * 40;
     P.coins = (P.coins || 0) + coins;
     stats.exp += exp;
-    try { heroSave(); } catch (e) {}
-    toast("БОСС ПОВЕРЖЕН · +" + coins + " монет · +" + exp + " опыта");
+    try { heroSave(true); } catch (e) {}
+    toast("ПОБЕДА · +" + coins + " монет · +" + Math.round(exp) + " опыта");
   }
 }
+
 function bindArena(){
   const joy = document.getElementById("ajoy"), knob = document.getElementById("aknob");
   function move(ev){
@@ -12111,43 +12123,56 @@ function bindArena(){
     knob.style.transform = "translate(" + (ARENA.joy.dx * 28) + "px," + (ARENA.joy.dy * 28) + "px)";
   }
   joy.onpointerdown = function(e){ try{ joy.setPointerCapture(e.pointerId); }catch(x){} move(e); };
-  joy.onpointermove = function(e){ move(e); };
+  joy.onpointermove = move;
   joy.onpointerup = joy.onpointercancel = function(){
     ARENA.joy.dx = 0; ARENA.joy.dy = 0; knob.style.transform = "translate(0,0)";
   };
   document.getElementById("aattack").onclick = arenaAttack;
   document.getElementById("adash").onclick = function(){
     const h = ARENA.hero;
-    if (h.dashCd > 0) return;
-    h.dashCd = 1.4; h.dashT = 0.18;
+    if (!h || h.dashCd > 0) return;
+    h.dashCd = 1.2; h.dashT = 0.16;
     const l = Math.hypot(ARENA.joy.dx, ARENA.joy.dy) || 1;
-    h.dvx = ARENA.joy.dx / l * 620; h.dvy = ARENA.joy.dy / l * 620;
+    h.dvx = ARENA.joy.dx / l * 700; h.dvy = ARENA.joy.dy / l * 700;
   };
   document.getElementById("aexit").onclick = function(){ closeArena(false); };
 }
+
 function arenaBlocked(x, y, pad){
-  for (let i = 0; i < (ARENA.cover || []).length; i++){
+  for (let i = 0; i < ARENA.cover.length; i++){
     const c = ARENA.cover[i];
     if (x > c.x - pad && x < c.x + c.w + pad &&
         y > c.y - pad && y < c.y + c.h + pad) return true;
   }
   return false;
 }
+
 function arenaAttack(){
   const h = ARENA.hero, b = ARENA.boss;
-  if (!h || h.atkCd > 0) return;
-  h.atkCd = 0.36;
-  if (Math.hypot(b.x - h.x, b.y - h.y) < 100){
+  if (!h || !b || h.atkCd > 0 || ARENA.over) return;
+  h.atkCd = 0.3;
+  if (Math.hypot(b.x - h.x, b.y - h.y) < 110){
     b.hp -= ARENA.dmg;
-    b.hurt = 0.28;
-    ARENA.flash = 0.16;
-    for (let i = 0; i < 8; i++){
-      ARENA.hits.push({x: b.x + (Math.random() - .5) * 40, y: b.y - 40,
-                       t: .5 + Math.random() * .3, v: Math.round(ARENA.dmg / 2),
-                       vx: (Math.random() - .5) * 160, vy: -60 - Math.random() * 90});
-    }
+    b.hurt = 0.25;
+    ARENA.flash = 0.1;
+    ARENA.hits.push({x: b.x, y: b.y - 60, t: .7, v: ARENA.dmg});
   }
 }
+
+function bossShoot(pattern){
+  const b = ARENA.boss, h = ARENA.hero;
+  const base = Math.atan2(h.y - b.y, h.x - b.x);
+  const speed = 240 + ARENA.zi * 12;
+  const n = pattern === "ring" ? Math.min(14, 4 + ARENA.zi * 2) : pattern === "fan" ? 3 : 1;
+  for (let i = 0; i < n; i++){
+    const a = pattern === "ring"
+      ? (Math.PI * 2 / n) * i
+      : base + (i - (n - 1) / 2) * 0.26;
+    ARENA.arrows.push({x: b.x, y: b.y - 20,
+      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, t: 4});
+  }
+}
+
 function arenaLoop(){
   ARENA.raf = requestAnimationFrame(arenaLoop);
   if (!ARENA.on) return;
@@ -12155,109 +12180,206 @@ function arenaLoop(){
   const ctx = cv.getContext("2d");
   const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
   const dt = Math.min(0.05, 1 / 60);
-  ARENA.t += dt;
-  const zc = zoneIndex(P.y);
-  ARENA.flash = Math.max(0, (ARENA.flash || 0) - dt);
-  ARENA.shake = Math.max(0, (ARENA.shake || 0) - dt);
-  ctx.fillStyle = ZONES[zc].g; ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 80; i++){
+  if (!ARENA.over) ARENA.t += dt;
+  const h1 = ARENA.hero, b = ARENA.boss;
+  ARENA.flash = Math.max(0, ARENA.flash - dt);
+  ARENA.shake = Math.max(0, ARENA.shake - dt);
+
+  // фон
+  ctx.fillStyle = ZONES[ARENA.zi].g; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 90; i++){
     const x = (i * 137) % w, y = (i * 89) % h;
     ctx.fillStyle = i % 4 ? "rgba(255,255,255,.05)" : "rgba(255,255,255,.12)";
     ctx.fillRect(x, y, 2, 2);
   }
-  const h1 = ARENA.hero, b = ARENA.boss;
-  h1.atkCd = Math.max(0, h1.atkCd - dt); h1.dashCd = Math.max(0, h1.dashCd - dt);
-  h1.dashT = Math.max(0, h1.dashT - dt); h1.hurt = Math.max(0, h1.hurt - dt);
-  const nx = h1.x + ARENA.joy.dx * 210 * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
-  const ny = h1.y + ARENA.joy.dy * 210 * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
+
+  if (ARENA.over){
+    // экран победы/поражения
+    ctx.fillStyle = "rgba(6,8,12,.82)"; ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    ctx.font = "bold 18px ui-monospace,monospace";
+    ctx.fillStyle = ARENA.won ? "#8fe3a0" : "#e08a8a";
+    ctx.fillText(ARENA.won ? "ПОБЕДА" : "ПОРАЖЕНИЕ", w / 2, h / 2 - 20);
+    if (ARENA.won && ARENA.reward){
+      ctx.font = "bold 12px ui-monospace,monospace";
+      ctx.fillStyle = "#ffd98a";
+      ctx.fillText("+" + ARENA.reward.coins + " монет", w / 2, h / 2 + 12);
+      ctx.fillText("+" + ARENA.reward.exp + " опыта", w / 2, h / 2 + 34);
+    }
+    ctx.font = "10px ui-monospace,monospace";
+    ctx.fillStyle = "#c9a227";
+    ctx.fillText("нажми ✕, чтобы выйти", w / 2, h / 2 + 70);
+    return;
+  }
+
+  // укрытия
+  ARENA.cover.forEach(function(c){
+    ctx.fillStyle = "#4a4438"; ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.fillStyle = "#6d6552"; ctx.fillRect(c.x, c.y, c.w, 5);
+    ctx.strokeStyle = "#2b2721"; ctx.lineWidth = 2;
+    ctx.strokeRect(c.x + 1, c.y + 1, c.w - 2, c.h - 2);
+  });
+
+  // ---- игрок ----
+  h1.atkCd = Math.max(0, h1.atkCd - dt);
+  h1.dashCd = Math.max(0, h1.dashCd - dt);
+  h1.dashT = Math.max(0, h1.dashT - dt);
+  h1.hurt = Math.max(0, h1.hurt - dt);
+  const sp = 300;
+  const nx = h1.x + ARENA.joy.dx * sp * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
+  const ny = h1.y + ARENA.joy.dy * sp * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
   h1.moving = Math.abs(ARENA.joy.dx) + Math.abs(ARENA.joy.dy) > 0.08;
   if (!arenaBlocked(nx, h1.y, 14)) h1.x = nx;
   if (!arenaBlocked(h1.x, ny, 14)) h1.y = ny;
-  h1.x = Math.max(24, Math.min(w - 24, h1.x)); h1.y = Math.max(30, Math.min(h - 24, h1.y));
+  h1.x = Math.max(20, Math.min(w - 20, h1.x));
+  h1.y = Math.max(30, Math.min(h - 20, h1.y));
   if (Math.abs(ARENA.joy.dx) > .1) h1.face = ARENA.joy.dx > 0 ? 1 : -1;
+
+  // ---- босс: фазы по HP, каждый паттерн с замахом ----
   const dx = h1.x - b.x, dy = h1.y - b.y, dist = Math.hypot(dx, dy) || 1;
-  b.hurt = Math.max(0, b.hurt - dt); b.tell = Math.max(0, b.tell - dt);
-  if (b.state === "walk"){
-    if (dist > 110){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
+  b.hurt = Math.max(0, b.hurt - dt);
+  b.tell = Math.max(0, b.tell - dt);
+  b.face = dx >= 0 ? 1 : -1;
+  const phase = b.hp < b.max * 0.33 ? 3 : b.hp < b.max * 0.66 ? 2 : 1;
+  if (phase !== b.phase){
+    b.phase = phase;
+    b.cd = 500;
+    ARENA.flash = 0.2;
+  }
+  if (b.state === "idle" || b.state === "walk"){
+    if (dist > 150){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
+    else if (dist < 90){ b.x -= dx / dist * b.sp * dt * 0.7; b.y -= dy / dist * b.sp * dt * 0.7; }
     b.cd -= dt * 1000;
     if (b.cd <= 0){
-      b.cd = 2200;
-      if (dist < 150){ b.state = "windup"; b.tell = 0.55; }
-      else { b.state = "volley"; b.tell = 0.45; }
+      const z = ARENA.zi;
+      // чем дальше локация — тем злее арсенал
+      const attacks = z <= 0 ? ["shot"]
+        : z <= 2 ? ["shot", "fan"]
+        : z <= 4 ? ["fan", "ring", "charge"]
+        : z <= 7 ? ["fan", "ring", "charge", "double"]
+        : ["ring", "double", "charge", "fan"];
+      b.state = attacks[Math.floor(Math.random() * attacks.length)];
+      b.tell = b.state === "charge" ? 0.7 : 0.55;
     }
-  } else if (b.state === "windup"){
-    if (b.tell <= 0){
-      if (dist < 170){ h1.hp -= b.dmg; h1.hurt = 0.3; ARENA.shake = 0.3; }
-      b.state = "walk"; b.cd = 1600;
+  } else if (b.tell <= 0){
+    if (b.state === "shot") bossShoot("shot");
+    else if (b.state === "fan") bossShoot("fan");
+    else if (b.state === "ring") bossShoot("ring");
+    else if (b.state === "double"){
+      bossShoot("ring");
+      setTimeout(function(){ if (ARENA.on && !ARENA.over) bossShoot("fan"); }, 350);
+    } else if (b.state === "charge"){
+      b.chargeVX = dx / dist * 620; b.chargeVY = dy / dist * 620;
+      b.chargeT = 0.35;
     }
-  } else if (b.state === "volley"){
-    if (b.tell <= 0){
-      const n = 3 + Math.min(4, Math.floor(zc / 2));
-      for (let i = 0; i < n; i++){
-        const a = Math.atan2(dy, dx) + (i - (n - 1) / 2) * 0.22;
-        ARENA.arrows.push({x: b.x, y: b.y - 30, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, t: 3});
-      }
-      b.state = "walk"; b.cd = 1900;
+    b.state = "recover";
+    b.cd = Math.max(700, 2200 - ARENA.zi * 140 - (b.phase - 1) * 260);
+  } else if (b.state === "recover"){
+    b.cd -= dt * 1000;
+    if (b.chargeT > 0){
+      b.chargeT -= dt;
+      b.x += b.chargeVX * dt; b.y += b.chargeVY * dt;
     }
+    if (b.cd <= 0) b.state = "walk";
   }
-  b.face = dx >= 0 ? 1 : -1;
-  ARENA.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt; });
-  ARENA.arrows = ARENA.arrows.filter(function(a){
-    if (Math.hypot(a.x - h1.x, a.y - (h1.y - 22)) < 24){ h1.hp -= 8; h1.hurt = 0.25; return false; }
-    return a.t > 0 && a.x > -30 && a.x < w + 30 && a.y > -30 && a.y < h + 30;
-  });
-  ARENA.hits = ARENA.hits.filter(function(x){ x.t -= dt; x.y -= 28 * dt; return x.t > 0; });
-  // укрытия
-  (ARENA.cover || []).forEach(function(c){
-    ctx.fillStyle = "rgba(60,70,60,.9)";
-    ctx.fillRect(c.x, c.y, c.w, c.h);
-    ctx.fillStyle = "rgba(150,170,140,.55)";
-    ctx.fillRect(c.x, c.y, c.w, 5);
-    ctx.strokeStyle = "#3a4a36"; ctx.lineWidth = 2;
-    ctx.strokeRect(c.x + 1, c.y + 1, c.w - 2, c.h - 2);
-  });
-  const im = BOSS_IMG[b.key];
-  const row = (b.state === "windup" || b.state === "volley") ? 2 : 1;
-  const frame = Math.floor(ARENA.t * 7) % 4;
-  if (im && im.complete && im.naturalWidth){
-    ctx.save(); ctx.translate(b.x, b.y); ctx.scale(b.face, 1);
-    ctx.imageSmoothingEnabled = false;
-    if (b.hurt > 0) ctx.globalAlpha = .75;
-    ctx.drawImage(im, frame * 48, row * 32, 48, 32, -72, -120, 144, 96);
+  b.x = Math.max(30, Math.min(w - 30, b.x));
+  b.y = Math.max(40, Math.min(h - 120, b.y));
+
+  // замах: показываем, куда будет удар
+  if (b.state !== "idle" && b.state !== "walk" && b.state !== "recover"){
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,110,110,.85)";
+    ctx.lineWidth = 3;
+    if (b.state === "ring"){
+      ctx.beginPath(); ctx.arc(b.x, b.y, 40 + b.tell * 120, 0, 7); ctx.stroke();
+    } else if (b.state === "charge"){
+      ctx.beginPath(); ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + dx / dist * 400, b.y + dy / dist * 400); ctx.stroke();
+    } else {
+      const a = Math.atan2(dy, dx);
+      ctx.beginPath(); ctx.arc(b.x, b.y, 160, a - 0.5, a + 0.5); ctx.stroke();
+    }
     ctx.restore();
   }
-  if (b.state === "windup"){
-    ctx.strokeStyle = "rgba(255,90,90,.7)"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(b.x, b.y, 170, 0, 7); ctx.stroke();
-  }
-  if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
-    ctx.save(); ctx.translate(h1.x, h1.y); ctx.scale(h1.face, 1);
+
+  // ---- снаряды ----
+  ARENA.arrows.forEach(function(a){ a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt; });
+  ARENA.arrows = ARENA.arrows.filter(function(a){
+    if (arenaBlocked(a.x, a.y, 2)) return false;
+    if (Math.hypot(a.x - h1.x, a.y - (h1.y - 20)) < 22){
+      h1.hp -= 9 + ARENA.zi;
+      h1.hurt = 0.3;
+      ARENA.shake = 0.18;
+      return false;
+    }
+    return a.t > 0 && a.x > -40 && a.x < w + 40 && a.y > -40 && a.y < h + 40;
+  });
+
+  // ---- рисуем босса ----
+  const im = BOSS_IMG[b.key];
+  const bob = Math.sin(ARENA.t * 3) * 3;
+  if (im && im.complete && im.naturalWidth){
+    ctx.save();
+    ctx.translate(b.x, b.y + bob);
+    ctx.scale(b.face, 1);
     ctx.imageSmoothingEnabled = false;
-    const f = (h1.moving || h1.atkCd > 0.18) ? (Math.floor(ARENA.t * 10) % 4) : 0;
-    ctx.drawImage(ARENA_HERO, f * 16, 0, 16, 16, -26, -56, 52, 52);
+    if (b.hurt > 0){ ctx.globalAlpha = .6; }
+    ctx.drawImage(im, 0, 0, 96, 96, -84, -120, 168, 168);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#d8434a";
+    ctx.fillRect(b.x - 40, b.y - 80, 80, 80);
+  }
+
+  // ---- рисуем игрока ----
+  if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
+    ctx.save();
+    ctx.translate(h1.x, h1.y);
+    ctx.scale(h1.face, 1);
+    ctx.imageSmoothingEnabled = false;
+    const f = (h1.moving || h1.atkCd > 0.15) ? (Math.floor(ARENA.t * 10) % 4) : 0;
+    ctx.drawImage(ARENA_HERO, f * 16, 0, 16, 16, -26, -58, 52, 52);
     ctx.restore();
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
   }
-  ctx.fillStyle = "#ffd166";
+
+  // снаряды и цифры
+  ctx.fillStyle = "#ffb15c";
   ARENA.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, 7); ctx.fill(); });
-  ctx.font = "bold 14px ui-monospace,monospace"; ctx.textAlign = "center";
+  ctx.textAlign = "center";
+  ARENA.hits = ARENA.hits.filter(function(x){ x.t -= dt; x.y -= 34 * dt; return x.t > 0; });
+  ctx.font = "bold 14px ui-monospace,monospace";
   ARENA.hits.forEach(function(x){
-    if (x.vx){ x.x += x.vx * dt; x.y += (x.vy || -80) * dt; x.vy += 260 * dt; }
-    ctx.globalAlpha = Math.max(0, x.t); ctx.fillStyle = "#ff6b6b";
+    ctx.globalAlpha = Math.max(0, x.t); ctx.fillStyle = "#ffd166";
     ctx.fillText("-" + Math.round(x.v), x.x, x.y); ctx.globalAlpha = 1;
   });
+
   if (ARENA.flash > 0){
-    ctx.fillStyle = "rgba(255,255,255," + (ARENA.flash * 3) + ")";
+    ctx.fillStyle = "rgba(255,255,255," + Math.min(0.5, ARENA.flash * 3) + ")";
     ctx.fillRect(0, 0, w, h);
   }
+
+  // HUD
   document.getElementById("apHp").style.width = Math.max(0, h1.hp / h1.max * 100) + "%";
   document.getElementById("apHpTxt").textContent = Math.max(0, Math.round(h1.hp));
   document.getElementById("abHp").style.width = Math.max(0, b.hp / b.max * 100) + "%";
   document.getElementById("abHpTxt").textContent = Math.max(0, Math.round(b.hp));
-  if (b.hp <= 0) return closeArena(true);
-  if (h1.hp <= 0) return closeArena(false);
+
+  if (b.hp <= 0 || h1.hp <= 0){
+    ARENA.over = true;
+    ARENA.won = b.hp <= 0;
+    if (ARENA.won){
+      const zi = ARENA.zi;
+      ARENA.reward = {coins: 500 + zi * 400, exp: 50 + zi * 40};
+      P.coins = (P.coins || 0) + ARENA.reward.coins;
+      stats.exp += ARENA.reward.exp;
+      try { heroSave(true); } catch (e) {}
+      ARENA.cd[zi] = Date.now() + 5000;
+    }
+  }
 }
+
 /* Босс открывается у круга в локации: отдельной кнопки в HUD нет. */
 function bossCircleNear(){ return nearBoss(P.x, P.y, 0); }
 
