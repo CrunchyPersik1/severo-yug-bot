@@ -19,12 +19,12 @@ def test_command_exists():
     assert cmd_tutorial is not None
 
 
-def test_hub_has_tutorial_overlay():
-    for marker in ('id="tut"', 'id="tutSpot"', 'id="tutNext"', "function tutStart()"):
-        assert marker in HUB_PAGE, marker
-    # автостарт по ссылке из бота и глобальный запуск
-    assert 'location.search.indexOf("tutorial=1")' in HUB_PAGE
-    assert "window.__startTutorial = tutStart" in HUB_PAGE
+def test_tutorial_overlay_lives_in_shared_layer():
+    from app.webtheme import BOOTSTRAP
+
+    assert "function tutStart()" in BOOTSTRAP
+    assert "window.__startTutorial = tutStart" in BOOTSTRAP
+    assert 'location.search.indexOf("tutorial=1")' in BOOTSTRAP
 
 
 def test_settings_have_tutorial_button():

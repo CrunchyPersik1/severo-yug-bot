@@ -4433,17 +4433,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
       <div class="mk-dots" id="mkDots"></div>
     </div>
     <div class="grid" id="tiles"></div>
-<div id="tut">
-  <div class="spot" id="tutSpot"></div>
-  <div class="tip" id="tutTip">
-    <b id="tutTitle">Обучение</b>
-    <p id="tutText"></p>
-    <div class="row">
-      <button class="next" id="tutNext">Далее</button>
-      <button class="skip" id="tutSkip">Пропустить</button>
-    </div>
-  </div>
-</div>
+
 
   </section>
 
@@ -4476,101 +4466,7 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 <div id="toast"></div>
 <script>
 
-/* ---------- обучение в приложении ---------- */
-const TUT_STEPS = [
-  {sel: ".tile[data-sec='drop']", title: "1/8 · Что это за игра",
-   text: "Коллекционная игра: собираешь карточки персонажей, качаешь их и сражаешься с другими. Карты падают из карты дня, кейсов и рулетки."},
-  {sel: "#bal", title: "2/8 · Очки",
-   text: "Очки — главная валюта. Их приносят карточки, задания и кликер. Тратятся в магазине и на рынке."},
-  {sel: ".tile[data-sec='drop']", title: "3/8 · Карта дня",
-   text: "Бесплатная попытка раз в сутки, сброс в 12:00 по ЕКБ. Чем реже редкость — тем сильнее карта."},
-  {sel: ".tile[data-sec='cases']", title: "4/8 · Кейсы и рулетка",
-   text: "Кейс открывается лентой, рулетка крутит колесо. Шансы всегда показаны списком — видно, на что идёшь."},
-  {sel: ".tile[data-sec='yugi']", title: "5/8 · Кликер",
-   text: "Самый простой заработок: тапаешь, покупаешь здания, они приносят очки даже офлайн. С него удобно накопить на первый кейс."},
-  {sel: ".tile[data-sec='dungeon']", title: "6/8 · Подземелье",
-   text: "Ходишь по локациям, бьёшь мобов и боссов за монеты и оружие. Джойстик, рывок, телепорт и лавка оружия."},
-  {sel: ".tile[data-sec='pets']", title: "7/8 · Питомцы и ивент",
-   text: "Питомник даёт петов с пассивками, а в ивенте «Санта Егор» — сюжет, эльфы и боссы."},
-  {sel: "#__gear", title: "8/8 · Настройки",
-   text: "Шестерня: темы, эффекты карточек и это обучение. Пройти заново можно в любой момент."}
-];
-let tutIndex = 0, tutPlaceTimer = 0;
-
-function tutMeasure(){
-  const step = TUT_STEPS[tutIndex];
-  const el = document.querySelector(step.sel);
-  const spot = document.getElementById("tutSpot");
-  const tip = document.getElementById("tutTip");
-  if (!el) return false;
-  // позиция с учётом прокрутки в момент замера, а не до неё
-  const r = el.getBoundingClientRect();
-  const pad = 10;
-  spot.style.left = Math.max(4, r.left - pad) + "px";
-  spot.style.top = Math.max(4, r.top - pad) + "px";
-  spot.style.width = Math.min(window.innerWidth - 8, r.width + pad * 2) + "px";
-  spot.style.height = (r.height + pad * 2) + "px";
-  const tipH = tip.offsetHeight || 170;
-  const below = r.bottom + 14;
-  const above = r.top - tipH - 14;
-  let top = below + tipH < window.innerHeight - 12 ? below : above;
-  top = Math.max(12, Math.min(window.innerHeight - tipH - 12, top));
-  tip.style.top = top + "px";
-  return true;
-}
-
-function tutScheduleMeasure(){
-  clearTimeout(tutPlaceTimer);
-  tutPlaceTimer = setTimeout(tutMeasure, 60);
-  requestAnimationFrame(tutMeasure);
-}
-
-function tutShow(i){
-  tutIndex = Math.max(0, Math.min(TUT_STEPS.length - 1, i));
-  const step = TUT_STEPS[tutIndex];
-  const el = document.querySelector(step.sel);
-  if (!el){
-    if (tutIndex < TUT_STEPS.length - 1) return tutShow(tutIndex + 1);
-    return tutEnd();
-  }
-  document.getElementById("tut").classList.add("on");
-  document.getElementById("tutTitle").textContent = step.title;
-  document.getElementById("tutText").textContent = step.text;
-  document.getElementById("tutNext").textContent =
-    tutIndex === TUT_STEPS.length - 1 ? "Готово" : "Далее";
-  el.scrollIntoView({block: "center", behavior: "smooth"});
-  tutMeasure();
-  setTimeout(tutMeasure, 220);
-  setTimeout(tutMeasure, 420);
-  setTimeout(tutMeasure, 700);
-}
-
-function tutEnd(){
-  document.getElementById("tut").classList.remove("on");
-  clearTimeout(tutPlaceTimer);
-  try { localStorage.setItem("hub_tutorial", "done"); } catch (e) {}
-}
-
-function tutStart(){ tutIndex = 0; tutShow(0); }
-window.__startTutorial = tutStart;
-
-(function bindTutorial(){
-  const next = document.getElementById("tutNext");
-  if (next) next.onclick = function(){
-    if (tutIndex >= TUT_STEPS.length - 1) return tutEnd();
-    tutShow(tutIndex + 1);
-  };
-  const skip = document.getElementById("tutSkip");
-  if (skip) skip.onclick = tutEnd;
-  // держим рамку на месте при прокрутке и повороте экрана
-  window.addEventListener("scroll", function(){
-    if (document.getElementById("tut").classList.contains("on")) tutScheduleMeasure();
-  }, {passive: true});
-  window.addEventListener("resize", function(){
-    if (document.getElementById("tut").classList.contains("on")) tutScheduleMeasure();
-  });
-  if (location.search.indexOf("tutorial=1") >= 0) setTimeout(tutStart, 350);
-})();
+/* обучение живёт в общем слое: работает на любой странице */
 
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;

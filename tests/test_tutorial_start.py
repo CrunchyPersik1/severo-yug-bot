@@ -28,9 +28,15 @@ def test_tutorial_callback_exists():
     assert hasattr(handlers, "_tutorial_sequence")
 
 
-def test_hub_overlay_remeasures():
-    assert "function tutMeasure()" in HUB_PAGE
-    assert 'window.addEventListener("scroll"' in HUB_PAGE
-    assert "tutScheduleMeasure" in HUB_PAGE
+def test_tutorial_overlay_is_global():
+    from app.webtheme import BOOTSTRAP
+
+    # оверлей живёт в общем слое и работает на любой странице
+    assert "function tutSync()" in BOOTSTRAP
+    assert "requestAnimationFrame(tutSync)" in BOOTSTRAP
+    assert "#__tut{position:fixed" in BOOTSTRAP
     # восемь шагов с объяснением игры
-    assert "1/8" in HUB_PAGE and "8/8" in HUB_PAGE
+    assert "1/8 · Что это за игра" in BOOTSTRAP
+    assert "8/8 · Настройки" in BOOTSTRAP
+    # если цели нет на странице — рамка падает на шестерёнку
+    assert 'document.getElementById("__gear") || document.body' in BOOTSTRAP

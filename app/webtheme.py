@@ -245,6 +245,23 @@ POLISH = r"""<style>
   .__seg button{border:1px solid var(--line)!important;background:transparent!important;
     color:var(--muted)!important;border-radius:10px!important;padding:8px 11px!important;
     font-size:12px!important;font-weight:800!important;box-shadow:none!important}
+
+  /* ---------- обучение: общий оверлей для всех страниц ---------- */
+  #__tut{position:fixed;inset:0;z-index:9600;display:none}
+  #__tut.on{display:block}
+  #__tut .__spot{position:absolute;border-radius:14px;pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(4,8,14,.80);border:2px solid var(--acc);
+    transition:left .12s ease,top .12s ease,width .12s ease,height .12s ease}
+  #__tut .__tip{position:absolute;left:14px;right:14px;background:var(--panel);
+    border:1px solid color-mix(in srgb,var(--acc) 45%,var(--line));
+    border-radius:var(--r-2);padding:14px;box-shadow:0 18px 40px -18px #000}
+  #__tut .__tip b{display:block;font-size:var(--fs-md);margin-bottom:6px}
+  #__tut .__tip p{margin:0 0 12px;font-size:var(--fs-sm);color:var(--muted);line-height:1.5}
+  #__tut .__row{display:flex;gap:8px}
+  #__tut .__row button{flex:1;border:0;border-radius:var(--r-1);padding:12px;
+    font-family:inherit;font-size:var(--fs-sm);font-weight:800}
+  #__tut .__next{background:var(--acc);color:var(--acc-ink)}
+  #__tut .__skip{background:var(--panel2);color:var(--muted);flex:0 0 auto;padding:12px 16px}
   .__tut{width:100%;margin-top:10px;border:1px solid var(--line)!important;
     background:var(--panel2)!important;color:var(--ink)!important;border-radius:12px!important;
     padding:12px;font-family:inherit;font-size:13px;font-weight:700;box-shadow:none!important}
@@ -660,6 +677,110 @@ BOOTSTRAP = POLISH + r"""<script>
     }
     next();
   }
+
+  /* ---------- обучение: работает на любой странице ---------- */
+  var TUT = [
+    {sel: "[data-sec='drop']", title: "1/8 · Что это за игра",
+     text: "Коллекционная игра: собираешь карточки персонажей и сражаешься с другими. Карты падают из карты дня, кейсов и рулетки."},
+    {sel: "#bal", title: "2/8 · Очки",
+     text: "Очки — главная валюта. Приносят карточки, задания и кликер, тратятся в магазине и на рынке."},
+    {sel: "[data-sec='drop']", title: "3/8 · Карта дня",
+     text: "Бесплатная попытка раз в сутки, сброс в 12:00 по ЕКБ. Чем реже редкость — тем сильнее карта."},
+    {sel: "[data-sec='cases']", title: "4/8 · Кейсы и рулетка",
+     text: "Кейс открывается лентой, рулетка крутит колесо. Шансы всегда показаны списком."},
+    {sel: "[data-sec='yugi']", title: "5/8 · Кликер",
+     text: "Самый простой заработок: тапаешь, покупаешь здания, они приносят очки даже офлайн."},
+    {sel: "[data-sec='dungeon']", title: "6/8 · Подземелье",
+     text: "Ходишь по локациям, бьёшь мобов и боссов за монеты и оружие."},
+    {sel: "[data-sec='pets']", title: "7/8 · Питомцы и ивент",
+     text: "Питомник даёт петов с пассивками, в ивенте «Санта Егор» — сюжет и боссы."},
+    {sel: "#__gear", title: "8/8 · Настройки",
+     text: "Шестерня: темы, эффекты и это обучение. Пройти заново можно в любой момент."}
+  ];
+  var tutIndex = 0, tutRaf = 0, tutBox = null, tutSpot = null, tutTip = null;
+
+  function tutBuild(){
+    if (tutBox) return;
+    tutBox = document.createElement("div");
+    tutBox.id = "__tut";
+    tutBox.innerHTML =
+      '<div class="__spot"></div>' +
+      '<div class="__tip"><b></b><p></p>' +
+      '<div class="__row"><button class="__next">Далее</button>' +
+      '<button class="__skip">Пропустить</button></div></div>';
+    document.body.appendChild(tutBox);
+    tutSpot = tutBox.querySelector(".__spot");
+    tutTip = tutBox.querySelector(".__tip");
+    tutBox.querySelector(".__next").onclick = function(){ tutStep(1); };
+    tutBox.querySelector(".__skip").onclick = tutClose;
+  }
+
+  /* Цель шага: ищем по селектору, а если такого нет (другая страница) —
+     берём шестерёнку, чтобы рамка никогда не висела в пустоте. */
+  function tutTarget(step){
+    var el = step.sel ? document.querySelector(step.sel) : null;
+    if (el && el.getBoundingClientRect().height > 8) return el;
+    return document.getElementById("__gear") || document.body;
+  }
+
+  /* Позиция пересчитывается каждый кадр: рамка не отстаёт и не уезжает
+     вместе со списком. */
+  function tutSync(){
+    if (!tutBox || !tutBox.classList.contains("on")) return;
+    var step = TUT[tutIndex];
+    var el = tutTarget(step);
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    var pad = 8;
+    var top = Math.max(2, r.top - pad);
+    var left = Math.max(2, r.left - pad);
+    var wid = Math.min(window.innerWidth - 4, r.width + pad * 2);
+    var hei = Math.max(28, r.height + pad * 2);
+    tutSpot.style.top = top + "px";
+    tutSpot.style.left = left + "px";
+    tutSpot.style.width = wid + "px";
+    tutSpot.style.height = hei + "px";
+    var tipH = tutTip.offsetHeight || 170;
+    var below = top + hei + 12;
+    var pos = below + tipH < window.innerHeight - 10 ? below : (top - tipH - 12);
+    pos = Math.max(10, Math.min(window.innerHeight - tipH - 10, pos));
+    tutTip.style.top = pos + "px";
+    tutRaf = requestAnimationFrame(tutSync);
+  }
+
+  function tutStep(dir){
+    var next = tutIndex + dir;
+    if (next < 0) next = 0;
+    if (next >= TUT.length){ tutClose(); return; }
+    tutIndex = next;
+    var step = TUT[tutIndex];
+    tutBox.querySelector("b").textContent = step.title;
+    tutBox.querySelector("p").textContent = step.text;
+    tutBox.querySelector(".__next").textContent =
+      tutIndex === TUT.length - 1 ? "Готово" : "Далее";
+    var el = tutTarget(step);
+    if (el && el.scrollIntoView) el.scrollIntoView({block: "center", behavior: "smooth"});
+    cancelAnimationFrame(tutRaf);
+    tutSync();
+  }
+
+  function tutClose(){
+    cancelAnimationFrame(tutRaf);
+    if (tutBox) tutBox.classList.remove("on");
+  }
+
+  function tutStart(){
+    tutBuild();
+    tutIndex = -1;
+    tutBox.classList.add("on");
+    tutStep(1);
+  }
+
+  window.__startTutorial = tutStart;
+  document.addEventListener("DOMContentLoaded", function(){
+    if (location.search.indexOf("tutorial=1") >= 0) setTimeout(tutStart, 300);
+  });
+
   window.__revealCards = revealCards;
 
  // Сброс зума: WebView запоминает pinch/double-tap и остаётся увеличенным,
