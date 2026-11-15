@@ -2621,6 +2621,44 @@ async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
         )
 
 
+@router.message(Command("tutorial", "обучение"))
+async def cmd_tutorial(message: Message, bot: Bot) -> None:
+    """Обучение: шесть коротких сообщений с паузой и кнопкой в приложение."""
+    from . import tutorial as tutorial_mod
+
+    steps = tutorial_mod.payload()
+    await message.answer(
+        "🎓 <b>Обучение</b>\n"
+        "Сейчас расскажу базу: 6 коротких сообщений, по одному каждые 5 секунд. "
+        "Потом позову в приложение, где обучение продолжится с подсветкой."
+    )
+    for index, step in enumerate(steps[1:], start=2):
+        await asyncio.sleep(5)
+        try:
+            await bot.send_message(
+                message.chat.id,
+                f"<b>{index}/6 · {step['title']}</b>\n{step['text']}",
+            )
+        except Exception:  # noqa: BLE001 - чат могли закрыть
+            return
+    await asyncio.sleep(1)
+    url = _base_url()
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎓 Продолжить в приложении",
+                    web_app=WebAppInfo(url=f"{url}/hub?tutorial=1"),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "Дальше — в приложении: покажу, куда нажимать, прямо на экране.",
+        reply_markup=keyboard,
+    )
+
+
 @router.message(Command("promo", "промокод"))
 @router.message(NormalizedText("промокод", "промо"))
 async def cmd_promo(message: Message, db: Database) -> None:

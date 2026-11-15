@@ -4396,6 +4396,23 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 .pres .n{flex:1;min-width:0;font-size:13px;font-weight:800;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis}
 .pres .l{font-size:11px;color:var(--muted);font-weight:700}
+
+/* ---------- обучение ---------- */
+#tut{position:fixed;inset:0;z-index:9500;display:none;pointer-events:none}
+#tut.on{display:block;pointer-events:auto}
+#tut .spot{position:absolute;border-radius:14px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(4,8,14,.78);border:2px solid rgba(99,164,255,.9);
+  transition:all .25s ease}
+#tut .tip{position:absolute;left:16px;right:16px;background:var(--panel);
+  border:1px solid color-mix(in srgb,var(--acc) 45%,var(--line));border-radius:var(--r-2);
+  padding:14px;box-shadow:0 18px 40px -18px #000;transition:top .25s ease}
+#tut .tip b{display:block;font-size:var(--fs-md);margin-bottom:6px}
+#tut .tip p{margin:0 0 12px;font-size:var(--fs-sm);color:var(--muted);line-height:1.5}
+#tut .row{display:flex;gap:8px}
+#tut .row button{flex:1;border:0;border-radius:var(--r-1);padding:12px;
+  font-family:inherit;font-size:var(--fs-sm);font-weight:800}
+#tut .next{background:var(--acc);color:var(--acc-ink)}
+#tut .skip{background:var(--panel2);color:var(--muted);flex:0 0 auto;padding:12px 16px}
 </style>
 </head>
 <body>
@@ -4416,6 +4433,18 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
       <div class="mk-dots" id="mkDots"></div>
     </div>
     <div class="grid" id="tiles"></div>
+<div id="tut">
+  <div class="spot" id="tutSpot"></div>
+  <div class="tip" id="tutTip">
+    <b id="tutTitle">Обучение</b>
+    <p id="tutText"></p>
+    <div class="row">
+      <button class="next" id="tutNext">Далее</button>
+      <button class="skip" id="tutSkip">Пропустить</button>
+    </div>
+  </div>
+</div>
+
   </section>
 
   <section class="panel" id="p-collection">
@@ -4446,6 +4475,67 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
 
 <div id="toast"></div>
 <script>
+
+/* ---------- обучение в приложении ---------- */
+const TUT_STEPS = [
+  {sel: "#bal", title: "1/6 · Очки",
+   text: "Это твой баланс. Очки дают карточки, задания и кликер — тратить их можно в магазине и на рынке."},
+  {sel: ".tile[data-sec='drop']", title: "2/6 · Карта дня",
+   text: "Раз в сутки выбиваешь карту. Редкость видна по цвету рамки — редкие приносят больше очков."},
+  {sel: ".tile[data-sec='yugi']", title: "3/6 · Кликер",
+   text: "Самый простой источник монет: тапай, качай здания, получай пассивный доход."},
+  {sel: ".tile[data-sec='cases']", title: "4/6 · Кейсы и рулетка",
+   text: "Кейсы и рулетка — шанс на карту и валюту. Шансы всегда показаны списком."},
+  {sel: ".tile[data-sec='dungeon']", title: "5/6 · Подземелье",
+   text: "Тут ходишь, бьёшь мобов и боссов за монеты и оружие. Есть джойстик и телепорт по локациям."},
+  {sel: "#__gear", title: "6/6 · Настройки",
+   text: "Шестерня — темы, эффекты и кнопка «Пройти обучение», если захочешь повторить."}
+];
+let tutIndex = 0;
+function tutShow(i){
+  tutIndex = Math.max(0, Math.min(TUT_STEPS.length - 1, i));
+  const step = TUT_STEPS[tutIndex];
+  const el = document.querySelector(step.sel);
+  const box = document.getElementById("tut");
+  const spot = document.getElementById("tutSpot");
+  const tip = document.getElementById("tutTip");
+  if (!el){ if (tutIndex < TUT_STEPS.length - 1) return tutShow(tutIndex + 1); return tutEnd(); }
+  box.classList.add("on");
+  el.scrollIntoView({block: "center", behavior: "smooth"});
+  const r = el.getBoundingClientRect();
+  const pad = 8;
+  spot.style.left = (r.left - pad) + "px";
+  spot.style.top = (r.top - pad) + "px";
+  spot.style.width = (r.width + pad * 2) + "px";
+  spot.style.height = (r.height + pad * 2) + "px";
+  document.getElementById("tutTitle").textContent = step.title;
+  document.getElementById("tutText").textContent = step.text;
+  const tipH = 150;
+  const below = r.bottom + 12;
+  const top = Math.min(window.innerHeight - tipH - 16, Math.max(12, below));
+  tip.style.top = top + "px";
+  document.getElementById("tutNext").textContent =
+    tutIndex === TUT_STEPS.length - 1 ? "Готово" : "Далее";
+}
+function tutEnd(){
+  document.getElementById("tut").classList.remove("on");
+  try { localStorage.setItem("hub_tutorial", "done"); } catch (e) {}
+}
+function tutStart(){ tutIndex = 0; tutShow(0); }
+window.__startTutorial = tutStart;
+(function bindTutorial(){
+  const next = document.getElementById("tutNext");
+  if (next) next.onclick = function(){
+    if (tutIndex >= TUT_STEPS.length - 1) return tutEnd();
+    tutShow(tutIndex + 1);
+  };
+  const skip = document.getElementById("tutSkip");
+  if (skip) skip.onclick = tutEnd;
+  const wantTutorial = location.search.indexOf("tutorial=1") >= 0;
+  if (wantTutorial) setTimeout(tutStart, 350);
+})();
+
+
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
 let S = {data: null};

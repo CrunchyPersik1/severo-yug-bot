@@ -245,6 +245,9 @@ POLISH = r"""<style>
   .__seg button{border:1px solid var(--line)!important;background:transparent!important;
     color:var(--muted)!important;border-radius:10px!important;padding:8px 11px!important;
     font-size:12px!important;font-weight:800!important;box-shadow:none!important}
+  .__tut{width:100%;margin-top:10px;border:1px solid var(--line)!important;
+    background:var(--panel2)!important;color:var(--ink)!important;border-radius:12px!important;
+    padding:12px;font-family:inherit;font-size:13px;font-weight:700;box-shadow:none!important}
   .__seg button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
     border-color:transparent!important}
   .__sw{border:1px solid var(--line)!important;background:var(--panel2)!important;
@@ -502,8 +505,14 @@ BOOTSTRAP = POLISH + r"""<script>
       '</div></div>' +
       (pin ? '<button class="__sw" id="__pin-clear">Снять</button>' : "") +
       '</div>' +
+      '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
       '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
       'во всех мини-аппках.</div></div>';
+    var tutBtn = document.getElementById("__tut-run");
+    if (tutBtn) tutBtn.onclick = function(){
+      if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
+      location.href = "/hub?tutorial=1";
+    };
     var x = document.getElementById("__gear-x");
     if (x) x.onclick = function(){ ov.classList.remove("on"); };
     var fxBtn = document.getElementById("__sw-fx");
