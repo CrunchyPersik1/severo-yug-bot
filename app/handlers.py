@@ -2614,6 +2614,16 @@ async def cmd_start_menu(message: Message, bot: Bot, db: Database) -> None:
     app_url = _base_url() if message.chat.type == "private" else ""
     text, keyboard = render.render_main_menu(await _bot_username(bot), app_url)
     await message.answer(text, reply_markup=keyboard)
+    # Трофим владеет одноимённой темой: выдаём при первом заходе
+    if user is not None:
+        try:
+            from . import themes as themes_mod
+
+            if themes_mod.is_trofim(user.id, user.username, user.first_name):
+                if themes_mod.TROFIM_THEME not in (await db.owned_themes(user.id)):
+                    await db.grant_theme(user.id, themes_mod.TROFIM_THEME)
+        except Exception:  # noqa: BLE001
+            pass
     # Новичку сразу предлагаем обучение: без него непонятно, что тут делать.
     if user is not None:
         fresh = False
@@ -2687,6 +2697,48 @@ async def cb_tutorial(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer()
     if callback.message:
         await _tutorial_sequence(bot, callback.message.chat.id)
+
+
+async def _is_vip(db, user_id: int) -> bool:
+    """Действует ли VIP-подписка: у VIP потолок ставки выше."""
+    try:
+        return bool(await db.vip_active(user_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+@router.message(Command("trofim", "трофим"))
+async def cmd_trofim(message: Message, db: Database) -> None:
+    """Личная тема Трофима: владелец выдаёт её сам, без админа."""
+    from . import themes as themes_mod
+
+    user = message.from_user
+    if user is None:
+        return
+    if not themes_mod.is_trofim(user.id, user.username, user.first_name):
+        await message.answer("Эта команда только для Трофима.")
+        return
+    target = None
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target = message.reply_to_message.from_user
+    else:
+        parts = (message.text or "").split()
+        if len(parts) > 1:
+            await message.answer(
+                "🏷 Ответь на сообщение игрока или напиши: /trofim @ник"
+            )
+            return
+    if target is None:
+        await db.grant_theme(user.id, themes_mod.TROFIM_THEME)
+        await message.answer(
+            "🏷 Тема «Трофим» закреплена за тобой. "
+            "Выдать другому: ответь на его сообщение командой /trofim"
+        )
+        return
+    await db.grant_theme(target.id, themes_mod.TROFIM_THEME)
+    await message.answer(
+        f"🏷 Тема «Трофим» выдана игроку {target.first_name or target.id}."
+    )
 
 
 @router.message(Command("tutorial", "обучение"))

@@ -160,6 +160,29 @@ def vip_only(theme: Theme) -> bool:
     return bool(theme.vip)
 
 
+TROFIM_THEME = "trofim"
+
+
+def is_trofim(user_id: int, username: str | None = None,
+              first_name: str | None = None) -> bool:
+    """Трофим — владелец одноимённой темы. Может выдавать её сам.
+
+    Сначала смотрим список id из TROFIM_IDS, затем — на имя или ник:
+    так работает и без настройки переменной на Render.
+    """
+    import os
+
+    raw = (os.getenv("TROFIM_IDS") or "").strip()
+    ids = {int(part) for part in raw.replace(" ", "").split(",") if part.isdigit()}
+    if ids and int(user_id) in ids:
+        return True
+    handle = (username or "").lower()
+    if handle.startswith("trofim") or handle.startswith("трофим"):
+        return True
+    name = (first_name or "").lower()
+    return "трофим" in name or "trofim" in name
+
+
 def granted_only(theme: Theme) -> bool:
     return bool(theme.personal)
 

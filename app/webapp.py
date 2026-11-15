@@ -2286,6 +2286,22 @@ def _owned_cards(counts: dict[str, int]) -> list:
     )
 
 
+async def _casino_max_bet(state, user_id: int) -> int:
+    """Потолок ставки: VIP — до миллиона, остальные — до ста тысяч."""
+    from datetime import datetime, timezone
+
+    try:
+        async with state.db.pool.acquire() as con:
+            until = await con.fetchval(
+                "select vip_until from players where user_id = $1", int(user_id)
+            )
+    except Exception:  # noqa: BLE001
+        return casino.MAX_BET
+    if until is not None and until > datetime.now(timezone.utc):
+        return casino.VIP_MAX_BET
+    return casino.MAX_BET
+
+
 async def _settle_classic_prize(state, uid: int, prize: tuple[str, Any]) -> dict[str, Any]:
     """Выдаёт приз классической рулетки и описывает его для ленты."""
     kind, value = prize
@@ -4754,6 +4770,7 @@ async def api_casino(request: Request) -> JSONResponse:
 
     user_id = int(user["id"])
     left = await state.db.casino_left(user_id, roulette_day_key(), casino.SPINS_PER_DAY)
+    top_bet = await _casino_max_bet(state, user_id)
     return JSONResponse(
         {
             "me": {
@@ -4761,7 +4778,7 @@ async def api_casino(request: Request) -> JSONResponse:
                 "left": left,
                 "cap": casino.SPINS_PER_DAY,
             },
-            "limits": {"min": casino.MIN_BET, "max": casino.MAX_BET},
+            "limits": {"min": casino.MIN_BET, "max": top_bet},
             "games": _casino_games(),
         }
     )
@@ -4786,9 +4803,10 @@ async def api_casino_play(request: Request) -> JSONResponse:
 
     if game not in dice_casino.GAMES or not dice_casino.is_choice_valid(game, choice):
         return JSONResponse({"error": "Не понял выбор"}, status_code=400)
-    if not casino.MIN_BET <= bet <= casino.MAX_BET:
+    top_bet = await _casino_max_bet(state, user_id)
+    if not casino.MIN_BET <= bet <= top_bet:
         return JSONResponse(
-            {"error": f"Ставка от {casino.MIN_BET} до {casino.MAX_BET} очков"},
+            {"error": f"Ставка от {casino.MIN_BET} до {top_bet} очков"},
             status_code=400,
         )
     balance = await state.market.balance(user_id)
@@ -5092,7 +5110,7 @@ async def api_roulette_table(request: Request) -> JSONResponse:
                 "left": left,
                 "cap": casino.SPINS_PER_DAY,
             },
-            "limits": {"min": casino.MIN_BET, "max": casino.MAX_BET},
+            "limits": {"min": casino.MIN_BET, "max": await _casino_max_bet(state, user_id)},
             "order": list(ROULETTE_ORDER),
             "red": sorted(ROULETTE_RED),
             "bets": [
