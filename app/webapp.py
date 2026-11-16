@@ -1568,7 +1568,7 @@ async def api_open_card_packs(request: Request) -> JSONResponse:
         counts = await state.db.get_collection(uid)
         is_new = card.card_id not in counts
         await state.db.add_card(uid, card.card_id)
-        await state.db.add_points(uid, card.points)
+        await state.db.add_points(uid, card.points, "drop", f"карта дня: {card.card_id}")
         item = _card_reveal(card)
         item["is_new"] = is_new
         cards.append(item)
@@ -2458,7 +2458,7 @@ async def _settle_crystal_prize(state, uid: int, prize: dict) -> dict[str, Any]:
         await state.db.add_case(uid, "ultra")
     else:
         amount = int(prize.get("amount") or 0)
-        await state.db.add_points(uid, amount)
+        await state.db.add_points(uid, amount, "roulette", "кристальная рулетка")
         item["amount"] = amount
     return item
 
