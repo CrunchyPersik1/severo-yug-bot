@@ -989,3 +989,39 @@ create table if not exists points_log (
     created_at timestamptz not null default now()
 );
 create index if not exists points_log_user_idx on points_log (user_id, created_at desc);
+
+
+-- Аудит очков на уровне БАЗЫ: триггер ловит любое изменение баланса,
+-- включая ручной SQL из консоли или SQL-редактора Supabase.
+create table if not exists points_audit (
+    id bigserial primary key,
+    user_id bigint not null,
+    old_points bigint,
+    new_points bigint,
+    delta bigint,
+    db_user text default current_user,
+    app_name text,
+    created_at timestamptz not null default now()
+);
+create index if not exists points_audit_user_idx on points_audit (user_id, created_at desc);
+
+create or replace function points_audit_fn() returns trigger as $$
+begin
+    if tg_op = 'UPDATE' and new.bonus_points is distinct from old.bonus_points then
+        insert into points_audit (user_id, old_points, new_points, delta, app_name)
+        values (
+            new.user_id,
+            old.bonus_points,
+            new.bonus_points,
+            new.bonus_points - old.bonus_points,
+            current_setting('application_name', true)
+        );
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists points_audit_trg on players;
+create trigger points_audit_trg
+    after update of bonus_points on players
+    for each row execute function points_audit_fn();
