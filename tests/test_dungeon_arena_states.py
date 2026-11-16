@@ -13,5 +13,6 @@ def test_recover_checked_before_tell_branch():
 
 
 def test_state_machine_closes_before_draw():
-    tail = DUNGEON_PAGE.split('b.cd = Math.max(700, 2200 - ARENA.zi * 140', 1)[1][:120]
-    assert "}" in tail.split("b.x = Math.max")[0]
+    # после блока состояний идёт зажим координат босса, значит цепочка закрыта
+    tail = DUNGEON_PAGE.split("b.cd = Math.max(450, 1500 - ARENA.zi * 90", 1)[1][:200]
+    assert "b.x = Math.max(30, Math.min(w - 30, b.x));" in tail

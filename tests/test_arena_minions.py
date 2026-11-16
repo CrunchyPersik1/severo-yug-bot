@@ -27,7 +27,7 @@ def test_minions_chase_hit_and_die():
 def test_shots_hit_minions_before_boss():
     block = DUNGEON_PAGE[DUNGEON_PAGE.index("ARENA.shots = (ARENA.shots || [])"):][:800]
     assert "ARENA.mobs[i]" in block
-    assert block.index("ARENA.mobs[i]") < block.index("b.y - 40")
+    assert block.index("ARENA.mobs[i]") < block.index("b.y - 60")
 
 
 def test_dash_gives_invulnerability():

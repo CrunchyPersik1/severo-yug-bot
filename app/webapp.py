@@ -12271,7 +12271,7 @@ function arenaSetup(){
   ARENA.t = 0; ARENA.arrows = []; ARENA.hits = []; ARENA.over = false;
   ARENA.reward = null; ARENA.flash = 0; ARENA.shake = 0; ARENA.joy = {dx:0, dy:0};
   ARENA.hearts = []; ARENA.heartCd = 7; ARENA.fire = false;
-  ARENA.volleyCd = 12000; ARENA.volley = 0; ARENA.volleyNext = 0;
+  ARENA.volleyCd = 10000; ARENA.volley = 0; ARENA.volleyNext = 0;
   ARENA.mobs = [];
   ARENA.w = w; ARENA.h = h;
   // В долях экрана: при растягивании на весь экран укрытия растут вместе
@@ -12287,7 +12287,7 @@ function arenaSetup(){
   const hp = Math.round(900 * Math.pow(1.85, zi));
   ARENA.boss = {key: bossKeyForZone(zi), x: w / 2, y: h * 0.26,
                 hp: hp, max: hp, dmg: Math.round(10 + zi * 3),
-                sp: 70 + zi * 4, face: 1, state: "idle", cd: 1200,
+                sp: 120 + zi * 10, face: 1, state: "idle", cd: 900,
                 hurt: 0, tell: 0, phase: 1};
   // если точка спавна попала в укрытие — поднимаемся, пока не свободно
   let guard = 0;
@@ -12565,8 +12565,10 @@ function arenaLoop(){
   const phase = b.hp < b.max * 0.33 ? 3 : b.hp < b.max * 0.66 ? 2 : 1;
   if (phase !== b.phase){
     b.phase = phase;
-    b.cd = 500;
+    b.cd = phase === 3 ? 0 : 400;
     ARENA.flash = 0.2;
+    // на входе в третью фазу босс сразу врубает залп с подмогой
+    if (phase === 3) ARENA.volleyCd = 0;
   }
   // recover проверяем ПЕРВЫМ: иначе ветка с tell <= 0 перехватывала его
   // каждый кадр, cd сбрасывался и босс застревал в одной атаке
@@ -12580,7 +12582,13 @@ function arenaLoop(){
   } else if (b.state === "idle" || b.state === "walk"){
     if (dist > 150){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
     else if (dist < 90){ b.x -= dx / dist * b.sp * dt * 0.7; b.y -= dy / dist * b.sp * dt * 0.7; }
-    b.cd -= dt * 1000;
+    // рыскает из стороны в сторону, чтобы бой не был стоянием на месте
+    if (dist >= 90 && dist <= 150){
+      b.x += Math.cos(ARENA.t * 1.7) * b.sp * 0.8 * dt;
+      b.y += Math.sin(ARENA.t * 1.3) * b.sp * 0.35 * dt;
+    }
+    // в третьей фазе атакует чаще (раньше мог пассивно стоять по 2.2 c)
+    b.cd -= dt * 1000 * (b.phase === 3 ? 1.5 : 1.0);
     if (b.cd <= 0){
       const z = ARENA.zi;
       // чем дальше локация — тем злее арсенал
@@ -12604,7 +12612,7 @@ function arenaLoop(){
       b.chargeT = 0.35;
     }
     b.state = "recover";
-    b.cd = Math.max(700, 2200 - ARENA.zi * 140 - (b.phase - 1) * 260);
+    b.cd = Math.max(450, 1500 - ARENA.zi * 90 - (b.phase - 1) * 220);
   }
 
   b.x = Math.max(30, Math.min(w - 30, b.x));
@@ -12651,7 +12659,7 @@ function arenaLoop(){
     // мобы принимают выстрел на себя, если стоят на линии
     for (let i = 0; i < ARENA.mobs.length; i++){
       const m = ARENA.mobs[i];
-      if (Math.hypot(a.x - m.x, a.y - (m.y - 18)) < 26){
+      if (Math.hypot(a.x - m.x, a.y - (m.y - 26)) < 34){
         m.hp -= ARENA.dmg;
         m.hurt = 0.22;
         arenaBeep(300, 0.06, "sawtooth");
@@ -12659,7 +12667,7 @@ function arenaLoop(){
         return false;
       }
     }
-    if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 40)) < 46){
+    if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 60)) < 62){
       b.hp -= ARENA.dmg;
       b.hurt = 0.25;
       arenaBeep(220, 0.07, "sawtooth");
@@ -12715,7 +12723,7 @@ function arenaLoop(){
   if (b.phase >= 3){
     ARENA.volleyCd -= dt * 1000;
     if (ARENA.volleyCd <= 0){
-      ARENA.volleyCd = 12000;
+      ARENA.volleyCd = 10000;
       ARENA.volley = 4;
       ARENA.volleyNext = 0;
       // вместе с залпом приходит подмога: 1 моб на локацию (на 5-й — 5, на 10-й — 10)
@@ -12752,7 +12760,7 @@ function arenaLoop(){
     if (b.hurt > 0) ctx.globalAlpha = .6;
     const bs = Math.floor(ARENA.t * 7) % bossSheet.cols;
     ctx.drawImage(bossSheet.img, bs * bossSheet.fw, 0, bossSheet.fw, bossSheet.fh,
-                  -70, -120, 140, 140);
+                  -105, -180, 210, 210);
     ctx.restore();
   } else if (BOSS_IMG[b.key] && BOSS_IMG[b.key].complete && BOSS_IMG[b.key].naturalWidth){
     const im = BOSS_IMG[b.key];
@@ -12805,7 +12813,7 @@ function arenaLoop(){
       if (m.hurt > 0) ctx.globalAlpha = .6;
       const fr = Math.floor(m.t * 6) % sheet.cols;
       ctx.drawImage(sheet.img, fr * sheet.fw, 0, sheet.fw, sheet.fh,
-                    -24, -44, 48, 48);
+                    -36, -66, 72, 72);
       ctx.restore();
     } else {
       ctx.fillStyle = "#b06a6a";
@@ -12814,9 +12822,9 @@ function arenaLoop(){
     // полоска HP над мобом
     const pct = Math.max(0, m.hp / m.max);
     ctx.fillStyle = "rgba(0,0,0,.45)";
-    ctx.fillRect(m.x - 16, m.y - 56, 32, 4);
+    ctx.fillRect(m.x - 22, m.y - 74, 44, 5);
     ctx.fillStyle = pct > 0.5 ? "#8fe3a0" : pct > 0.25 ? "#ffd166" : "#ef7d7d";
-    ctx.fillRect(m.x - 16, m.y - 56, 32 * pct, 4);
+    ctx.fillRect(m.x - 22, m.y - 74, 44 * pct, 5);
   });
 
   // аптечки
