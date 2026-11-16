@@ -874,7 +874,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .scard button[disabled]{background:var(--panel);color:var(--muted)}
 .scard button.pt{margin-top:3px;background:var(--panel);color:var(--acc2);
   border:1px solid color-mix(in srgb,var(--acc) 35%,var(--line))}
-.scard.own{opacity:.55}
+.scard .scol{position:absolute;top:4px;left:5px;font-size:8px;font-weight:800;
+  padding:1px 5px;border-radius:999px;background:rgba(8,12,18,.8);color:var(--muted)}
+.scard .srar{position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%}
+.scard{position:relative}
+.scard.own{border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 .sempty{grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center;padding:14px}
 .sreroll{width:100%;margin-top:8px;border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));
   background:var(--panel2);color:var(--acc2);border-radius:var(--r-1);padding:10px;
@@ -1117,6 +1121,11 @@ async function send(path, body){
 
 /* ---------- сток карт: общий, обновляется каждые 5 минут ---------- */
 let STOCK_LEFT = 0, STOCK_TIMER = 0, STOCK_WINDOW = -1;
+const RARITY_COLORS = {
+  rare: "#9aa4b2", superrare: "#3b82f6", epic: "#a855f7", mythic: "#ef4444",
+  legendary: "#eab308", secret: "#94a3b8", ultimate: "#e879f9",
+  ultra: "#f472b6", teacher: "#c2410c"
+};
 async function stockLoad(){
   const grid = document.getElementById("stkGrid");
   // это GET-ручка: post() вернул бы 405 и сток «не подгружался»
@@ -1141,9 +1150,12 @@ function stockPaint(items){
   if (!grid) return;
   grid.innerHTML = items.map(function(it){
     const pr = it.prices || {gems: it.price || 0, points: 0};
+    const rarColor = RARITY_COLORS[it.rarity] || "#5b6b83";
     return '<div class="scard' + (it.owned ? " own" : "") + '">' +
+      '<span class="scol">' + (it.collection === "d" ? "7Д" : "7Г") + '</span>' +
+      '<span class="srar" style="background:' + rarColor + '"></span>' +
       (it.image ? '<img src="' + esc(it.image) + '" alt="">' : '<div style="height:54px"></div>') +
-      '<div class="sn">' + esc(it.name || it.id) + '</div>' +
+      '<div class="sn" title="' + esc(it.rarity) + '">' + esc(it.name || it.id) + '</div>' +
       '<button data-stk="' + esc(it.id) + '" data-cur="gems">' + pr.gems + ' 💎</button>' +
       '<button class="pt" data-stk="' + esc(it.id) + '" data-cur="points">' +
       money(pr.points) + '</button></div>';

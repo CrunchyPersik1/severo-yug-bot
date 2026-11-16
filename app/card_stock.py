@@ -81,8 +81,9 @@ def _weight(rarity: str) -> float:
 def stock(window: int | None = None, reroll: int = 0, user_id: int = 0) -> list[dict[str, Any]]:
     window = window_key() if window is None else int(window)
     seed_text = f"cardstock:{window}"
-    if reroll or user_id:
-        # личная перекрутка: свой набор, общий таймер не трогаем
+    if reroll:
+        # личная перекрутка: свой набор, общий таймер не трогаем.
+        # Без перекрутки seed один на всех — сток общий.
         seed_text += f":{int(user_id)}:{int(reroll)}"
     seed = int(hashlib.sha256(seed_text.encode()).hexdigest()[:12], 16)
     rng = random.Random(seed)
