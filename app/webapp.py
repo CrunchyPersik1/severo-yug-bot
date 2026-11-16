@@ -12215,6 +12215,32 @@ Object.keys(BOSS_KINDS).forEach(function(k){
   const im = new Image(); im.src = BOSS_KINDS[k]; BOSS_IMG[k] = im;
 });
 const ARENA_HERO = new Image(); ARENA_HERO.src = "/static/hero_knight_m.png";
+// Спрайты боя: кадры по 100x100 (мобы) и 96-160 px (герои, боссы).
+const ARENA_SHEETS = {};
+function arenaSheet(key, src, fw, fh, cols){
+  if (ARENA_SHEETS[key]) return ARENA_SHEETS[key];
+  const img = new Image();
+  img.src = src;
+  ARENA_SHEETS[key] = {img: img, fw: fw, fh: fh, cols: cols};
+  return ARENA_SHEETS[key];
+}
+function arenaHeroSheet(){
+  const kind = (P.weapon && P.weapon.kind) || "sword";
+  if (kind === "bow") return arenaSheet("thief", "/images/arena/hero_thief.png", 96, 80, 4);
+  if (kind === "staff") return arenaSheet("anomaly", "/images/arena/hero_anomaly.png", 112, 80, 3);
+  return arenaSheet("knight", "/images/arena/hero_knight.png", 112, 112, 6);
+}
+const ARENA_BOSS_SHEETS = [
+  ["mob_orc.png", 100, 100, 6],
+  ["mob_soldier.png", 100, 100, 6],
+  ["mob_demon.png", 100, 100, 6],
+  ["mob_blood.png", 100, 100, 6],
+  ["boss_dead.png", 160, 160, 6]
+];
+function arenaBossSheet(zi){
+  const pick = ARENA_BOSS_SHEETS[zi % ARENA_BOSS_SHEETS.length];
+  return arenaSheet("boss_" + zi, "/images/arena/" + pick[0], pick[1], pick[2], pick[3]);
+}
 const ARENA = {on:false, t:0, raf:0, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0},
                cover:[], flash:0, shake:0, over:false, reward:null};
 
@@ -12514,9 +12540,20 @@ function arenaLoop(){
   });
 
   // ---- рисуем босса ----
-  const im = BOSS_IMG[b.key];
   const bob = Math.sin(ARENA.t * 3) * 3;
-  if (im && im.complete && im.naturalWidth){
+  const bossSheet = arenaBossSheet(ARENA.zi);
+  if (bossSheet.img.complete && bossSheet.img.naturalWidth){
+    ctx.save();
+    ctx.translate(b.x, b.y + bob);
+    ctx.scale(b.face, 1);
+    ctx.imageSmoothingEnabled = false;
+    if (b.hurt > 0) ctx.globalAlpha = .6;
+    const bs = Math.floor(ARENA.t * 7) % bossSheet.cols;
+    ctx.drawImage(bossSheet.img, bs * bossSheet.fw, 0, bossSheet.fw, bossSheet.fh,
+                  -70, -120, 140, 140);
+    ctx.restore();
+  } else if (BOSS_IMG[b.key] && BOSS_IMG[b.key].complete && BOSS_IMG[b.key].naturalWidth){
+    const im = BOSS_IMG[b.key];
     ctx.save();
     ctx.translate(b.x, b.y + bob);
     ctx.scale(b.face, 1);
@@ -12531,7 +12568,18 @@ function arenaLoop(){
   }
 
   // ---- рисуем игрока ----
-  if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
+  const heroSheet = arenaHeroSheet();
+  if (heroSheet.img.complete && heroSheet.img.naturalWidth){
+    ctx.save();
+    ctx.translate(h1.x, h1.y);
+    ctx.scale(h1.face, 1);
+    ctx.imageSmoothingEnabled = false;
+    if (h1.hurt > 0) ctx.globalAlpha = .65;
+    const hs = h1.dashT > 0 ? 3 : (h1.atkCd > 0.12 ? 2 : (h1.moving ? 1 : 0)) % heroSheet.cols;
+    ctx.drawImage(heroSheet.img, hs * heroSheet.fw, 0, heroSheet.fw, heroSheet.fh,
+                  -34, -74, 68, 68);
+    ctx.restore();
+  } else if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
     ctx.save();
     ctx.translate(h1.x, h1.y);
     ctx.scale(h1.face, 1);
