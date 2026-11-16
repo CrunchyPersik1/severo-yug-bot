@@ -29,7 +29,7 @@ def test_boss_damage_is_meaningful():
 
 
 def test_refusal_does_not_reopen_instantly():
-    handler = DUNGEON_PAGE.index('getElementById("lvlno").onclick')
-    body = DUNGEON_PAGE[handler:handler + 240]
+    handler = DUNGEON_PAGE.index("no.onclick")
+    body = DUNGEON_PAGE[handler:handler + 200]
     assert "bs.warned = true;" in body
     assert "bs.warned = false;      // вышел из круга" in DUNGEON_PAGE

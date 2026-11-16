@@ -9881,6 +9881,16 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 .nsrow button[disabled]{background:#3a2a12;color:#8a7a5a}
 </style>
 
+<div id="lvlwarn">
+  <div class="lwbox">
+    <div class="lwcap">БОСС НЕ ПО УРОВНЮ</div>
+    <div class="lwtext" id="lwtext">Локация рассчитана на другой уровень.</div>
+    <div class="lwrow">
+      <button id="lvlno">Отказаться</button>
+      <button id="lvlyes">Всё равно зайти</button>
+    </div>
+  </div>
+</div>
 <div id="arena">
   <button id="aexit">✕</button>
   <div class="ahud boss"><span class="nm" id="abName">БОСС</span>
@@ -9894,6 +9904,18 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   </div>
 </div>
 <style>
+#lvlwarn{position:fixed;inset:0;z-index:70;display:none;align-items:center;
+  justify-content:center;background:rgba(4,6,10,.75);padding:22px}
+#lvlwarn.on{display:flex}
+#lvlwarn .lwbox{max-width:340px;width:100%;background:#161b16;border:1px solid #7c3a0d;
+  border-radius:16px;padding:18px;text-align:center;color:#f2ece0}
+#lvlwarn .lwcap{font-size:11px;letter-spacing:1.4px;color:#ffb15c;font-weight:900}
+#lvlwarn .lwtext{margin-top:8px;font-size:14px;line-height:1.45}
+#lvlwarn .lwtext b{color:#ffd98a}
+#lvlwarn .lwrow{display:flex;gap:8px;margin-top:14px}
+#lvlwarn .lwrow button{flex:1;border-radius:12px;padding:12px;font-weight:800;
+  font-family:inherit;font-size:13px;border:1px solid #3a3f3a;background:#20261f;color:#cfd6cf}
+#lvlwarn .lwrow #lvlyes{border:0;background:#ff7a3c;color:#1a0f06;font-weight:900}
 #arena{position:fixed;inset:0;z-index:30;background:#07060a;display:none;
   flex-direction:column;overflow:hidden;touch-action:none}
 #arena.on{display:flex}
@@ -10949,44 +10971,35 @@ function inSafeZone(x, y){
 }
 
 // Плашка «босс не по уровню»: пускаем, но честно предупреждаем.
+let LEVEL_WARN_BOSS = null;
 function levelWarn(bs, req){
-  const old = document.getElementById("lvlwarn");
-  if (old) old.remove();
-  const box = document.createElement("div");
-  box.id = "lvlwarn";
-  box.style.cssText = "position:fixed;inset:0;z-index:60;display:flex;align-items:center;" +
-    "justify-content:center;background:rgba(4,6,10,.72);padding:22px";
-  box.innerHTML =
-    '<div style="max-width:340px;width:100%;background:#161b16;border:1px solid #7c3a0d;' +
-    'border-radius:16px;padding:18px;text-align:center;color:#f2ece0;font-family:inherit">' +
-      '<div style="font-size:11px;letter-spacing:1.4px;color:#ffb15c;font-weight:900">' +
-        'БОСС НЕ ПО УРОВНЮ</div>' +
-      '<div style="margin-top:8px;font-size:14px;line-height:1.45">' +
-        ZONES[zoneIndex(bs.y)].n + ' рассчитан на <b>ур. ' + req + '</b>, а у тебя ' +
-        '<b>' + stats.lvl + '</b>. Будет очень тяжело: урон босса и мобов выше, ' +
-        'а опыт с него — половина.</div>' +
-      '<div style="display:flex;gap:8px;margin-top:14px">' +
-        '<button id="lvlno" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
-        'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
-        'Отказаться</button>' +
-        '<button id="lvlyes" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
-        'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">' +
-        'Всё равно зайти</button>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(box);
-  document.getElementById("lvlno").onclick = function(){
-    box.remove();
-    bs.warned = true;     // спросим снова только если выйти и вернуться
-    bs.t = 0;
+  LEVEL_WARN_BOSS = bs;
+  const box = document.getElementById("lvlwarn");
+  const text = document.getElementById("lwtext");
+  if (!box || !text) return;
+  text.innerHTML = ZONES[zoneIndex(bs.y)].n + " рассчитан на <b>ур. " + req +
+    "</b>, а у тебя <b>" + stats.lvl + "</b>.<br>Будет тяжело: урон босса и мобов " +
+    "выше, а опыт за такой бой <b>не дают</b>.";
+  box.classList.add("on");
+}
+function bindLevelWarn(){
+  const box = document.getElementById("lvlwarn");
+  const no = document.getElementById("lvlno");
+  const yes = document.getElementById("lvlyes");
+  if (!box || !no || !yes) return;
+  no.onclick = function(){
+    box.classList.remove("on");
+    const bs = LEVEL_WARN_BOSS;
+    if (bs){ bs.warned = true; bs.t = 0; bs.forced = false; }
   };
-  document.getElementById("lvlyes").onclick = function(){
-    box.remove();
-    bs.forced = true;     // больше не спрашиваем этот круг
-    bs.t = 0;
+  yes.onclick = function(){
+    box.classList.remove("on");
+    const bs = LEVEL_WARN_BOSS;
+    if (bs){ bs.forced = true; bs.t = 0; bs.warned = true; }
     toast("Держись: босс не по уровню");
   };
 }
+bindLevelWarn();
 
 function bossEngage(bs){
   // Круг босса запускает бой с движением и уворотом, а не панель кооп-босса.
@@ -12523,7 +12536,10 @@ function arenaLoop(){
       ctx.font = "bold 12px ui-monospace,monospace";
       ctx.fillStyle = "#ffd98a";
       ctx.fillText("+" + ARENA.reward.coins + " монет", w / 2, h / 2 + 12);
-      ctx.fillText("+" + ARENA.reward.exp + " опыта", w / 2, h / 2 + 34);
+      ctx.fillStyle = ARENA.reward.under ? "#c98a8a" : "#ffd98a";
+      ctx.fillText(ARENA.reward.under ? "опыт: 0 (босс не по уровню)"
+                                      : "+" + ARENA.reward.exp + " опыта",
+                   w / 2, h / 2 + 34);
     }
     ctx.font = "10px ui-monospace,monospace";
     ctx.fillStyle = "#c9a227";
@@ -12921,9 +12937,13 @@ function arenaLoop(){
     ARENA.won = b.hp <= 0;
     if (ARENA.won){
       const zi = ARENA.zi;
-      ARENA.reward = {coins: 500 + zi * 400, exp: 50 + zi * 40};
+      // Босс не по уровню: опыт не даём совсем. Половина от большой
+      // награды всё равно выходила слишком жирно.
+      const under = stats.lvl < zoneReq(boss.y);
+      ARENA.reward = {coins: 500 + zi * 400, exp: under ? 0 : 50 + zi * 40,
+                      under: under};
       P.coins = (P.coins || 0) + ARENA.reward.coins;
-      stats.exp += ARENA.reward.exp;
+      if (ARENA.reward.exp) stats.exp += ARENA.reward.exp;
       try { heroSave(true); } catch (e) {}
       ARENA.cd[zi] = Date.now() + 5000;
     }
