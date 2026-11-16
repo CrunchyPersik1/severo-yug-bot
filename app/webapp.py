@@ -11079,7 +11079,8 @@ document.getElementById("qclose").onclick = function(){
 /* ---------- таблица лидеров ---------- */
 async function openTop(){
   const box = document.getElementById("top");
-  const list = document.getElementById("zlist");
+  // именно tplist: zlist — это список телепорта, их перепутали при переименовании
+  const list = document.getElementById("tplist");
   if (!box || !list) return;
   box.classList.add("on");
   list.textContent = "Загружаю…";
@@ -11896,7 +11897,8 @@ function zoneCenter(i){
   return { x: WORLD.w / 2, y: WORLD.h - (i + 1) * ZONE_H + ZONE_H / 2 };
 }
 function buildTeleport(){
-  const list = document.getElementById("tplist");
+  // zlist — список телепорта; tplist принадлежит таблице лидеров
+  const list = document.getElementById("zlist");
   if (!list) return;
   const cur = zoneIndex(P.y);
   list.innerHTML = ZONES.map(function(z, i){
