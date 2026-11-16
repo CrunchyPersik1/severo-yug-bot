@@ -8,38 +8,57 @@ from __future__ import annotations
 from aiogram.types import BotCommand
 
 COMMANDS: list[BotCommand] = [
-    BotCommand(command="start", description="Справка и правила игры"),
-    BotCommand(command="shop", description="Магазин: учителя, наборы, аксессуары"),
-    BotCommand(command="drop", description="Выбить карту «Северо-Юг» (раз в сутки)"),
-    BotCommand(command="roulette", description="Рулетка — раз в сутки в 20:00 по ЕКБ"),
-    BotCommand(command="case", description="Открыть кейс: карта от эпической и выше"),
-    BotCommand(command="my", description="Коллекция, кейсы, копии и их id"),
-    BotCommand(command="upgrade", description="Улучшить карту за 750: /upgrade #id"),
-    BotCommand(command="market", description="Рынок: лоты с кнопкой «Купить»"),
-    BotCommand(command="casino", description="Казино: ставка очками или картой"),
-    BotCommand(command="casinostats", description="Казино: сколько выиграл и слил"),
-    BotCommand(command="stocks", description="Биржа: акции, курсы, портфель"),
-    BotCommand(command="dungeon", description="Подземелье: карта, мобы, кооп-босс"),
-    BotCommand(command="boss", description="Рейд-босс: ударить всем вместе"),
+    # старт и помощь
+    BotCommand(command="start", description="Справка и меню игры"),
+    BotCommand(command="tutorial", description="Обучение с нуля: что где нажимать"),
+    BotCommand(command="help", description="Все команды списком"),
+    # карточки
+    BotCommand(command="drop", description="Карта дня «Северо-Юг»"),
+    BotCommand(command="my", description="Коллекция, кейсы и копии"),
+    BotCommand(command="find", description="Поиск карты: /find имя"),
+    BotCommand(command="upgrade", description="Улучшить карту: /upgrade #id"),
     BotCommand(command="fav", description="Любимая карта: /fav #id"),
-    BotCommand(command="faq", description="FAQ: цены карт, статы, абилки и множители"),
+    BotCommand(command="profile", description="Профиль: свой или /profile @игрок"),
+    # экономика
+    BotCommand(command="shop", description="Магазин: учителя, наборы, аксессуары"),
+    BotCommand(command="stocks", description="Биржа: акции, курсы, портфель"),
+    BotCommand(command="casino", description="Казино: ставка очками или картой"),
+    BotCommand(command="casinostats", description="Статистика казино"),
+    # рынок
+    BotCommand(command="market", description="Рынок: лоты игроков"),
     BotCommand(command="sell", description="Выставить лот: /sell #id цена"),
-    BotCommand(command="mylots", description="Свои лоты на рынке"),
-    BotCommand(command="changeprice", description="Изменить цену: /changeprice id цена"),
+    BotCommand(command="mylots", description="Свои лоты"),
+    BotCommand(command="changeprice", description="Изменить цену лота"),
     BotCommand(command="gift", description="Подарить карту: /gift #id @игрок"),
-    BotCommand(command="pvp", description="Вызвать на бой — ответом на сообщение"),
-    BotCommand(command="pvprating", description="Топ PvP: победы и убийства карт"),
-    BotCommand(command="rating", description="Репутация торговца: /rating @игрок"),
-    BotCommand(command="top", description="Топ по очкам коллекции"),
+    BotCommand(command="buyer", description="Скупщик: продать карты сразу"),
+    # игры
+    BotCommand(command="case", description="Открыть кейс"),
+    BotCommand(command="roulette", description="Рулетка"),
+    BotCommand(command="dungeon", description="Подземелье: мобы и боссы"),
+    BotCommand(command="boss", description="Рейд-босс: бить всем вместе"),
+    BotCommand(command="kopilka", description="Копилка ивента"),
+    BotCommand(command="upgrader", description="Апгрейдер карт"),
+    BotCommand(command="quests", description="Задания дня"),
+    # бои
+    BotCommand(command="pvp", description="Вызвать на бой ответом на сообщение"),
+    BotCommand(command="pvprating", description="Топ PvP"),
+    BotCommand(command="stop", description="Остановить свой бой"),
+    # прочее
+    BotCommand(command="style", description="Оформление мини-аппок"),
+    BotCommand(command="top", description="Топ по очкам"),
     BotCommand(command="levels", description="Топ по уровням"),
-    BotCommand(command="style", description="Стиль мини-аппок: выбрать оформление"),
-    BotCommand(command="profile", description="Профиль и карты: свой или /profile @игрок"),
-    BotCommand(command="ref", description="Реферальная ссылка: +1 попытка за друга"),
-    BotCommand(command="stop", description="Остановить свой командный бой"),
-    BotCommand(command="help", description="Справка"),
+    BotCommand(command="rating", description="Репутация торговца"),
+    BotCommand(command="ref", description="Реферальная ссылка"),
+    BotCommand(command="promo", description="Ввести промокод"),
+    BotCommand(command="vip", description="VIP-подписка"),
+    BotCommand(command="faq", description="Частые вопросы и правила"),
 ]
 
-# Админу меню показывается отдельно — обычным игрокам /admin не светится.
+# Админу меню показывается отдельно — обычным игрокам админка не светится.
 ADMIN_COMMANDS: list[BotCommand] = COMMANDS + [
     BotCommand(command="admin", description="Админка: сводка, выдачи, рассылка"),
+    BotCommand(command="pointsaudit", description="Правки баланса в базе"),
+    BotCommand(command="ban", description="Забанить игрока"),
+    BotCommand(command="unban", description="Разбанить игрока"),
+    BotCommand(command="bans", description="Список банов"),
 ]
