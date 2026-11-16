@@ -12591,7 +12591,8 @@ async function openShop(){
   });
 }
 async function buyWeapon(id){
-  const data = await coopApi("/api/dungeon/shop/buy", {method: "POST", body: JSON.stringify({id: id})});
+  // второй аргумент coopApi — это ТЕЛО запроса, а не опции fetch
+  const data = await coopApi("/api/dungeon/shop/buy", {id: id});
   if (!data || !data.ok){ toast((data && data.error) || "не вышло"); return; }
   P.coins = data.hero.coins;
   P.bag = data.hero.bag;
