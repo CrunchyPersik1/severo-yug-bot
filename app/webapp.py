@@ -12366,6 +12366,7 @@ function arenaAttack(){
   if (!h || !b || h.atkCd > 0 || ARENA.over) return;
   h.atkCd = 0.5;                       // темп стрельбы из лука
   h.atkAnim = 0.25;
+  arenaBeep(680, 0.05, "square");
   const a = Math.atan2(b.y - h.y, b.x - h.x);
   ARENA.shots = ARENA.shots || [];
   ARENA.shots.push({x: h.x, y: h.y - 26,
@@ -12398,6 +12399,24 @@ function arenaInput(){
     dx = kx / len; dy = ky / len;
   }
   return {dx: dx, dy: dy};
+}
+// Короткие звуки боя: без файлов, чистый WebAudio. Если браузер запретил
+// автоплей — молча выходим, бой не должен ломаться.
+let ARENA_AUDIO = null;
+function arenaBeep(freq, dur, type){
+  try {
+    if (!ARENA_AUDIO) ARENA_AUDIO = new (window.AudioContext || window.webkitAudioContext)();
+    const ctxA = ARENA_AUDIO;
+    if (ctxA.state === "suspended") ctxA.resume();
+    const osc = ctxA.createOscillator();
+    const gain = ctxA.createGain();
+    osc.type = type || "square";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.05, ctxA.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctxA.currentTime + dur);
+    osc.connect(gain); gain.connect(ctxA.destination);
+    osc.start(); osc.stop(ctxA.currentTime + dur);
+  } catch (e) {}
 }
 function arenaSpawnMinions(count){
   const cv = document.getElementById("acv");
@@ -12588,6 +12607,7 @@ function arenaLoop(){
       if (Math.hypot(a.x - m.x, a.y - (m.y - 18)) < 26){
         m.hp -= ARENA.dmg;
         m.hurt = 0.22;
+        arenaBeep(300, 0.06, "sawtooth");
         ARENA.hits.push({x: m.x, y: m.y - 30, t: .6, v: ARENA.dmg});
         return false;
       }
@@ -12595,6 +12615,7 @@ function arenaLoop(){
     if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 40)) < 46){
       b.hp -= ARENA.dmg;
       b.hurt = 0.25;
+      arenaBeep(220, 0.07, "sawtooth");
       ARENA.flash = 0.1;
       ARENA.hits.push({x: b.x, y: b.y - 60, t: .7, v: ARENA.dmg});
       return false;
@@ -12609,6 +12630,7 @@ function arenaLoop(){
       if (h1.dashT > 0) return false;   // додж-ролл даёт неуязвимость
       h1.hp -= 9 + ARENA.zi;
       h1.hurt = 0.3;
+      arenaBeep(120, 0.12, "triangle");
       ARENA.shake = 0.18;
       return false;
     }
@@ -12635,6 +12657,7 @@ function arenaLoop(){
     heart.t -= dt;
     if (Math.hypot(heart.x - h1.x, heart.y - h1.y) < 30){
       h1.hp = Math.min(h1.max, h1.hp + Math.round(h1.max * 0.22));
+      arenaBeep(880, 0.12, "sine");
       ARENA.hits.push({x: heart.x, y: heart.y - 10, t: .8, v: "+"});
       return false;
     }
@@ -12707,9 +12730,12 @@ function arenaLoop(){
     ctx.scale(h1.face, 1);
     ctx.imageSmoothingEnabled = false;
     if (h1.hurt > 0) ctx.globalAlpha = .65;
-    const hs = h1.dashT > 0 ? 3 : (h1.atkCd > 0.12 ? 2 : (h1.moving ? 1 : 0)) % heroSheet.cols;
-    ctx.drawImage(heroSheet.img, hs * heroSheet.fw, 0, heroSheet.fw, heroSheet.fh,
-                  -34, -74, 68, 68);
+    // вторая строка листа — атака: раньше герой всегда стоял в idle
+    const shooting = h1.atkCd > 0.12;
+    const hs = h1.dashT > 0 ? 3 : (h1.moving ? 1 : 0);
+    const srcY = shooting ? heroSheet.fh : 0;
+    ctx.drawImage(heroSheet.img, (hs % heroSheet.cols) * heroSheet.fw, srcY,
+                  heroSheet.fw, heroSheet.fh, -34, -74, 68, 68);
     ctx.restore();
   } else if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
     ctx.save();

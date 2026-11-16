@@ -41,5 +41,5 @@ def test_boss_sprite_cycles_by_zone():
 def test_frames_are_sliced_not_stretched():
     # drawImage с источником-кадром, а не растяжением всего листа
     assert "bs * bossSheet.fw" in DUNGEON_PAGE
-    assert "hs * heroSheet.fw" in DUNGEON_PAGE
+    assert "(hs % heroSheet.cols) * heroSheet.fw" in DUNGEON_PAGE
     assert "imageSmoothingEnabled = false" in DUNGEON_PAGE
