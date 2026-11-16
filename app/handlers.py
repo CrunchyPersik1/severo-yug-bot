@@ -2741,6 +2741,53 @@ async def cmd_trofim(message: Message, db: Database) -> None:
     )
 
 
+@router.message(Command("pointslog", "очкилог"))
+async def cmd_pointslog(message: Message, db: Database) -> None:
+    """Журнал очков игрока: /pointslog @ник — только для админов."""
+    user = message.from_user
+    if user is None:
+        return
+    if user.id not in settings.admin_ids:
+        await message.answer("Команда для админов.")
+        return
+    parts = (message.text or "").split()
+    target = None
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target = message.reply_to_message.from_user
+    elif len(parts) > 1:
+        handle = parts[1].lstrip("@")
+        async with db.pool.acquire() as con:
+            row = await con.fetchrow(
+                "select user_id, username, first_name from players "
+                "where lower(username) = lower($1)",
+                handle,
+            )
+        if row is not None:
+            target = row
+    if target is None:
+        await message.answer("Формат: /pointslog @ник или ответом на сообщение.")
+        return
+    uid = int(target["user_id"])
+    async with db.pool.acquire() as con:
+        rows = await con.fetch(
+            "select amount, source, detail, created_at from points_log "
+            "where user_id = $1 order by created_at desc limit 10",
+            uid,
+        )
+    if not rows:
+        await message.answer("В журнале пока пусто — записи начались с этого обновления.")
+        return
+    lines = [
+        f"{row['created_at']:%d.%m %H:%M}  {int(row['amount']):+d}  "
+        f"{row['source']}  {row['detail'] or ''}".strip()
+        for row in rows
+    ]
+    name = target["first_name"] or target["username"] or uid
+    await message.answer(
+        f"🧾 <b>Журнал очков</b> · {render.esc(str(name))}\n" + "\n".join(lines)
+    )
+
+
 @router.message(Command("tutorial", "обучение"))
 async def cmd_tutorial(message: Message, bot: Bot) -> None:
     """Обучение: короткие сообщения с паузой и кнопкой в приложение."""
