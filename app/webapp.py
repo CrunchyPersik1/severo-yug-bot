@@ -10617,7 +10617,7 @@ document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passi
     " · TG:" + (hasTg ? "есть" : "нет") + " · initData:пусто · платформа:" + platform;
   document.body.appendChild(hint);
 })();
-const BOSS_WAIT = 10;               // секунд на точке: ждём напарника
+const BOSS_WAIT = 5;                // секунд в круге, потом бой
 // Сейф-зона вокруг босса: внутри неё мобы не бьют и не подходят.
 // Круг босса (r=60) целиком внутри, поэтому заходить в бой можно.
 const SAFE_R = 190;
@@ -10946,6 +10946,46 @@ function safeTop(){
 }
 function inSafeZone(x, y){
   return y > safeTop();
+}
+
+// Плашка «босс не по уровню»: пускаем, но честно предупреждаем.
+function levelWarn(bs, req){
+  const old = document.getElementById("lvlwarn");
+  if (old) old.remove();
+  const box = document.createElement("div");
+  box.id = "lvlwarn";
+  box.style.cssText = "position:fixed;inset:0;z-index:60;display:flex;align-items:center;" +
+    "justify-content:center;background:rgba(4,6,10,.72);padding:22px";
+  box.innerHTML =
+    '<div style="max-width:340px;width:100%;background:#161b16;border:1px solid #7c3a0d;' +
+    'border-radius:16px;padding:18px;text-align:center;color:#f2ece0;font-family:inherit">' +
+      '<div style="font-size:11px;letter-spacing:1.4px;color:#ffb15c;font-weight:900">' +
+        'БОСС НЕ ПО УРОВНЮ</div>' +
+      '<div style="margin-top:8px;font-size:14px;line-height:1.45">' +
+        ZONES[zoneIndex(bs.y)].n + ' рассчитан на <b>ур. ' + req + '</b>, а у тебя ' +
+        '<b>' + stats.lvl + '</b>. Будет очень тяжело: урон босса и мобов выше, ' +
+        'а опыт с него — половина.</div>' +
+      '<div style="display:flex;gap:8px;margin-top:14px">' +
+        '<button id="lvlno" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+        'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+        'Отказаться</button>' +
+        '<button id="lvlyes" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
+        'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">' +
+        'Всё равно зайти</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(box);
+  document.getElementById("lvlno").onclick = function(){
+    box.remove();
+    bs.warned = true;     // спросим снова только если выйти и вернуться
+    bs.t = 0;
+  };
+  document.getElementById("lvlyes").onclick = function(){
+    box.remove();
+    bs.forced = true;     // больше не спрашиваем этот круг
+    bs.t = 0;
+    toast("Держись: босс не по уровню");
+  };
 }
 
 function bossEngage(bs){
@@ -12286,7 +12326,7 @@ function arenaSetup(){
                 dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1, moving: false};
   const hp = Math.round(900 * Math.pow(1.85, zi));
   ARENA.boss = {key: bossKeyForZone(zi), x: w / 2, y: h * 0.26,
-                hp: hp, max: hp, dmg: Math.round(10 + zi * 3),
+                hp: hp, max: hp, dmg: Math.round(14 + zi * 4),
                 sp: 120 + zi * 10, face: 1, state: "idle", cd: 900,
                 hurt: 0, tell: 0, phase: 1};
   // если точка спавна попала в укрытие — поднимаемся, пока не свободно
@@ -12580,13 +12620,6 @@ function arenaLoop(){
     }
     if (b.cd <= 0) b.state = "walk";
   } else if (b.state === "idle" || b.state === "walk"){
-    if (dist > 150){ b.x += dx / dist * b.sp * dt; b.y += dy / dist * b.sp * dt; }
-    else if (dist < 90){ b.x -= dx / dist * b.sp * dt * 0.7; b.y -= dy / dist * b.sp * dt * 0.7; }
-    // рыскает из стороны в сторону, чтобы бой не был стоянием на месте
-    if (dist >= 90 && dist <= 150){
-      b.x += Math.cos(ARENA.t * 1.7) * b.sp * 0.8 * dt;
-      b.y += Math.sin(ARENA.t * 1.3) * b.sp * 0.35 * dt;
-    }
     // в третьей фазе атакует чаще (раньше мог пассивно стоять по 2.2 c)
     b.cd -= dt * 1000 * (b.phase === 3 ? 1.5 : 1.0);
     if (b.cd <= 0){
@@ -12615,8 +12648,30 @@ function arenaLoop(){
     b.cd = Math.max(450, 1500 - ARENA.zi * 90 - (b.phase - 1) * 220);
   }
 
+  // Босс двигается ВСЕГДА, кроме собственного рывка: пока он замахивается
+  // или восстанавливается, он тоже подходит и рыскает. Раньше он стоял
+  // две трети боя, из-за чего казался неподвижным.
+  if (!(b.chargeT > 0)){
+    let mvx = 0, mvy = 0;
+    if (dist > 150){ mvx = dx / dist; mvy = dy / dist; }
+    else if (dist < 90){ mvx = -dx / dist * 0.7; mvy = -dy / dist * 0.7; }
+    else { mvx = Math.cos(ARENA.t * 1.7) * 0.9; mvy = Math.sin(ARENA.t * 1.3) * 0.4; }
+    b.x += mvx * b.sp * dt;
+    b.y += mvy * b.sp * dt;
+  }
   b.x = Math.max(30, Math.min(w - 30, b.x));
   b.y = Math.max(40, Math.min(h - 120, b.y));
+
+  // босс бьёт вплотную, если игрок прилип: раньше можно было стоять в нём
+  b.meleeCd = Math.max(0, (b.meleeCd || 0) - dt);
+  if (dist < 58 && b.meleeCd <= 0 && h1.dashT <= 0 && !ARENA.over){
+    b.meleeCd = 0.8;
+    h1.hp -= Math.round(b.dmg * 1.2);
+    h1.hurt = 0.3;
+    ARENA.shake = 0.2;
+    ARENA.flash = 0.12;
+    arenaBeep(110, 0.14, "triangle");
+  }
 
   // замах: показываем, куда будет удар
   if (b.state !== "idle" && b.state !== "walk" && b.state !== "recover"){
@@ -12683,7 +12738,9 @@ function arenaLoop(){
     if (arenaBlocked(a.x, a.y, 2)) return false;
     if (Math.hypot(a.x - h1.x, a.y - (h1.y - 20)) < 22){
       if (h1.dashT > 0) return false;   // додж-ролл даёт неуязвимость
-      h1.hp -= 9 + ARENA.zi;
+      // раньше урон был 9+локация — за весь бой снималось 15 HP
+      const phaseMul = b.phase >= 3 ? 1.7 : b.phase === 2 ? 1.35 : 1;
+      h1.hp -= Math.round(b.dmg * phaseMul);
       h1.hurt = 0.3;
       arenaBeep(120, 0.12, "triangle");
       ARENA.shake = 0.18;
@@ -13235,12 +13292,16 @@ function loop(now){
       const inside = Math.hypot(bs.x - P.x, bs.y - P.y) < bs.r;
       if (!inside){
         bs.t = Math.max(0, bs.t - dt * 2);
+        bs.warned = false;      // вышел из круга — спросим снова
         return;
       }
       const req = zoneReq(bs.y);
-      if (stats.lvl < req){
+      if (stats.lvl < req && !bs.forced){
         bs.t = 0;
-        if (!bs.warned){ bs.warned = true; toast("Босс: нужен ур. " + req); }
+        if (!bs.warned){
+          bs.warned = true;
+          levelWarn(bs, req);
+        }
         return;
       }
       bs.warned = false;

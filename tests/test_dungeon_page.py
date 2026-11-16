@@ -65,7 +65,7 @@ def test_boss_battle_is_wired_up():
 def test_coop_overlay_and_api():
     assert 'id="coop"' in DUNGEON_PAGE
     assert 'id="chit"' in DUNGEON_PAGE
-    assert "const BOSS_WAIT = 10;" in DUNGEON_PAGE
+    assert "const BOSS_WAIT = 5;" in DUNGEON_PAGE
     for path in ("/api/dungeon/boss/join", "/api/dungeon/boss/state",
                  "/api/dungeon/boss/hit", "/api/dungeon/boss/leave",
                  "/api/dungeon/boss/start"):
