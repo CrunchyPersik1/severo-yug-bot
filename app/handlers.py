@@ -364,7 +364,7 @@ async def cmd_drop(message: Message, db: Database) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
-    await db.add_points(user.id, card.points)
+    await db.add_points(user.id, card.points, "bot:drop", card.card_id)
     await db.add_drop(user.id, message.chat.id, card.card_id, today)
 
     text = render.render_drop(card, count, is_new)
@@ -1168,7 +1168,7 @@ async def cb_clicker(callback: CallbackQuery, db: Database) -> None:
     await db.ensure_player(user.id, user.username, user.first_name)
     kind, value = clicker.roll_reward()
     if kind == clicker.POINTS:
-        await db.add_points(user.id, int(value))
+        await db.add_points(user.id, int(value), "bot:clicker", "кликер")
     elif kind == clicker.DROP:
         await db.grant_drop_limit(user.id, day_key(), 1, DROPS_PER_DAY)
     elif kind == clicker.SPIN:
@@ -1178,7 +1178,7 @@ async def cb_clicker(callback: CallbackQuery, db: Database) -> None:
     else:
         card = value
         await db.add_card(user.id, card.card_id)
-        await db.add_points(user.id, card.points)
+        await db.add_points(user.id, card.points, "bot:clicker", card.card_id)
     answer = clicker.label(kind, value)
     rare = kind != clicker.POINTS
     await callback.answer(answer, show_alert=rare)
@@ -1337,14 +1337,14 @@ async def cmd_roulette(
 
     kind, value = roll_prize()
     if kind == PRIZE_POINTS:
-        await db.add_points(user.id, int(value))
+        await db.add_points(user.id, int(value), "bot:roulette", "приз рулетки")
     elif kind == PRIZE_CASE:
         case_id = await db.add_case(user.id, "roulette")
         log.info("Кейс #%s выпал игроку %s", case_id, user.id)
     else:
         card = get_card(str(value))
         await db.add_card(user.id, card.card_id)
-        await db.add_points(user.id, card.points)
+        await db.add_points(user.id, card.points, "bot:roulette", card.card_id)
 
     balance = await market.balance(user.id)
     text = render.render_roulette(kind, value, balance)
@@ -1398,7 +1398,7 @@ async def cmd_case(message: Message, db: Database, bot: Bot) -> None:
     counts = await db.get_collection(user.id)
     is_new = card.card_id not in counts
     count = await db.add_card(user.id, card.card_id)
-    await db.add_points(user.id, card.points)
+    await db.add_points(user.id, card.points, "bot:case", card.card_id)
     left = len(await db.user_cases(user.id))
     await message.answer(render.render_case_open(card, is_new, count, left))
 

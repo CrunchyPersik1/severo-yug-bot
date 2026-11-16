@@ -82,7 +82,7 @@ class FakeDB:
         self.battles: dict[str, Any] = {}
         self.pending_levels: dict[int, list[int]] = {}
 
-    async def add_points(self, user_id: int, amount: int) -> int:
+    async def add_points(self, user_id: int, amount: int, source: str = "", detail: str = "") -> int:
         self.balance[user_id] = self.balance.get(user_id, 0) + int(amount)
         return self.balance[user_id]
 
