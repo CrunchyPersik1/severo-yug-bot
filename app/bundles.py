@@ -20,7 +20,22 @@ GEM_RATE = 55_555
 
 # Оценка того, что нельзя посчитать через карту.
 SHARE_VALUE = 2_000      # одна акция биржи
-WEAPON_VALUE = 45_000    # ствол из подземелья
+# Ствол из подземелья: цена зависит от ранга. Раньше все стволы оценивались
+# одинаково в 45 000, и акция могла продать ранг VIII за 23 000 — то есть
+# топовое оружие за полцены «среднего».
+WEAPON_VALUES = (12_000, 20_000, 32_000, 50_000, 80_000,
+                 125_000, 190_000, 280_000, 420_000, 600_000)
+WEAPON_VALUE = WEAPON_VALUES[0]
+
+
+def weapon_value(weapon_id: object) -> int:
+    """Сколько очков стоит ствол по его рангу."""
+    parts = str(weapon_id or "").split("_")
+    try:
+        rank = int(parts[1])
+    except (IndexError, ValueError):
+        return WEAPON_VALUE
+    return WEAPON_VALUES[max(0, min(len(WEAPON_VALUES) - 1, rank))]
 SPIN_VALUE = 25_000      # платный спин кристальной рулетки
 
 NUM_KEYS: tuple[str, ...] = (
@@ -73,7 +88,7 @@ def value(bundle: dict[str, Any]) -> int:
     total += int(bundle.get("shares") or 0) * SHARE_VALUE
     total += int(bundle.get("vip_days") or 0) * 30_000
     if bundle.get("weapon"):
-        total += WEAPON_VALUE
+        total += weapon_value(bundle["weapon"])
     for card_id in bundle.get("cards") or []:
         try:
             total += market_price(get_card(str(card_id)))

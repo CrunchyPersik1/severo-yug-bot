@@ -194,7 +194,9 @@ def _gems(rng: random.Random) -> tuple[dict, str, str, str, str]:
 
 
 def _weapon(rng: random.Random) -> tuple[dict, str, str, str, str]:
-    rank = rng.randint(3, 8)
+    # Только средние ранги: топовые стволы продаются за монеты подземелья
+    # и выпадают в кейсах, иначе акция за 20-30к ломает прогресс подземелья.
+    rank = rng.randint(1, 4)
     variant = rng.randint(0, 4)
     kind = rng.choice(list(WEAPON_KINDS))
     weapon_id = f"{kind}_{rank}_{variant}"
