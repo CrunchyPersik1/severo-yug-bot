@@ -12249,7 +12249,8 @@ function arenaBossSheet(zi, state){
 }
 const ARENA = {on:false, t:0, raf:0, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0},
                cover:[], flash:0, shake:0, over:false, reward:null,
-               hearts:[], heartCd:7, fire:false, volleyCd:12000, volley:0, volleyNext:0};
+               hearts:[], heartCd:7, fire:false, volleyCd:12000, volley:0, volleyNext:0,
+               mobs:[]};
 
 function bossKeyForZone(zi){ return Object.keys(BOSS_KINDS)[zi % 3]; }
 
@@ -12261,6 +12262,7 @@ function arenaSetup(){
   ARENA.reward = null; ARENA.flash = 0; ARENA.shake = 0; ARENA.joy = {dx:0, dy:0};
   ARENA.hearts = []; ARENA.heartCd = 7; ARENA.fire = false;
   ARENA.volleyCd = 12000; ARENA.volley = 0; ARENA.volleyNext = 0;
+  ARENA.mobs = [];
   ARENA.cover = [
     {x: w * 0.22, y: h * 0.30, w: 58, h: 26},
     {x: w * 0.58, y: h * 0.58, w: 64, h: 26},
@@ -12393,6 +12395,25 @@ function arenaInput(){
   }
   return {dx: dx, dy: dy};
 }
+function arenaSpawnMinions(count){
+  const cv = document.getElementById("acv");
+  const w = cv.clientWidth || 360, h = cv.clientHeight || 480;
+  for (let i = 0; i < count; i++){
+    let x = 0, y = 0, tries = 0;
+    do {
+      x = 40 + Math.random() * (w - 80);
+      y = 70 + Math.random() * (h * 0.5);
+      tries++;
+    } while (arenaBlocked(x, y, 24) && tries < 24);
+    const zi = ARENA.zi;
+    ARENA.mobs.push({
+      x: x, y: y,
+      hp: 60 + zi * 45, max: 60 + zi * 45,
+      sp: 55 + zi * 7, dmg: Math.round(5 + zi * 2.5),
+      cd: 0.9, hurt: 0, t: Math.random() * 6, face: -1
+    });
+  }
+}
 function arenaLoop(){
   ARENA.raf = requestAnimationFrame(arenaLoop);
   if (!ARENA.on) return;
@@ -12414,6 +12435,7 @@ function arenaLoop(){
   }
 
   if (ARENA.over){
+    ARENA.mobs.length = 0;
     // экран победы/поражения
     ctx.fillStyle = "rgba(6,8,12,.82)"; ctx.fillRect(0, 0, w, h);
     ctx.textAlign = "center";
@@ -12456,6 +12478,32 @@ function arenaLoop(){
   h1.x = Math.max(20, Math.min(w - 20, h1.x));
   h1.y = Math.max(30, Math.min(h - 20, h1.y));
   if (Math.abs(IN.dx) > .1) h1.face = IN.dx > 0 ? 1 : -1;
+
+  // ---- мобы подмоги: бегут на игрока и бьют в упор ----
+  const dashGuard = h1.dashT > 0;   // в рывке неуязвим, как додж у эльфа
+  ARENA.mobs = ARENA.mobs.filter(function(m){
+    m.hurt = Math.max(0, m.hurt - dt);
+    m.cd = Math.max(0, m.cd - dt);
+    m.t += dt;
+    const mdx = h1.x - m.x, mdy = h1.y - m.y;
+    const mdist = Math.hypot(mdx, mdy) || 1;
+    m.face = mdx >= 0 ? 1 : -1;
+    if (mdist > 26){
+      const step = m.sp * dt;
+      const sx = m.x + mdx / mdist * step;
+      const sy = m.y + mdy / mdist * step;
+      if (!arenaBlocked(sx, m.y, 12)) m.x = sx;
+      if (!arenaBlocked(m.x, sy, 12)) m.y = sy;
+    } else if (m.cd <= 0 && !dashGuard){
+      m.cd = 0.9;
+      h1.hp -= m.dmg;
+      h1.hurt = 0.3;
+      ARENA.shake = 0.16;
+    }
+    m.x = Math.max(18, Math.min(w - 18, m.x));
+    m.y = Math.max(24, Math.min(h - 18, m.y));
+    return m.hp > 0;
+  });
 
   // ---- босс: фазы по HP, каждый паттерн с замахом ----
   const dx = h1.x - b.x, dy = h1.y - b.y, dist = Math.hypot(dx, dy) || 1;
@@ -12530,6 +12578,16 @@ function arenaLoop(){
   // ---- стрелы игрока ----
   ARENA.shots = (ARENA.shots || []).filter(function(a){
     a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt;
+    // мобы принимают выстрел на себя, если стоят на линии
+    for (let i = 0; i < ARENA.mobs.length; i++){
+      const m = ARENA.mobs[i];
+      if (Math.hypot(a.x - m.x, a.y - (m.y - 18)) < 26){
+        m.hp -= ARENA.dmg;
+        m.hurt = 0.22;
+        ARENA.hits.push({x: m.x, y: m.y - 30, t: .6, v: ARENA.dmg});
+        return false;
+      }
+    }
     if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 40)) < 46){
       b.hp -= ARENA.dmg;
       b.hurt = 0.25;
@@ -12544,6 +12602,7 @@ function arenaLoop(){
   ARENA.arrows = ARENA.arrows.filter(function(a){
     if (arenaBlocked(a.x, a.y, 2)) return false;
     if (Math.hypot(a.x - h1.x, a.y - (h1.y - 20)) < 22){
+      if (h1.dashT > 0) return false;   // додж-ролл даёт неуязвимость
       h1.hp -= 9 + ARENA.zi;
       h1.hurt = 0.3;
       ARENA.shake = 0.18;
@@ -12585,6 +12644,8 @@ function arenaLoop(){
       ARENA.volleyCd = 12000;
       ARENA.volley = 4;
       ARENA.volleyNext = 0;
+      // вместе с залпом приходит подмога: 1 моб на локацию (на 5-й — 5, на 10-й — 10)
+      arenaSpawnMinions(ARENA.zi + 1);
     }
     if (ARENA.volley > 0 && ARENA.volleyNext <= ARENA.t){
       ARENA.volley -= 1;
@@ -12657,6 +12718,31 @@ function arenaLoop(){
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
   }
+
+  // мобы подмоги
+  ARENA.mobs.forEach(function(m){
+    const sheet = arenaBossSheet(ARENA.zi, "idle");
+    if (sheet.img.complete && sheet.img.naturalWidth){
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.scale(m.face, 1);
+      ctx.imageSmoothingEnabled = false;
+      if (m.hurt > 0) ctx.globalAlpha = .6;
+      const fr = Math.floor(m.t * 6) % sheet.cols;
+      ctx.drawImage(sheet.img, fr * sheet.fw, 0, sheet.fw, sheet.fh,
+                    -24, -44, 48, 48);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#b06a6a";
+      ctx.fillRect(m.x - 10, m.y - 26, 20, 26);
+    }
+    // полоска HP над мобом
+    const pct = Math.max(0, m.hp / m.max);
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(m.x - 16, m.y - 56, 32, 4);
+    ctx.fillStyle = pct > 0.5 ? "#8fe3a0" : pct > 0.25 ? "#ffd166" : "#ef7d7d";
+    ctx.fillRect(m.x - 16, m.y - 56, 32 * pct, 4);
+  });
 
   // аптечки
   ctx.textAlign = "center";
