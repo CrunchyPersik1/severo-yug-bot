@@ -12,7 +12,12 @@ def test_prices_are_in_gems_by_rarity():
     assert card_stock.GEM_PRICE["ultimate"] == 40
     assert card_stock.GEM_PRICE["teacher"] == 60
     assert card_stock.GEM_PRICE["ultra"] == 80
-    assert all(item["currency"] == "gems" for item in card_stock.stock(99))
+    assert all(item["prices"]["gems"] >= 1 for item in card_stock.stock(99))
+    # и за очки тоже продаётся: цена растёт с редкостью
+    prices = card_stock.stock(99)
+    by_rarity = {x["rarity"]: x["prices"]["points"] for x in prices}
+    if "legendary" in by_rarity and "secret" in by_rarity:
+        assert by_rarity["secret"] > by_rarity["legendary"]
 
 
 def test_reroll_changes_only_my_stock():

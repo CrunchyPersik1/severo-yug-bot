@@ -20,6 +20,19 @@ SLOTS = 8
 REROLL_PRICE = 19             # 💎 за личную перекрутку
 
 # Цена в гемах по редкости: от 1 за редкую до 80 за ультралегендарную.
+# Цена в очках: дешевле редкость — дешевле карта.
+POINTS_PRICE = {
+    "rare": 1_000,
+    "superrare": 3_000,
+    "epic": 8_000,
+    "mythic": 20_000,
+    "legendary": 50_000,
+    "secret": 100_000,
+    "ultimate": 200_000,
+    "ultra": 350_000,
+    "teacher": 500_000,
+}
+
 GEM_PRICE = {
     "rare": 1,
     "superrare": 2,
@@ -81,15 +94,17 @@ def stock(window: int | None = None, reroll: int = 0, user_id: int = 0) -> list[
         if card_id in used:
             continue
         used.add(card_id)
-        price = GEM_PRICE.get(rarity)
-        if price is None:
-            price = max(1, points // 1000)
+        gems = GEM_PRICE.get(rarity)
+        if gems is None:
+            gems = max(1, points // 1000)
+        cost = POINTS_PRICE.get(rarity)
+        if cost is None:
+            cost = max(1_000, points * 3)
         picked.append(
             {
                 "id": card_id,
                 "rarity": rarity,
-                "currency": "gems",
-                "price": int(price),
+                "prices": {"gems": int(gems), "points": int(cost)},
                 "collection": "d" if card_id in cards_d_mod.CARDS_D_BY_ID else "main",
             }
         )

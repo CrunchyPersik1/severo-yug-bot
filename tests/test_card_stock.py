@@ -40,7 +40,9 @@ def test_payload_has_timer_and_flags():
     assert data["window"] == 777
     assert 0 < data["seconds_left"] <= card_stock.WINDOW_SECONDS
     assert data["stock"]
-    assert all("price" in item and "currency" in item for item in data["stock"])
+    assert all("prices" in item for item in data["stock"])
+    assert all(item["prices"]["gems"] >= 1 and item["prices"]["points"] >= 1000
+               for item in data["stock"])
 
 
 def test_page_has_stock_block():

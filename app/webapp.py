@@ -872,6 +872,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .scard button{width:100%;margin-top:5px;border:0;border-radius:8px;padding:7px 2px;
   font-family:inherit;font-size:10px;font-weight:800;background:var(--acc);color:var(--acc-ink)}
 .scard button[disabled]{background:var(--panel);color:var(--muted)}
+.scard button.pt{margin-top:3px;background:var(--panel);color:var(--acc2);
+  border:1px solid color-mix(in srgb,var(--acc) 35%,var(--line))}
 .scard.own{opacity:.55}
 .sempty{grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center;padding:14px}
 .sreroll{width:100%;margin-top:8px;border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));
@@ -1136,19 +1138,21 @@ function stockPaint(items){
   const grid = document.getElementById("stkGrid");
   if (!grid) return;
   grid.innerHTML = items.map(function(it){
-    const price = it.currency === "gems" ? it.price + " 💎" : money(it.price);
+    const pr = it.prices || {gems: it.price || 0, points: 0};
     return '<div class="scard' + (it.owned ? " own" : "") + '">' +
       (it.image ? '<img src="' + esc(it.image) + '" alt="">' : '<div style="height:54px"></div>') +
       '<div class="sn">' + esc(it.name || it.id) + '</div>' +
-      '<button data-stk="' + esc(it.id) + '">' + price + '</button></div>';
+      '<button data-stk="' + esc(it.id) + '" data-cur="gems">' + pr.gems + ' 💎</button>' +
+      '<button class="pt" data-stk="' + esc(it.id) + '" data-cur="points">' +
+      money(pr.points) + '</button></div>';
   }).join("") || '<div class="sempty">сегодня пусто</div>';
   grid.querySelectorAll("[data-stk]").forEach(function(b){
-    b.onclick = function(){ stockBuy(b.dataset.stk, b); };
+    b.onclick = function(){ stockBuy(b.dataset.stk, b, b.dataset.cur); };
   });
 }
-async function stockBuy(id, btn){
+async function stockBuy(id, btn, currency){
   btn.disabled = true;
-  const data = await post("/api/shop/stock/buy", {id: id});
+  const data = await post("/api/shop/stock/buy", {id: id, currency: currency || "gems"});
   if (!data || !data.ok){
     toast((data && data.error) || "не вышло");
     btn.disabled = false;
@@ -13683,9 +13687,19 @@ async def api_card_stock_buy(request: Request) -> JSONResponse:
             {"error": "Эта карта больше не в стоке — витрина обновилась."},
             status_code=400,
         )
-    price = int(item["price"])
-    if not await state.db.spend_crystals(user_id, price):
-        return JSONResponse({"error": f"Не хватает {price} 💎"}, status_code=400)
+    currency = str(body.get("currency") or "gems")
+    prices = item.get("prices") or {}
+    if currency not in ("gems", "points"):
+        currency = "gems"
+    price = int(prices.get(currency) or 0)
+    if currency == "gems":
+        if not await state.db.spend_crystals(user_id, price):
+            return JSONResponse({"error": f"Не хватает {price} 💎"}, status_code=400)
+    else:
+        if not await state.db.spend_points(user_id, price):
+            return JSONResponse(
+                {"error": "Не хватает очков: нужно " + str(price)}, status_code=400
+            )
     count = await state.db.add_card(user_id, card_id)
     from . import cards as cards_mod
     from . import cards_d as cards_d_mod
