@@ -1191,6 +1191,7 @@ async function load(){
     const d = await r.json();
     if (d.error){ toast(d.error); return; }
     S.data = d; render();
+    stockLoad();          // сток живёт отдельно: свой таймер и обновление
   }catch(e){ toast("Не смог загрузить магазин"); }
 }
 async function buyDeal(btn){
