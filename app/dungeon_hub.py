@@ -154,8 +154,9 @@ class DungeonHub:
                 continue
             if not fresh(spot.seen, moment):
                 continue
-            if abs(spot.zone - base_zone) > 1:
-                continue
+            # Раньше отдавали только соседние локации (±1) и игрок в другой
+            # локации не видел вообще никого. Теперь отдаём всех свежих:
+            # далёких клиент рисует стрелкой у края экрана.
             result.append(spot.payload())
             if len(result) >= MAX_REMOTE:
                 break

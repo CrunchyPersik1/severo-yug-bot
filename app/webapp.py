@@ -12273,10 +12273,13 @@ function arenaSetup(){
   ARENA.hearts = []; ARENA.heartCd = 7; ARENA.fire = false;
   ARENA.volleyCd = 12000; ARENA.volley = 0; ARENA.volleyNext = 0;
   ARENA.mobs = [];
+  ARENA.w = w; ARENA.h = h;
+  // В долях экрана: при растягивании на весь экран укрытия растут вместе
+  // с ареной, а не остаются 58 пикселей в углу.
   ARENA.cover = [
-    {x: w * 0.22, y: h * 0.30, w: 58, h: 26},
-    {x: w * 0.58, y: h * 0.58, w: 64, h: 26},
-    {x: w * 0.38, y: h * 0.78, w: 54, h: 24}
+    {fx: 0.20, fy: 0.30, fw: 0.20, fh: 0.065},
+    {fx: 0.56, fy: 0.58, fw: 0.22, fh: 0.065},
+    {fx: 0.34, fy: 0.78, fw: 0.19, fh: 0.060}
   ];
   // игрок — по центру снизу, босс — по центру сверху: оба сразу видны
   ARENA.hero = {x: w / 2, y: h - 80, hp: P.max, max: P.max, atkCd: 0, dashCd: 0,
@@ -12358,9 +12361,13 @@ function bindArena(){
   document.getElementById("aexit").onclick = function(){ closeArena(false); };
 }
 
+function arenaCoverRect(c){
+  const w = ARENA.w || 360, h = ARENA.h || 480;
+  return {x: c.fx * w, y: c.fy * h, w: c.fw * w, h: Math.max(18, c.fh * h)};
+}
 function arenaBlocked(x, y, pad){
   for (let i = 0; i < ARENA.cover.length; i++){
-    const c = ARENA.cover[i];
+    const c = arenaCoverRect(ARENA.cover[i]);
     if (x > c.x - pad && x < c.x + c.w + pad &&
         y > c.y - pad && y < c.y + c.h + pad) return true;
   }
@@ -12450,6 +12457,7 @@ function arenaLoop(){
   const ctx = cv.getContext("2d");
   const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
   const dt = Math.min(0.05, 1 / 60);
+  ARENA.w = w; ARENA.h = h;
   if (!ARENA.over) ARENA.t += dt;
   const h1 = ARENA.hero, b = ARENA.boss;
   ARENA.flash = Math.max(0, ARENA.flash - dt);
@@ -12484,7 +12492,8 @@ function arenaLoop(){
   }
 
   // укрытия
-  ARENA.cover.forEach(function(c){
+  ARENA.cover.forEach(function(entry){
+    const c = arenaCoverRect(entry);
     ctx.fillStyle = "#4a4438"; ctx.fillRect(c.x, c.y, c.w, c.h);
     ctx.fillStyle = "#6d6552"; ctx.fillRect(c.x, c.y, c.w, 5);
     ctx.strokeStyle = "#2b2721"; ctx.lineWidth = 2;
@@ -12637,6 +12646,8 @@ function arenaLoop(){
   // ---- стрелы игрока ----
   ARENA.shots = (ARENA.shots || []).filter(function(a){
     a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt;
+    // раньше стрелы пролетали сквозь блоки: проверяем укрытие первым
+    if (arenaBlocked(a.x, a.y, 2)) return false;
     // мобы принимают выстрел на себя, если стоят на линии
     for (let i = 0; i < ARENA.mobs.length; i++){
       const m = ARENA.mobs[i];
@@ -13438,7 +13449,26 @@ function render(dt){
 
   // живые игроки: сглаженные позиции, анимация бега и удара
   Object.keys(REMOTE).forEach(function(key){
-    drawRemote(REMOTE[key], animT);
+    const r = REMOTE[key];
+    drawRemote(r, animT);
+    // если игрок за пределами экрана (другая локация) — метка у края
+    const sx = r.x - cam.x, sy = r.y - cam.y;
+    const pad = 46;
+    if ((sx < 0 || sy < 0 || sx > w || sy > h) && r.name){
+      const cx = Math.max(pad, Math.min(w - pad, sx));
+      const cy = Math.max(pad, Math.min(h - pad, sy));
+      ctx.save();
+      ctx.globalAlpha = .8;
+      ctx.fillStyle = "#8fd0ff";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5, 0, 7);
+      ctx.fill();
+      ctx.font = "bold 9px ui-monospace,monospace";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(180,220,255,.9)";
+      ctx.fillText(String(r.name).slice(0, 10), cx, cy - 9);
+      ctx.restore();
+    }
   });
   // те, кто вышел: спят в углу своей локации
   drawOfflineAll(animT);

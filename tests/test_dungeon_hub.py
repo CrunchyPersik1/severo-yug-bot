@@ -39,13 +39,17 @@ def test_stale_spots_disappear():
     assert hub.snapshot(1, now=1000.0 + TTL_SECONDS + 1) == []
 
 
-def test_only_neighbour_zones():
+def test_players_from_other_zones_are_returned():
+    # раньше фильтр ±1 локация прятал всех: игрок в другой локации
+    # не видел вообще никого. Теперь отдаём всех, далёких рисует метка.
     hub = DungeonHub()
     hub.touch(1, "A", {"zone": 0}, now=1000.0)
-    hub.touch(2, "B", {"zone": 2}, now=1000.0)
-    assert hub.snapshot(1, now=1000.0) == []
-    hub.touch(2, "B", {"zone": 1}, now=1000.0)
-    assert len(hub.snapshot(1, now=1000.0)) == 1
+    hub.touch(2, "B", {"zone": 4}, now=1000.0)
+    rows = hub.snapshot(1, now=1000.0)
+    assert len(rows) == 1
+    assert rows[0]["zone"] == 4
+    hub.touch(3, "C", {"zone": 9}, now=1000.0)
+    assert len(hub.snapshot(1, now=1000.0)) == 2
 
 
 def test_drop_and_prune():
