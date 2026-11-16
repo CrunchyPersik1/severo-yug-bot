@@ -11877,7 +11877,7 @@ function spawnOne(zi){
   const capHp = zoneMobHp(zi);
   const hp = Math.max(18, Math.round(capHp * (0.55 + Math.random() * 0.45)));
   mobs.push({x: x, y: y, hp: hp, max: hp,
-             sp: type.sp, dmg: Math.max(2, Math.round(type.dmg * (0.6 + zi * 0.28))),
+             sp: Math.round(type.sp * 1.2), dmg: Math.max(2, Math.round(type.dmg * (0.6 + zi * 0.28))),
              c: type.c, sz: type.sz, nm: type.n,
              tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
 }
@@ -11892,7 +11892,7 @@ function reset(){
   P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
-  spawnMobs(18);
+  spawnMobs(24);
 }
 /* ---------- телепорт по локациям ---------- */
 function zoneCenter(i){
@@ -11976,7 +11976,7 @@ function attack(){
   if (!w) return;
   const range = Number(w.range) || 80;
   const dmg = Number(w.dmg) || 12;
-  P.atkCd = w.kind === "bow" ? 0.7 * w.spd : 0.45 * w.spd;
+  P.atkCd = w.kind === "bow" ? 0.56 * w.spd : 0.36 * w.spd;
   FX.swingAt(P.dir, w.kind);
   // сейф-зона — убежище в обе стороны: тут не бьют и тут не бьёшь,
   // иначе можно было бы фармить мобов, стоя в безопасности
@@ -12034,7 +12034,7 @@ function killMob(m){
           (isNew ? " — загляни в сумку" : ""));
   }
   gemPing(zoneIndex(m.y));
-  if (mobs.length < 10) fillMobs();
+  if (mobs.length < 14) fillMobs();
   sync();
 }
 function expNeed(lvl){
@@ -12083,7 +12083,7 @@ function gainExp(amount){
 }
 function shieldUp(){
   if (P.dashCd > 0 || inBattle) return;
-  P.dashCd = 2.2; P.dashT = 0.22; P.shield = 0.22;
+  P.dashCd = 1.6; P.dashT = 0.22; P.shield = 0.22;
   const a = (typeof P.dir === "number") ? P.dir : 0;
   P.dashVX = Math.cos(a) * 700;
   P.dashVY = Math.sin(a) * 700;
@@ -12341,6 +12341,19 @@ function bossShoot(pattern){
   }
 }
 
+function arenaInput(){
+  let dx = ARENA.joy.dx, dy = ARENA.joy.dy;
+  let kx = 0, ky = 0;
+  if (keys["w"] || keys["ц"] || keys["arrowup"]) ky -= 1;
+  if (keys["s"] || keys["ы"] || keys["arrowdown"]) ky += 1;
+  if (keys["a"] || keys["ф"] || keys["arrowleft"]) kx -= 1;
+  if (keys["d"] || keys["в"] || keys["arrowright"]) kx += 1;
+  if (kx || ky){
+    const len = Math.hypot(kx, ky) || 1;
+    dx = kx / len; dy = ky / len;
+  }
+  return {dx: dx, dy: dy};
+}
 function arenaLoop(){
   ARENA.raf = requestAnimationFrame(arenaLoop);
   if (!ARENA.on) return;
@@ -12394,14 +12407,16 @@ function arenaLoop(){
   h1.dashT = Math.max(0, h1.dashT - dt);
   h1.hurt = Math.max(0, h1.hurt - dt);
   const sp = 430;
-  const nx = h1.x + ARENA.joy.dx * sp * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
-  const ny = h1.y + ARENA.joy.dy * sp * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
-  h1.moving = Math.abs(ARENA.joy.dx) + Math.abs(ARENA.joy.dy) > 0.08;
+  // На ПК джойстика нет: раньше арена слушала только его, и WASD не работал.
+  const IN = arenaInput();
+  const nx = h1.x + IN.dx * sp * dt + (h1.dashT > 0 ? h1.dvx * dt : 0);
+  const ny = h1.y + IN.dy * sp * dt + (h1.dashT > 0 ? h1.dvy * dt : 0);
+  h1.moving = Math.abs(IN.dx) + Math.abs(IN.dy) > 0.08;
   if (!arenaBlocked(nx, h1.y, 14)) h1.x = nx;
   if (!arenaBlocked(h1.x, ny, 14)) h1.y = ny;
   h1.x = Math.max(20, Math.min(w - 20, h1.x));
   h1.y = Math.max(30, Math.min(h - 20, h1.y));
-  if (Math.abs(ARENA.joy.dx) > .1) h1.face = ARENA.joy.dx > 0 ? 1 : -1;
+  if (Math.abs(IN.dx) > .1) h1.face = IN.dx > 0 ? 1 : -1;
 
   // ---- босс: фазы по HP, каждый паттерн с замахом ----
   const dx = h1.x - b.x, dy = h1.y - b.y, dist = Math.hypot(dx, dy) || 1;
@@ -12788,7 +12803,7 @@ function loop(now){
   if (keys["d"] || keys["в"] || keys["arrowright"]) vx = 1;
   const len = Math.hypot(vx, vy);
   if (len > 1){ vx /= len; vy /= len; }
-  const speed = 210;
+  const speed = 255;
   const nextX = Math.max(30, Math.min(WORLD.w - 30, P.x + vx * speed * dt));
   const nextY = Math.max(30, Math.min(WORLD.h - 30, P.y + vy * speed * dt));
   // Дома не пропускают: если стоим в стене (застряли), даём выйти.

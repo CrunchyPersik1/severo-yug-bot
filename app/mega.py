@@ -86,11 +86,15 @@ def week_start(moment: datetime | None = None) -> datetime:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     moment = moment.astimezone(timezone.utc)
-    shifted = moment - timedelta(
-        days=(moment.weekday() - RESET_WEEKDAY) % 7,
-        hours=RESET_HOUR_UTC,
+    # Раньше здесь вычитались часы, а потом час подменялся — и до 07:00 UTC
+    # «начало недели» уезжало на сутки назад. Ключ недели менялся каждые
+    # сутки, поэтому мегаквест выглядел сбрасывающимся вместе с остальными.
+    start = (moment - timedelta(days=(moment.weekday() - RESET_WEEKDAY) % 7)).replace(
+        hour=RESET_HOUR_UTC, minute=0, second=0, microsecond=0
     )
-    return shifted.replace(hour=RESET_HOUR_UTC, minute=0, second=0, microsecond=0)
+    if start > moment:
+        start -= timedelta(days=7)
+    return start
 
 
 def week_key(moment: datetime | None = None) -> str:
