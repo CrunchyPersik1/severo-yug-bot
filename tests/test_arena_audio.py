@@ -3,9 +3,10 @@
 from app.webapp import DUNGEON_PAGE
 
 
-def test_hero_attack_uses_second_sheet_row():
-    assert "const srcY = shooting ? heroSheet.fh : 0;" in DUNGEON_PAGE
-    assert "const shooting = h1.atkCd > 0.12;" in DUNGEON_PAGE
+def test_hero_attack_uses_state_sheet():
+    # полоса атаки — отдельный файл hero_<класс>_atk.png
+    assert 'const heroState = h1.hurt > 0 ? "hurt" : (h1.atkCd > 0.12 ? "atk" : "idle");' in DUNGEON_PAGE
+    assert "arenaHeroSheet(heroState)" in DUNGEON_PAGE
 
 
 def test_arena_has_sound_effects():

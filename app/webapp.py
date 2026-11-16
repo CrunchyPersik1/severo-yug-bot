@@ -12232,11 +12232,17 @@ function arenaSheet(key, src, fw, fh, cols){
   ARENA_SHEETS[key] = {img: img, fw: fw, fh: fh, cols: cols};
   return ARENA_SHEETS[key];
 }
-function arenaHeroSheet(){
+function arenaHeroClass(){
   const kind = (P.weapon && P.weapon.kind) || "sword";
-  if (kind === "bow") return arenaSheet("thief", "/images/arena/hero_thief.png", 96, 80, 4);
-  if (kind === "staff") return arenaSheet("anomaly", "/images/arena/hero_anomaly.png", 112, 80, 3);
-  return arenaSheet("knight", "/images/arena/hero_knight.png", 112, 112, 6);
+  if (kind === "bow") return "thief";
+  if (kind === "staff") return "anomaly";
+  return "knight";
+}
+// Листы нарезаны заранее по 32x32 (Pillow), иначе кадры «раскладывались»
+function arenaHeroSheet(state){
+  const cls = arenaHeroClass();
+  const key = "hero_" + cls + "_" + (state || "idle");
+  return arenaSheet(key, "/images/arena/hero_" + cls + "_" + (state || "idle") + ".png", 32, 32, 6);
 }
 const ARENA_BOSS_SHEETS = [
   ["mob_orc.png", "mob_orc_atk.png", "mob_orc_death.png", 100, 100, 6],
@@ -12723,19 +12729,17 @@ function arenaLoop(){
   }
 
   // ---- рисуем игрока ----
-  const heroSheet = arenaHeroSheet();
+  const heroState = h1.hurt > 0 ? "hurt" : (h1.atkCd > 0.12 ? "atk" : "idle");
+  const heroSheet = arenaHeroSheet(heroState);
   if (heroSheet.img.complete && heroSheet.img.naturalWidth){
     ctx.save();
     ctx.translate(h1.x, h1.y);
     ctx.scale(h1.face, 1);
     ctx.imageSmoothingEnabled = false;
-    if (h1.hurt > 0) ctx.globalAlpha = .65;
-    // вторая строка листа — атака: раньше герой всегда стоял в idle
-    const shooting = h1.atkCd > 0.12;
-    const hs = h1.dashT > 0 ? 3 : (h1.moving ? 1 : 0);
-    const srcY = shooting ? heroSheet.fh : 0;
-    ctx.drawImage(heroSheet.img, (hs % heroSheet.cols) * heroSheet.fw, srcY,
-                  heroSheet.fw, heroSheet.fh, -34, -74, 68, 68);
+    if (h1.hurt > 0) ctx.globalAlpha = .7;
+    const hs = Math.floor(ARENA.t * 10) % heroSheet.cols;
+    ctx.drawImage(heroSheet.img, hs * heroSheet.fw, 0, heroSheet.fw, heroSheet.fh,
+                  -34, -68, 68, 68);
     ctx.restore();
   } else if (ARENA_HERO.complete && ARENA_HERO.naturalWidth){
     ctx.save();

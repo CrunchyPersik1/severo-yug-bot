@@ -30,7 +30,8 @@ QUESTS: dict[str, dict[str, Any]] = {
             "select (select count(*) from drops "
             "         where user_id = $1 and rolled_at >= $2) "
             "     + (select count(*) from cases "
-            "         where user_id = $1 and opened and created_at >= $2) "
+            "         where user_id = $1 and opened "
+            "           and coalesce(opened_at, created_at) >= $2) "
             "     + (select count(*) from gifts "
             "         where receiver_id = $1 and timestamp >= $2)"
         ),

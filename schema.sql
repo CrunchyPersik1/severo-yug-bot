@@ -1041,3 +1041,9 @@ begin
         execute format('alter table public.%I enable row level security', t);
     end loop;
 end $$;
+
+
+-- Когда кейс реально открыли. created_at — это время ВЫДАЧИ кейса,
+-- поэтому недельные цели по открытиям считали не то.
+alter table cases add column if not exists opened_at timestamptz;
+update cases set opened_at = created_at where opened and opened_at is null;

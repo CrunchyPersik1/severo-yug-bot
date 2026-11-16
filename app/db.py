@@ -1637,7 +1637,7 @@ class Database:
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
-                update cases set opened = true
+                update cases set opened = true, opened_at = now()
                  where id = $1 and user_id = $2 and opened = false and listed = false
                 returning id
                 """,
