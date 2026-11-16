@@ -12439,7 +12439,7 @@ function arenaSpawnMinions(count){
       x: x, y: y,
       hp: 60 + zi * 45, max: 60 + zi * 45,
       sp: 55 + zi * 7, dmg: Math.round(5 + zi * 2.5),
-      cd: 0.9, hurt: 0, t: Math.random() * 6, face: -1
+      cd: 0.9, hurt: 0, atk: 0, t: Math.random() * 6, face: -1
     });
   }
 }
@@ -12513,7 +12513,20 @@ function arenaLoop(){
   ARENA.mobs = ARENA.mobs.filter(function(m){
     m.hurt = Math.max(0, m.hurt - dt);
     m.cd = Math.max(0, m.cd - dt);
+    m.atk = Math.max(0, (m.atk || 0) - dt);
     m.t += dt;
+    // расталкиваем, иначе толпа слипается в одну точку
+    for (let i = 0; i < ARENA.mobs.length; i++){
+      const other = ARENA.mobs[i];
+      if (other === m) continue;
+      const ox = other.x - m.x, oy = other.y - m.y;
+      const od = Math.hypot(ox, oy) || 1;
+      if (od < 24){
+        const push = (24 - od) * 0.5;
+        m.x -= ox / od * push;
+        m.y -= oy / od * push;
+      }
+    }
     const mdx = h1.x - m.x, mdy = h1.y - m.y;
     const mdist = Math.hypot(mdx, mdy) || 1;
     m.face = mdx >= 0 ? 1 : -1;
@@ -12525,6 +12538,7 @@ function arenaLoop(){
       if (!arenaBlocked(m.x, sy, 12)) m.y = sy;
     } else if (m.cd <= 0 && !dashGuard){
       m.cd = 0.9;
+      m.atk = 0.35;
       h1.hp -= m.dmg;
       h1.hurt = 0.3;
       ARENA.shake = 0.16;
@@ -12755,7 +12769,7 @@ function arenaLoop(){
 
   // мобы подмоги
   ARENA.mobs.forEach(function(m){
-    const sheet = arenaBossSheet(ARENA.zi, "idle");
+    const sheet = arenaBossSheet(ARENA.zi, m.atk > 0 ? "atk" : "idle");
     if (sheet.img.complete && sheet.img.naturalWidth){
       ctx.save();
       ctx.translate(m.x, m.y);
