@@ -978,3 +978,14 @@ create table if not exists stock_reroll (
     count integer not null default 0,
     primary key (user_id, win)
 );
+
+
+create table if not exists points_log (
+    id bigserial primary key,
+    user_id bigint not null,
+    amount bigint not null,
+    source text not null,
+    detail text,
+    created_at timestamptz not null default now()
+);
+create index if not exists points_log_user_idx on points_log (user_id, created_at desc);

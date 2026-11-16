@@ -458,7 +458,32 @@ class Database:
                 str(value),
             )
 
-    async def add_points(self, user_id: int, amount: int) -> int:
+    async def log_points(
+        self,
+        user_id: int,
+        amount: int,
+        source: str,
+        detail: str = "",
+        con: Any = None,
+    ) -> None:
+        """Журнал начислений и списаний: чтобы потом отвечать «откуда очки»."""
+        try:
+            query = (
+                "insert into points_log (user_id, amount, source, detail) "
+                "values ($1, $2, $3, $4)"
+            )
+            args = (int(user_id), int(amount), str(source)[:40], str(detail)[:200])
+            if con is not None:
+                await con.execute(query, *args)
+                return
+            async with self._p().acquire() as own:
+                await own.execute(query, *args)
+        except Exception:  # noqa: BLE001 - журнал не должен ломать игру
+            pass
+
+    async def add_points(
+        self, user_id: int, amount: int, source: str = "add_points", detail: str = ""
+    ) -> int:
         async with self._p().acquire() as con:
             row = await con.fetchrow(
                 """
@@ -469,6 +494,7 @@ class Database:
                 user_id,
                 int(amount),
             )
+            await self.log_points(user_id, int(amount), source, detail, con)
         return int(row["bonus_points"]) if row else 0
 
     async def add_case(self, user_id: int, source: str = "roulette") -> int:

@@ -279,6 +279,13 @@ async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
             amount,
         )
         who = player["first_name"] or player["username"] or player["user_id"]
+        await con.execute(
+            "insert into points_log (user_id, amount, source, detail) "
+            "values ($1, $2, 'admin', $3)",
+            int(player["user_id"]),
+            int(amount),
+            f"admin points для {who}",
+        )
         return f"[ok] {who}: {amount:+d} очков, теперь {int(balance)}"
 
     amount = _int_arg(args, 0, 0, "количество очков")
@@ -286,6 +293,11 @@ async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
         raise ValueError("укажи сколько очков: points 5000")
     await con.execute(
         "update players set bonus_points = greatest(0, bonus_points + $1)", amount
+    )
+    await con.execute(
+        "insert into points_log (user_id, amount, source, detail) "
+        "select user_id, $1, 'admin', 'admin points всем' from players",
+        int(amount),
     )
     total = await con.fetchval("select count(*) from players")
     if amount > 0:
