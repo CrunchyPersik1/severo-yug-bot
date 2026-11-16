@@ -974,7 +974,7 @@ create table if not exists dungeon_shop_bought (
 
 create table if not exists stock_reroll (
     user_id bigint not null,
-    window bigint not null,
+    win bigint not null,
     count integer not null default 0,
-    primary key (user_id, window)
+    primary key (user_id, win)
 );

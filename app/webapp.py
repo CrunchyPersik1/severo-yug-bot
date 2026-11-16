@@ -13601,7 +13601,7 @@ async def _stock_rerolls(state, user_id: int, window: int) -> int:
         async with state.db.pool.acquire() as con:
             return int(
                 await con.fetchval(
-                    "select count from stock_reroll where user_id = $1 and window = $2",
+                    "select count from stock_reroll where user_id = $1 and win = $2",
                     int(user_id),
                     int(window),
                 )
@@ -13630,8 +13630,8 @@ async def api_card_stock_reroll(request: Request) -> JSONResponse:
     async with state.db.pool.acquire() as con:
         rerolls = int(
             await con.fetchval(
-                "insert into stock_reroll (user_id, window, count) values ($1, $2, 1) "
-                "on conflict (user_id, window) do update "
+                "insert into stock_reroll (user_id, win, count) values ($1, $2, 1) "
+                "on conflict (user_id, win) do update "
                 "set count = stock_reroll.count + 1 returning count",
                 user_id,
                 window,
