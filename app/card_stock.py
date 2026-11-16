@@ -72,10 +72,15 @@ def _pool() -> list[tuple[str, str, int]]:
 
 
 def _weight(rarity: str) -> float:
-    """Чем реже редкость, тем меньше шанс попасть в сток."""
+    """Чем реже редкость, тем меньше шанс попасть в сток.
+
+    Берём настоящие веса из каталога, без «пола»: раньше нижняя граница 0.05
+    уравнивала легендарку, секретку, ультимативную, ультру и учителей —
+    и они выпадали в сток в сотни раз чаще задуманного.
+    """
     base = cards_mod.RARITIES.get(rarity)
-    weight = float(getattr(base, "weight", 0.05) or 0.05)
-    return max(0.05, weight)
+    weight = float(getattr(base, "weight", 0.001) or 0.001)
+    return max(1e-6, weight)
 
 
 def stock(window: int | None = None, reroll: int = 0, user_id: int = 0) -> list[dict[str, Any]]:

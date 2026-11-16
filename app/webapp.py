@@ -1128,7 +1128,7 @@ const RARITY_COLORS = {
 };
 async function stockLoad(){
   const grid = document.getElementById("stkGrid");
-  // это GET-ручка: post() вернул бы 405 и сток «не подгружался»
+  // это GET-ручка: POST вернул бы 405 и сток «не подгружался»
   const res = await fetch("/api/shop/stock", {headers});
   const data = await res.json().catch(function(){ return null; });
   if (!data || !data.ok){
@@ -1166,7 +1166,7 @@ function stockPaint(items){
 }
 async function stockBuy(id, btn, currency){
   btn.disabled = true;
-  const data = await post("/api/shop/stock/buy", {id: id, currency: currency || "gems"});
+  const data = await send("/api/shop/stock/buy", {id: id, currency: currency || "gems"});
   if (!data || !data.ok){
     toast((data && data.error) || "не вышло");
     btn.disabled = false;
@@ -1176,7 +1176,7 @@ async function stockBuy(id, btn, currency){
   stockLoad();
 }
 async function stockReroll(){
-  const data = await post("/api/shop/stock/reroll", {});
+  const data = await send("/api/shop/stock/reroll", {});
   if (!data || !data.ok){ toast((data && data.error) || "не вышло"); return; }
   toast("Сток перекручен — таймер общий, сброс по часам");
   STOCK_WINDOW = data.window;
