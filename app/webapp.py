@@ -12618,6 +12618,22 @@ function arenaLoop(){
     ctx.restore();
   }
 
+  // ---- фаза и подмога в углу ----
+  ctx.save();
+  ctx.font = "bold 10px ui-monospace,monospace";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.fillText("ФАЗА " + b.phase + "/3", 10, 16);
+  if (ARENA.mobs.length){
+    ctx.fillStyle = "#ff9a9a";
+    ctx.fillText("ПОДМОГА " + ARENA.mobs.length, 10, 30);
+  }
+  if (ARENA.volley > 0){
+    ctx.fillStyle = "#ffd166";
+    ctx.fillText("ЗАЛП " + ARENA.volley, 10, 44);
+  }
+  ctx.restore();
+
   // ---- стрелы игрока ----
   ARENA.shots = (ARENA.shots || []).filter(function(a){
     a.x += a.vx * dt; a.y += a.vy * dt; a.t -= dt;
