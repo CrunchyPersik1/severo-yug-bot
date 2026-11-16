@@ -23,8 +23,8 @@ def test_underlevel_asks_instead_of_denying():
 
 
 def test_boss_damage_is_meaningful():
-    assert "dmg: Math.round(14 + zi * 4)" in DUNGEON_PAGE
-    assert "const phaseMul = b.phase >= 3 ? 1.7 : b.phase === 2 ? 1.35 : 1;" in DUNGEON_PAGE
+    assert "dmg: Math.round(30 + zi * 18.9)" in DUNGEON_PAGE
+    assert "const phaseMul = b.phase >= 3 ? 1.35 : b.phase === 2 ? 1.15 : 1;" in DUNGEON_PAGE
     assert "h1.hp -= Math.round(b.dmg * 1.2);" in DUNGEON_PAGE
 
 

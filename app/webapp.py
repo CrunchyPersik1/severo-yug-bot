@@ -12339,7 +12339,8 @@ function arenaSetup(){
                 dashT: 0, dvx: 0, dvy: 0, hurt: 0, face: 1, moving: false};
   const hp = Math.round(900 * Math.pow(1.85, zi));
   ARENA.boss = {key: bossKeyForZone(zi), x: w / 2, y: h * 0.26,
-                hp: hp, max: hp, dmg: Math.round(14 + zi * 4),
+                // 30 в первой локации .. 200 в десятой
+                hp: hp, max: hp, dmg: Math.round(30 + zi * 18.9),
                 sp: 120 + zi * 10, face: 1, state: "idle", cd: 900,
                 hurt: 0, tell: 0, phase: 1};
   // если точка спавна попала в укрытие — поднимаемся, пока не свободно
@@ -12755,7 +12756,7 @@ function arenaLoop(){
     if (Math.hypot(a.x - h1.x, a.y - (h1.y - 20)) < 22){
       if (h1.dashT > 0) return false;   // додж-ролл даёт неуязвимость
       // раньше урон был 9+локация — за весь бой снималось 15 HP
-      const phaseMul = b.phase >= 3 ? 1.7 : b.phase === 2 ? 1.35 : 1;
+      const phaseMul = b.phase >= 3 ? 1.35 : b.phase === 2 ? 1.15 : 1;
       h1.hp -= Math.round(b.dmg * phaseMul);
       h1.hurt = 0.3;
       arenaBeep(120, 0.12, "triangle");
@@ -13110,35 +13111,53 @@ async function petLoad(){
 }
 function petTick(dt){
   if (PET.id !== "mani") return;
-  const tx = P.x - (P.facing === 1 ? 34 : -30), ty = P.y + 4;
-  PET.x += (tx - PET.x) * Math.min(1, dt * 7);
-  PET.y += (ty - PET.y) * Math.min(1, dt * 7);
   PET.cd = Math.max(0, PET.cd - dt);
-  if (PET.cd > 0) return;
-  let best = null, bestD = 999;
+  // ищем ближайшего моба, чтобы кот реально на него бежал
+  let target = null, bestD = 999;
   for (let i = 0; i < mobs.length; i++){
     const m = mobs[i];
     const d = Math.hypot(m.x - PET.x, m.y - PET.y);
-    if (d < bestD){ bestD = d; best = m; }
+    if (d < bestD){ bestD = d; target = m; }
   }
-  if (!best || bestD > 250) return;
-  PET.cd = 1.05;
-  best.hp -= 10 + 6 * (PET.level - 1);
-  best.hit = 0.18;
-  FX.burst(best.x, best.y - 10, 7, "#8fd0ff", 100, 10);
-  if (best.hp <= 0) killMob(best);
+  const hunting = target && bestD < 320;
+  let tx, ty;
+  if (hunting){ tx = target.x; ty = target.y - 6; }
+  else { tx = P.x - (P.facing === 1 ? 34 : -30); ty = P.y + 4; }
+  const speed = hunting ? 250 : 160;
+  const dx = tx - PET.x, dy = ty - PET.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  if (dist > 4){
+    const step = Math.min(dist, speed * dt);
+    PET.x += dx / dist * step;
+    PET.y += dy / dist * step;
+  }
+  PET.hunt = !!hunting;
+  if (hunting && dist < 34 && PET.cd <= 0){
+    PET.cd = 0.9;
+    PET.atk = 0.25;
+    target.hp -= 10 + 6 * (PET.level - 1);
+    target.hit = 0.18;
+    FX.burst(target.x, target.y - 10, 7, "#8fd0ff", 100, 10);
+    if (target.hp <= 0) killMob(target);
+  }
+  PET.atk = Math.max(0, (PET.atk || 0) - dt);
 }
 const CAT_IMG = new Image();
 CAT_IMG.src = "/images/event/cat.png";
 function petDraw(){
   if (PET.id !== "mani") return;
   ctx.save();
+  // пет рисовался в мировых координатах БЕЗ сдвига камеры — поэтому кот
+  // существовал только в нулевой точке карты и его не было видно
+  ctx.translate(-cam.x, -cam.y);
   if (CAT_IMG.complete && CAT_IMG.naturalWidth){
     // спрайт-лист 4x5 по 64 px: берём первый ряд и крутим четыре кадра
     const fw = CAT_IMG.naturalWidth / 4, fh = CAT_IMG.naturalHeight / 5;
-    const frame = Math.floor(Date.now() / 170) % 4;
+    const frame = Math.floor(Date.now() / (PET.hunt ? 110 : 170)) % 4;
+    const row = PET.atk > 0 ? 1 : 0;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(CAT_IMG, frame * fw, 0, fw, fh, PET.x - 26, PET.y - 44, 52, 52);
+    ctx.drawImage(CAT_IMG, frame * fw, row * fh, fw, fh,
+                  PET.x - 26, PET.y - 44, 52, 52);
   } else {
     ctx.font = "18px serif";
     ctx.textAlign = "center";
