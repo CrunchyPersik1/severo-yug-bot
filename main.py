@@ -24,6 +24,7 @@ from app.cards import CARDS, card_rows
 from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
 from app import event
+from app import stock_alerts
 from app.db import Database
 from app.dungeon_hero import DungeonHeroRepo
 from app.dungeon_hub import DungeonHub
@@ -103,6 +104,8 @@ async def _ticker(
             await _safe_tick("командные бои", team.tick)
             # сообщаем в чат, когда счастливая минута закончилась
             await _safe_tick("счастливая минута", lambda: event.tick(bot, db))
+            # сток карт: раз в 5 минут — тем, кто включил уведомления
+            await _safe_tick("сток карт", lambda: stock_alerts.tick(bot, db))
             # Живой курс биржи: шаг каждые 15 секунд + оповещения о росте.
             alerts = await _safe_tick("биржа", stocks.tick)
             if alerts:

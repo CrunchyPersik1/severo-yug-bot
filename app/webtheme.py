@@ -528,7 +528,10 @@ BOOTSTRAP = POLISH + r"""<script>
       (p.stock_alerts ? "Вкл" : "Выкл") + '</button></div>' +
       '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
       '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
-      'во всех мини-аппках.</div></div>';
+      'во всех мини-аппках.</div>' +
+      '<div class="__ver" style="margin-top:10px;text-align:center;font-size:11px;' +
+      'color:var(--muted);letter-spacing:.4px">Версия ' +
+      ((window.__APP_VERSION) ? window.__APP_VERSION : "—") + '</div></div>';
     var tutBtn = document.getElementById("__tut-run");
     if (tutBtn) tutBtn.onclick = function(){
       if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
@@ -877,6 +880,16 @@ INIT_KEEP = """<script>
 </script>"""
 
 
+def app_version() -> str:
+    """Текущая версия игры: см. app/version.py и CHANGELOG.txt."""
+    try:
+        from .version import VERSION
+
+        return str(VERSION)
+    except Exception:  # noqa: BLE001
+        return "0.0.0"
+
+
 def inject(html: str) -> str:
     """Подмешивает тему, новый стиль и частицы в любую мини-аппку.
 
@@ -886,5 +899,10 @@ def inject(html: str) -> str:
     if TG_SCRIPT in html and "sessionStorage" not in html:
         html = html.replace(TG_SCRIPT, TG_SCRIPT + INIT_KEEP, 1)
     if "</body>" in html:
-        return html.replace("</body>", BOOTSTRAP + "</body>", 1)
+        return html.replace(
+            "</body>",
+            '<script>window.__APP_VERSION="' + app_version() + '";</script>'
+            + BOOTSTRAP + "</body>",
+            1,
+        )
     return html + BOOTSTRAP
