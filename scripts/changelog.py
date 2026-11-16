@@ -1,4 +1,3 @@
-
 """Сборка CHANGELOG.txt и app/version.py из истории git.
 
 Версия: КРУПНАЯ.ФИЧИ.ФИКСЫ[.СБОРКА]
@@ -20,16 +19,24 @@ VERSION_FILE = ROOT / "app" / "version.py"
 
 # Начала крупных обновлений: подстрока из темы коммита → новая мажорная версия
 MAJOR_MARKS = (
-    "карточки, гача и PvP",              # 1.0.0 — ядро игры
-    "магазин и Telegram Mini App",       # 2.0.0 — магазин и первое приложение
-    "биржа — отдельная мини-аппка",      # 3.0.0 — биржа
-    "главное приложение игры (/hub)",    # 4.0.0 — хаб
-    "Подземелье Тимура",                 # 5.0.0 — подземелье
-    "Юга-кликер",                        # 6.0.0 — кликер
-    "квесты дня, выдача наград",         # 7.0.0 — ивент «Санта Егор»
-    "9 стилей для мини-аппок",           # 8.0.0 — стили
-    "арена боссов",                      # 9.0.0 — боевая арена
+    ("927f659", "1.0.0 — карточки, гача и PvP"),
+    ("e93909f", "2.0.0 — магазин и первое мини-приложение"),
+    ("40af28d", "3.0.0 — биржа отдельным приложением"),
+    ("f9c57a3", "4.0.0 — девять стилей мини-аппок"),
+    ("24c0740", "5.0.0 — главный экран игры (/hub)"),
+    ("721e5e0", "6.0.0 — Юга-кликер"),
+    ("f049895", "7.0.0 — ивент «Санта Егор»"),
+    ("2671060", "8.0.0 — подземелье Тимура"),
+    ("2e3e347", "9.0.0 — арена боссов"),
 )
+
+def major_index(sha: str, marks: list[tuple[str, str]]) -> int | None:
+    """Какая эпоха начинается этим коммитом."""
+    for index, (mark_sha, _) in enumerate(marks, start=1):
+        if sha.startswith(mark_sha):
+            return index
+    return None
+
 
 # balance/test/docs/chore — это правки, а не новые функции
 TYPE_FEAT = ("feat", "добав", "нов", "прототип")
@@ -60,26 +67,45 @@ def git_log() -> list[tuple[str, str, str]]:
     return rows
 
 
-def is_long(mark: str) -> int:
-    return len(mark)
+TYPE_FEAT = ("feat", "добав", "нов", "прототип")
 
 
-def major_index(subject: str, marks: list[tuple[int, str]]) -> int | None:
-    for index, mark in marks:
-        if mark in subject:
-            return index
-    return None
+def git_log() -> list[tuple[str, str, str]]:
+    # без pipe: в этом окружении дочерние процессы не могут писать в канал,
+    # поэтому git пишет прямо в файл
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".log", delete=False, encoding="utf-8") as fh:
+        dump = fh.name
+    with open(dump, "w", encoding="utf-8") as out:
+        subprocess.run(
+            ["git", "log", "--reverse", "--pretty=%H%x09%ad%x09%s", "--date=short"],
+            cwd=ROOT,
+            stdout=out,
+            check=True,
+        )
+    with open(dump, encoding="utf-8") as fh:
+        out = fh.read()
+    Path(dump).unlink(missing_ok=True)
+    rows = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3:
+            rows.append((parts[0], parts[1], parts[2]))
+    return rows
 
 
 def build() -> tuple[str, list[dict]]:
     commits = git_log()
-    marks = [(i + 1, mark) for i, mark in enumerate(MAJOR_MARKS)]
+    marks = list(MAJOR_MARKS)
     major = minor = patch = 0
     version = "0.0.0"
     entries: list[dict] = []
     for number, (sha, day, subject) in enumerate(commits, start=1):
-        mark = major_index(subject, marks)
-        if mark is not None:
+        mark = major_index(sha, marks)
+        # эпоха только растёт: иначе старый маркер в тексте коммита
+        # откатывал счётчик назад и версии прыгали (5.86 после 6.x)
+        if mark is not None and mark > major:
             major = mark
             minor = 0
             patch = 0
