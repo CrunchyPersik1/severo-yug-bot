@@ -1119,7 +1119,9 @@ async function send(path, body){
 let STOCK_LEFT = 0, STOCK_TIMER = 0, STOCK_WINDOW = -1;
 async function stockLoad(){
   const grid = document.getElementById("stkGrid");
-  const data = await post("/api/shop/stock", {});
+  // это GET-ручка: post() вернул бы 405 и сток «не подгружался»
+  const res = await fetch("/api/shop/stock", {headers});
+  const data = await res.json().catch(function(){ return null; });
   if (!data || !data.ok){
     if (grid) grid.innerHTML = '<div class="sempty">сток недоступен</div>';
     return;
