@@ -12036,8 +12036,11 @@ function killMob(m){
   sync();
 }
 function expNeed(lvl){
-  // поздние уровни требуют больше, но не в разы: 60 * lvl^1.5
-  return Math.round(40 * Math.pow(Math.max(1, lvl), 1.5));
+  // Около 12-13 мобов на уровень. Порог привязан к HP мобов СВОЕЙ локации,
+  // а не к номеру уровня: раньше 40 * lvl^1.5 рос быстрее мобов и на 40+
+  // уровнях выходило по 50-150 убийств на один уровень.
+  const hp = zoneMobHp(ownZone(lvl));
+  return Math.round(hp * 2.2);
 }
 function heroMax(lvl){
   return 120 + (Math.max(1, lvl) - 1) * 10;
@@ -12052,7 +12055,8 @@ function xpPaint(){
   const zi = Math.max(0, Math.min(9, zoneIndex(P.y)));
   // сколько мобов ещё нужно — по среднему опыту с моба этой локации
   const mult = zoneXpMult(zi, stats.lvl) * (stats.lvl < zoneReq(P.y) ? 0.5 : 1);
-  const perMob = Math.max(1, Math.round(zoneMobHp(zi) * 0.78 / 6 * mult));
+  // столько же, сколько реально даёт killMob: HP моба / 6
+  const perMob = Math.max(1, Math.round(zoneMobHp(zi) / 6 * mult));
   const left = Math.ceil(Math.max(0, need - stats.exp) / Math.max(1, perMob));
   txt.textContent = "УР. " + stats.lvl + " · " + Math.round(stats.exp) + " / " + need +
     (left > 0 ? " · ~" + left + " мобов" : " · УРОВЕНЬ ГОТОВ") +
