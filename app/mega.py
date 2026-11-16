@@ -22,9 +22,19 @@ RESET_HOUR_UTC = 7       # 12:00 по ЕКБ
 # Десять видов цели. SQL считает прогресс внутри недельного окна ($2 — начало).
 QUESTS: dict[str, dict[str, Any]] = {
     "drops": {
-        "title": "Выбей карты «Северо-Юг»",
-        "sql": "select count(*) from drops where user_id = $1 and rolled_at >= $2",
-        "needs": (40, 80, 150),
+        # Раньше считались ТОЛЬКО дропы: 1 в сутки (5 с VIP) — за неделю
+        # никак не набрать 80, цель была физически невыполнимой.
+        # Теперь считаем любые полученные карты: дроп, открытые кейсы и подарки.
+        "title": "Получи карты «Северо-Юг»",
+        "sql": (
+            "select (select count(*) from drops "
+            "         where user_id = $1 and rolled_at >= $2) "
+            "     + (select count(*) from cases "
+            "         where user_id = $1 and opened and created_at >= $2) "
+            "     + (select count(*) from gifts "
+            "         where receiver_id = $1 and timestamp >= $2)"
+        ),
+        "needs": (20, 35, 60),
     },
     "upgrades": {
         "title": "Крути апгрейдер",
