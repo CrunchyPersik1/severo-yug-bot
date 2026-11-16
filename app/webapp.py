@@ -299,6 +299,8 @@ def _entry_payload(entry) -> dict[str, Any]:
             }
             for cid in entry.payload["cards"]
         ]
+    elif entry.kind == "weapon_case":
+        data["icon"] = "⚔️"
     elif entry.kind == "accessory":
         item_id = int(entry.payload["item_id"])
         data["icon"] = ACCESSORIES[item_id - 1].name and "🎁"
@@ -938,7 +940,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 <script>
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 const headers = {"X-Telegram-Init-Data": tg ? tg.initData : "", "Content-Type": "application/json"};
-const CATS = [["card","Учителя дня"],["case_d","Кейсы"],["accessory","Аксессуары"],["theme","Стили"],["pack","Наборы"]];
+const CATS = [["card","Учителя дня"],["case_d","Кейсы"],["weapon_case","Оружие"],["accessory","Аксессуары"],["theme","Стили"],["pack","Наборы"]];
 let S = {data: null, tab: "deals", cat: "card", busy: false, gemPick: 10};
 
 function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }

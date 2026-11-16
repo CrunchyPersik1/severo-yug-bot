@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+
 import logging
 import random
 from dataclasses import dataclass
@@ -132,6 +134,21 @@ def catalog(day: date | None = None) -> list[ShopEntry]:
         )
     )
 
+    # Оружейные кейсы подземелья: платим очки, получаем ствол в сумку героя.
+    from . import dungeon_case as wcase_mod
+
+    for case in wcase_mod.CASES:
+        entries.append(
+            ShopEntry(
+                sku=case["sku"],
+                kind="weapon_case",
+                title=case["title"],
+                subtitle=case["subtitle"],
+                price=case["price"],
+                payload={"bonus": case["bonus"]},
+            )
+        )
+
     for item in ACCESSORIES:
         entries.append(
             ShopEntry(
@@ -238,6 +255,10 @@ class ShopRepo:
                         user_id,
                     )
                     granted = ["кейс «7Д класс»"]
+                elif entry.kind == "weapon_case":
+                    granted = [
+                        await self._grant_weapon_case(con, user_id, entry)
+                    ]
                 elif entry.kind == "case_ultra":
                     await con.execute(
                         "insert into cases (user_id, source) values ($1, 'ultra')",
@@ -263,6 +284,50 @@ class ShopRepo:
             "balance": int(row["bonus_points"]),
             "granted": granted,
         }
+
+    async def _grant_weapon_case(
+        self, con: asyncpg.Connection, user_id: int, entry: ShopEntry
+    ) -> str:
+        """Кейс оружия: ролл по уровню героя, ствол в сумку, надеть если сильнее."""
+        from . import dungeon_case as wcase_mod
+
+        hero = await con.fetchrow(
+            "select level, weapon, bag from dungeon_hero where user_id = $1",
+            user_id,
+        )
+        level = int(hero["level"] or 1) if hero else 1
+        weapon = wcase_mod.roll(level, int(entry.payload.get("bonus") or 0))
+        # bag из jsonb приходит строкой: list("["sword…") разобрал бы её по буквам
+        raw_bag = hero["bag"] if hero else None
+        if isinstance(raw_bag, str):
+            try:
+                bag = list(json.loads(raw_bag or "[]"))
+            except ValueError:
+                bag = []
+        else:
+            bag = list(raw_bag or [])
+        current = str(hero["weapon"]) if hero and hero["weapon"] else ""
+        if weapon["id"] not in bag:
+            bag.append(weapon["id"])
+        equipped = current
+        old = wcase_mod.stats(current) if current else None
+        if old is None or int(weapon["dmg"]) > int(old["dmg"]):
+            equipped = weapon["id"]
+        await con.execute(
+            """
+            insert into dungeon_hero (user_id, weapon, bag)
+            values ($1, $2, $3::jsonb)
+            on conflict (user_id) do update
+               set weapon = excluded.weapon, bag = excluded.bag
+            """,
+            user_id,
+            equipped,
+            json.dumps(bag),
+        )
+        return (
+            f"{weapon['name']} (урон {weapon['dmg']}, "
+            f"дальн. {weapon['range']})"
+        )
 
     async def _grant(
         self, con: asyncpg.Connection, user_id: int, entry: ShopEntry
