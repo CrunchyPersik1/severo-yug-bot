@@ -1648,6 +1648,9 @@ async def api_drop(request: Request) -> JSONResponse:
     is_new = card.card_id not in counts
     await state.db.add_card(uid, card.card_id)
     await state.db.add_points(uid, card.points)
+    # без этой записи дроп из приложения не учитывался ни в заданиях,
+    # ни в мегаквесте: они считают строки в drops
+    await state.db.add_drop(uid, None, card.card_id, day)
     payload = _card_reveal(card)
     payload["is_new"] = is_new
     extra: dict[str, Any] | None = None
@@ -1657,6 +1660,7 @@ async def api_drop(request: Request) -> JSONResponse:
         counts = await state.db.get_collection(uid)
         await state.db.add_card(uid, second.card_id)
         await state.db.add_points(uid, second.points)
+        await state.db.add_drop(uid, None, second.card_id, day)
         extra = _card_reveal(second)
         extra["is_new"] = second.card_id not in counts
     return JSONResponse({"ok": True, "card": payload, "extra": extra, "left": int(left)})
