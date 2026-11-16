@@ -22,8 +22,9 @@ def test_leveling_is_reachable():
     # 25 уровней на локацию, как попросил владелец
     assert "function zoneReq(y){ return 1 + zoneIndex(y) * 25; }" in DUNGEON_PAGE
     assert "zoneIndex(y) * 25" in DUNGEON_PAGE
-    # кривая: 40 * lvl^1.5, опыт с моба max/6
-    assert "Math.round(40 * Math.pow(Math.max(1, lvl), 1.5))" in DUNGEON_PAGE
+    # кривая привязана к HP мобов своей локации, опыт с моба max/6
+    assert "const hp = zoneMobHp(ownZone(lvl));" in DUNGEON_PAGE
+    assert "return Math.round(hp * 2.2);" in DUNGEON_PAGE
     assert "Math.max(8, Math.round(m.max / 6))" in DUNGEON_PAGE
 
 
@@ -38,27 +39,27 @@ def test_stored_exp_levels_up_on_load():
     assert "while (stats.exp >= expNeed(stats.lvl) && stats.lvl < 999)" in DUNGEON_PAGE
 
 
-def test_starter_needs_about_20_30_mobs():
-    """Своя локация: начало — быстро, дальше десятки-сотни мобов на уровень."""
+def test_every_level_needs_about_10_15_mobs():
+    """Порог опыта привязан к мобам своей локации: 10-15 убийств на уровень."""
     caps = (250, 500, 1_000, 1_350, 2_000, 2_500, 3_000, 3_500, 4_500, 10_000)
-
-    def need(lvl: int) -> int:
-        return round(40 * lvl ** 1.5)
 
     def own(level: int) -> int:
         return min(9, (level - 1) // 25)
 
-    results = {}
-    for level in (2, 6, 14, 26, 40, 60, 90, 120):
+    for level in (1, 5, 10, 20, 25, 26, 40, 46, 60, 90, 120, 250, 400):
         zone = own(level)
-        per_mob = max(8, round(caps[zone] * 0.78 / 6))
-        if level < 1 + zone * 25:
-            per_mob = max(1, round(per_mob * 0.5))
-        results[level] = -(-need(level) // per_mob)
+        need = round(caps[zone] * 2.2)
+        per_mob = max(8, round(caps[zone] / 6))
+        mobs = need / per_mob
+        assert 10 <= mobs <= 15, (level, mobs)
 
-    assert results[2] <= 10          # первые уровни — быстро
-    assert 40 <= results[26] <= 120  # середина — не «слишком легко»
-    assert 80 <= results[120] <= 250  # глубина — долго, как и просили
+
+def test_start_is_not_instant():
+    # раньше на 1-2 уровне хватало одного моба: 40 xp против 42 за моба
+    caps = 250
+    need = round(caps * 2.2)
+    per_mob = max(8, round(caps / 6))
+    assert need / per_mob >= 10
 
 
 def test_high_level_farming_zone_one_is_ten_times_slower():
