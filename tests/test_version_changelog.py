@@ -25,10 +25,15 @@ def test_changelog_lists_every_commit():
     assert len(entries) == version.BUILD
 
 
-def test_major_versions_are_marked():
+def test_changelog_is_grouped_by_eras():
     text = (ROOT / "CHANGELOG.txt").read_text(encoding="utf-8")
-    assert "крупное обновление" in text
-    assert text.count("крупное обновление") >= 5
+    assert text.count("ЭПОХА") >= 9
+    # внутри эпохи версии идут по убыванию, начало эпохи — X.0.0
+    assert "ЭПОХА 9" in text and "[9.0.0]" in text
+    first_block = text.split("ЭПОХА 9", 1)[1]
+    top = first_block.index("[9.")
+    assert top < first_block.index("[8.")
+
 
 
 def test_settings_show_version():

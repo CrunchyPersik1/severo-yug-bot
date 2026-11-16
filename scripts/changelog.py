@@ -137,21 +137,38 @@ def render(entries: list[dict]) -> str:
         "СЕВЕРО-ЮГ · ИСТОРИЯ ОБНОВЛЕНИЙ",
         "",
         "Формат версии: КРУПНАЯ.ФИЧИ.ФИКСЫ",
-        "  КРУПНАЯ — новая большая часть игры (новая цифра в начале)",
-        "  ФИЧИ   — сколько новых функций добавлено внутри крупной",
+        "  КРУПНАЯ — эпоха: новая большая часть игры (новая цифра в начале)",
+        "  ФИЧИ   — сколько новых функций добавлено внутри эпохи",
         "  ФИКСЫ  — сколько правок и багфиксов внутри текущей фичи",
         "",
         f"Сейчас в игре: {latest} · собрано {len(entries)} коммитов · {today}",
         "",
     ]
-    current = None
-    for entry in reversed(entries):
-        if entry["version"] != current:
-            current = entry["version"]
-            mark = "  ← крупное обновление" if entry["major"] else ""
-            lines.append("")
-            lines.append(f"[{current}]  {entry['day']}{mark}")
-        lines.append(f"   · {entry['subject']}  ({entry['sha']})")
+
+    # эпохи идут от новой к старой, внутри эпохи версии тоже сверху вниз
+    era_titles = {index: title for index, (_, title) in enumerate(MAJOR_MARKS, start=1)}
+    eras: dict[int, list[dict]] = {}
+    for entry in entries:
+        era = int(entry["version"].split(".")[0])
+        eras.setdefault(era, []).append(entry)
+
+    for era in sorted(eras, reverse=True):
+        group = eras[era]
+        first = group[0]
+        title = era_titles.get(era, "")
+        lines.append("")
+        lines.append("=" * 62)
+        lines.append(f"ЭПОХА {era} · {title.split(' — ')[-1].upper()}")
+        lines.append(f"началась {first['day']} · коммитов в эпохе: {len(group)}")
+        lines.append("=" * 62)
+
+        current = None
+        for entry in reversed(group):
+            if entry["version"] != current:
+                current = entry["version"]
+                lines.append("")
+                lines.append(f"[{current}]  {entry['day']}")
+            lines.append(f"   · {entry['subject']}  ({entry['sha']})")
     lines.append("")
     return "\n".join(lines)
 
