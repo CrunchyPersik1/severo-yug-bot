@@ -190,18 +190,11 @@ alter table gifts alter column card_id drop not null;
 -- Разовая досдача очков за карты, полученные до этого изменения.
 alter table players add column if not exists points_backfilled boolean not null default false;
 
-update players p
-   set bonus_points = bonus_points + coalesce(sub.total, 0),
-       points_backfilled = true
-  from (
-        select col.user_id, sum(c.points)::int as total
-          from collection col
-          join cards c on c.card_id = col.card_id
-         group by col.user_id
-       ) sub
- where sub.user_id = p.user_id
-   and p.points_backfilled is false;
-
+-- ВАЖНО: сама досдача очков за коллекцию отсюда убрана.
+-- Раньше этот UPDATE выполнялся при каждом старте и выдавал новым игрокам
+-- стоимость их коллекции ещё раз: игрок получал карты в игре, потом деплой
+-- «докидывал» ему очки. Исторически досдача уже сделана, флаг у всех стоит,
+-- а новым игрокам очки приходят только из игры.
 update players set points_backfilled = true where points_backfilled is false;
 -- Фамилии для карт с повторяющимися именами (два Тамерлана, два Амира, два Данияра)
 alter table cards add column if not exists surname text;
