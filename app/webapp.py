@@ -874,6 +874,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .scard button[disabled]{background:var(--panel);color:var(--muted)}
 .scard.own{opacity:.55}
 .sempty{grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center;padding:14px}
+.sreroll{width:100%;margin-top:8px;border:1px solid color-mix(in srgb,var(--acc) 40%,var(--line));
+  background:var(--panel2);color:var(--acc2);border-radius:var(--r-1);padding:10px;
+  font-family:inherit;font-size:12px;font-weight:800}
 </style>
 </head>
 <body>
@@ -889,6 +892,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   <div class="stockbox" id="stockBox">
     <div class="shead"><b>СТОК КАРТ</b><span id="stkTimer">5:00</span></div>
     <div class="sgrid" id="stkGrid"><div class="sempty">загружаю…</div></div>
+    <button class="sreroll" id="stkReroll">🔄 Перекрутить · 19 💎</button>
   </div>
 
   <section class="section on" id="s-deals">
@@ -1123,6 +1127,8 @@ async function stockLoad(){
   }
   STOCK_WINDOW = data.window;
   STOCK_LEFT = data.seconds_left;
+  const rr = document.getElementById("stkReroll");
+  if (rr) rr.textContent = "🔄 Перекрутить · " + (data.reroll_price || 19) + " 💎";
   stockPaint(data.stock);
   stockTick();
 }
@@ -1150,6 +1156,15 @@ async function stockBuy(id, btn){
   }
   if (window.__revealCards) window.__revealCards([data.card], function(){});
   stockLoad();
+}
+async function stockReroll(){
+  const data = await post("/api/shop/stock/reroll", {});
+  if (!data || !data.ok){ toast((data && data.error) || "не вышло"); return; }
+  toast("Сток перекручен — таймер общий, сброс по часам");
+  STOCK_WINDOW = data.window;
+  STOCK_LEFT = data.seconds_left;
+  stockPaint(data.stock);
+  stockTick();
 }
 function stockTick(){
   clearInterval(STOCK_TIMER);
@@ -13573,6 +13588,55 @@ async def ws_dungeon(websocket: WebSocket) -> None:
             hub.drop(user_id)          # сначала перестаём быть «живым»
             await _save_spot(state, user_id, spot, force=True)
 
+async def _stock_rerolls(state, user_id: int, window: int) -> int:
+    """Сколько раз игрок перекручивал сток в текущем окне."""
+    try:
+        async with state.db.pool.acquire() as con:
+            return int(
+                await con.fetchval(
+                    "select count from stock_reroll where user_id = $1 and window = $2",
+                    int(user_id),
+                    int(window),
+                )
+                or 0
+            )
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+@router.post("/api/shop/stock/reroll")
+async def api_card_stock_reroll(request: Request) -> JSONResponse:
+    """Личная перекрутка стока за гемы: общий таймер не сбрасывается."""
+    from . import card_stock as stock_mod
+
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    window = stock_mod.window_key()
+    if not await state.db.spend_crystals(user_id, stock_mod.REROLL_PRICE):
+        return JSONResponse(
+            {"error": f"Перекрутка стоит {stock_mod.REROLL_PRICE} 💎"}, status_code=400
+        )
+    async with state.db.pool.acquire() as con:
+        rerolls = int(
+            await con.fetchval(
+                "insert into stock_reroll (user_id, window, count) values ($1, $2, 1) "
+                "on conflict (user_id, window) do update "
+                "set count = stock_reroll.count + 1 returning count",
+                user_id,
+                window,
+            )
+            or 1
+        )
+    counts = await state.db.get_collection(user_id)
+    data = stock_mod.payload(set(counts), window, rerolls, user_id)
+    data["ok"] = True
+    return JSONResponse(data)
+
+
 @router.get("/api/shop/stock")
 async def api_card_stock(request: Request) -> JSONResponse:
     """Общий сток карт: обновляется каждые 5 минут, у всех одинаковый."""
@@ -13585,7 +13649,9 @@ async def api_card_stock(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(error)}, status_code=401)
     user_id = int(user["id"])
     counts = await state.db.get_collection(user_id)
-    data = stock_mod.payload(set(counts), stock_mod.window_key())
+    window = stock_mod.window_key()
+    rerolls = await _stock_rerolls(state, user_id, window)
+    data = stock_mod.payload(set(counts), window, rerolls, user_id)
     data["ok"] = True
     return JSONResponse(data)
 
@@ -13607,8 +13673,10 @@ async def api_card_stock_buy(request: Request) -> JSONResponse:
         body = {}
     card_id = str(body.get("id") or "")
     user_id = int(user["id"])
+    window = stock_mod.window_key()
+    rerolls = await _stock_rerolls(state, user_id, window)
     # окно могло смениться, пока игрок смотрел витрину
-    data = stock_mod.payload(set(), stock_mod.window_key())
+    data = stock_mod.payload(set(), window, rerolls, user_id)
     item = next((x for x in data["stock"] if x["id"] == card_id), None)
     if item is None:
         return JSONResponse(
@@ -13616,14 +13684,8 @@ async def api_card_stock_buy(request: Request) -> JSONResponse:
             status_code=400,
         )
     price = int(item["price"])
-    if item["currency"] == "gems":
-        if not await state.db.spend_crystals(user_id, price):
-            return JSONResponse({"error": f"Не хватает {price} 💎"}, status_code=400)
-    else:
-        if not await state.db.spend_points(user_id, price):
-            return JSONResponse(
-                {"error": "Не хватает очков: нужно " + str(price)}, status_code=400
-            )
+    if not await state.db.spend_crystals(user_id, price):
+        return JSONResponse({"error": f"Не хватает {price} 💎"}, status_code=400)
     count = await state.db.add_card(user_id, card_id)
     from . import cards as cards_mod
     from . import cards_d as cards_d_mod

@@ -503,7 +503,7 @@ BOOTSTRAP = POLISH + r"""<script>
 
   function paintSettings(ov){
     var d = PREFS || {};
-    var p = d.prefs || {fx: true, view_classic: "wheel", view_crystal: "wheel", pinned: ""};
+    var p = d.prefs || {fx: true, view_classic: "wheel", view_crystal: "wheel", pinned: "", stock_alerts: false};
     var pin = d.pinned_card;
     ov.innerHTML = '<div class="__sheet">' +
       '<div class="__hd"><span>\u2699 Настройки</span>' +
@@ -522,6 +522,10 @@ BOOTSTRAP = POLISH + r"""<script>
       '</div></div>' +
       (pin ? '<button class="__sw" id="__pin-clear">Снять</button>' : "") +
       '</div>' +
+      '<div class="__row"><div><div class="__t">Уведомления о стоке</div>' +
+      '<div class="__s">Писать в личку, когда сток карт обновился</div></div>' +
+      '<button class="__sw' + (p.stock_alerts ? " on" : "") + '" id="__sw-stock">' +
+      (p.stock_alerts ? "Вкл" : "Выкл") + '</button></div>' +
       '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
       '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
       'во всех мини-аппках.</div></div>';
@@ -532,6 +536,16 @@ BOOTSTRAP = POLISH + r"""<script>
     };
     var x = document.getElementById("__gear-x");
     if (x) x.onclick = function(){ ov.classList.remove("on"); };
+    var stkBtn = document.getElementById("__sw-stock");
+    if (stkBtn) stkBtn.onclick = function(){
+      var next = !p.stock_alerts;
+      stkBtn.className = "__sw" + (next ? " on" : "");
+      stkBtn.textContent = next ? "Вкл" : "Выкл";
+      p.stock_alerts = next;
+      prefsRequest("POST", {stock_alerts: next}, function(saved){
+        if (saved && saved.prefs) p.stock_alerts = !!saved.prefs.stock_alerts;
+      });
+    };
     var fxBtn = document.getElementById("__sw-fx");
     if (fxBtn) fxBtn.onclick = function(){
       var next = !p.fx;
