@@ -2788,6 +2788,56 @@ async def cmd_pointslog(message: Message, db: Database) -> None:
     )
 
 
+@router.message(Command("pointsaudit", "аудит"))
+async def cmd_pointsaudit(message: Message, db: Database) -> None:
+    """Аудит правок очков из базы: /pointsaudit @ник — только админам."""
+    user = message.from_user
+    if user is None:
+        return
+    if user.id not in settings.admin_ids:
+        await message.answer("Команда для админов.")
+        return
+    parts = (message.text or "").split()
+    target = None
+    if message.reply_to_message and message.reply_to_message.from_user:
+        target = message.reply_to_message.from_user
+    elif len(parts) > 1:
+        handle = parts[1].lstrip("@")
+        async with db.pool.acquire() as con:
+            target = await con.fetchrow(
+                "select user_id, username, first_name from players "
+                "where lower(username) = lower($1)",
+                handle,
+            )
+    if target is None:
+        await message.answer("Формат: /pointsaudit @ник или ответом на сообщение.")
+        return
+    uid = int(target["user_id"])
+    async with db.pool.acquire() as con:
+        rows = await con.fetch(
+            "select old_points, new_points, delta, db_user, app_name, created_at "
+            "from points_audit where user_id = $1 order by created_at desc limit 10",
+            uid,
+        )
+    if not rows:
+        await message.answer(
+            "Изменений баланса в аудите пока нет — записи пошли с этого обновления."
+        )
+        return
+    lines = []
+    for row in rows:
+        who = row["db_user"] or "?"
+        app = row["app_name"] or "-"
+        lines.append(
+            f"{row['created_at']:%d.%m %H:%M}  {int(row['delta']):+d}  "
+            f"({int(row['old_points'])} → {int(row['new_points'])})  {who}/{app}"
+        )
+    name = target["first_name"] or target["username"] or uid
+    await message.answer(
+        f"🧾 <b>Аудит очков</b> · {render.esc(str(name))}\n" + "\n".join(lines)
+    )
+
+
 @router.message(Command("tutorial", "обучение"))
 async def cmd_tutorial(message: Message, bot: Bot) -> None:
     """Обучение: короткие сообщения с паузой и кнопкой в приложение."""
