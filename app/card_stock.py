@@ -12,12 +12,15 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from . import buyer as buyer_mod
 from . import cards as cards_mod
 from . import cards_d as cards_d_mod
 
 WINDOW_SECONDS = 300          # окно стока: 5 минут, ровно по часам
 SLOTS = 8
 REROLL_PRICE = 19             # 💎 за личную перекрутку
+SELL_GUARD = 1.35             # запас над ценой скупщика: арбитража нет
+GEM_TO_POINTS = 55_555        # курс обмена гемов на очки в игре
 
 # Цена в гемах по редкости: от 1 за редкую до 80 за ультралегендарную.
 # Цена в очках: дешевле редкость — дешевле карта.
@@ -100,6 +103,15 @@ def stock(window: int | None = None, reroll: int = 0, user_id: int = 0) -> list[
         cost = POINTS_PRICE.get(rarity)
         if cost is None:
             cost = max(1_000, points * 3)
+        # Страховка от арбитража: сток никогда не дешевле, чем скупщик платит
+        # за эту же карту. Иначе купил в стоке — сразу сдал в плюс.
+        card = cards_mod.CARDS_BY_ID.get(card_id) or cards_d_mod.CARDS_D_BY_ID.get(card_id)
+        if card is not None:
+            payback = buyer_mod.price(card)
+            cost = max(int(cost), int(payback * SELL_GUARD) + 1)
+            # Та же логика в гемах: карта не должна обмениваться на гемы
+            # выгоднее официального курса 1 💎 = 55 555 очков.
+            gems = max(int(gems), int(payback / GEM_TO_POINTS * SELL_GUARD) + 1)
         picked.append(
             {
                 "id": card_id,
