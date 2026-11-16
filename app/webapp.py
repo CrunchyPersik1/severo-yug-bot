@@ -11942,7 +11942,11 @@ const keys = {};
     closeTeleport();
   }, true);
 })();
-addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  // на арене пробел стреляет: без preventDefault страница будет скроллиться
+  if (ARENA.on && e.key === " ") e.preventDefault();
+});
 addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 let joyV = {x: 0, y: 0}, joyId = null;
 const joyEl = document.getElementById("joy"), knob = document.getElementById("knob");
@@ -12231,18 +12235,21 @@ function arenaHeroSheet(){
   return arenaSheet("knight", "/images/arena/hero_knight.png", 112, 112, 6);
 }
 const ARENA_BOSS_SHEETS = [
-  ["mob_orc.png", 100, 100, 6],
-  ["mob_soldier.png", 100, 100, 6],
-  ["mob_demon.png", 100, 100, 6],
-  ["mob_blood.png", 100, 100, 6],
-  ["boss_dead.png", 160, 160, 6]
+  ["mob_orc.png", "mob_orc_atk.png", "mob_orc_death.png", 100, 100, 6],
+  ["mob_soldier.png", "mob_soldier_atk.png", "mob_orc_death.png", 100, 100, 6],
+  ["mob_demon.png", "mob_demon_atk.png", "mob_orc_death.png", 100, 100, 6],
+  ["mob_blood.png", "mob_blood_atk.png", "mob_orc_death.png", 100, 100, 6],
+  ["boss_dead.png", "boss_dead.png", "boss_dead.png", 160, 160, 6]
 ];
-function arenaBossSheet(zi){
+function arenaBossSheet(zi, state){
   const pick = ARENA_BOSS_SHEETS[zi % ARENA_BOSS_SHEETS.length];
-  return arenaSheet("boss_" + zi, "/images/arena/" + pick[0], pick[1], pick[2], pick[3]);
+  const src = state === "atk" ? pick[1] : state === "dead" ? pick[2] : pick[0];
+  const key = "boss_" + zi + "_" + (state || "idle");
+  return arenaSheet(key, "/images/arena/" + src, pick[3], pick[4], pick[5]);
 }
 const ARENA = {on:false, t:0, raf:0, arrows:[], hits:[], cd:{}, joy:{dx:0,dy:0},
-               cover:[], flash:0, shake:0, over:false, reward:null};
+               cover:[], flash:0, shake:0, over:false, reward:null,
+               hearts:[], heartCd:7, fire:false, volleyCd:12000, volley:0, volleyNext:0};
 
 function bossKeyForZone(zi){ return Object.keys(BOSS_KINDS)[zi % 3]; }
 
@@ -12252,6 +12259,8 @@ function arenaSetup(){
   const zi = zoneIndex(P.y), w = r.width || 360, h = r.height || 480;
   ARENA.t = 0; ARENA.arrows = []; ARENA.hits = []; ARENA.over = false;
   ARENA.reward = null; ARENA.flash = 0; ARENA.shake = 0; ARENA.joy = {dx:0, dy:0};
+  ARENA.hearts = []; ARENA.heartCd = 7; ARENA.fire = false;
+  ARENA.volleyCd = 12000; ARENA.volley = 0; ARENA.volleyNext = 0;
   ARENA.cover = [
     {x: w * 0.22, y: h * 0.30, w: 58, h: 26},
     {x: w * 0.58, y: h * 0.58, w: 64, h: 26},
@@ -12321,7 +12330,11 @@ function bindArena(){
   joy.onpointerup = joy.onpointercancel = function(){
     ARENA.joy.dx = 0; ARENA.joy.dy = 0; knob.style.transform = "translate(0,0)";
   };
-  document.getElementById("aattack").onclick = arenaAttack;
+  const atkBtn = document.getElementById("aattack");
+  // удержание = автоогонь, как кнопка ⚔ у эльфов
+  atkBtn.onpointerdown = function(e){ e.preventDefault(); ARENA.fire = true; arenaAttack(); };
+  atkBtn.onpointerup = atkBtn.onpointercancel = atkBtn.onpointerleave = function(){ ARENA.fire = false; };
+  atkBtn.onclick = function(){ arenaAttack(); };
   document.getElementById("adash").onclick = function(){
     const h = ARENA.hero;
     if (!h || h.dashCd > 0) return;
@@ -12539,9 +12552,63 @@ function arenaLoop(){
     return a.t > 0 && a.x > -40 && a.x < w + 40 && a.y > -40 && a.y < h + 40;
   });
 
+  // ---- автоогонь удержанием (как кнопка ⚔ у эльфов) ----
+  if (ARENA.fire) arenaAttack();
+  if (keys[" "] || keys["space"] || keys[" "]) arenaAttack();
+
+  // ---- аптечки на полу ----
+  ARENA.heartCd -= dt;
+  if (ARENA.heartCd <= 0){
+    ARENA.heartCd = 9 + Math.random() * 4;
+    let hx = 0, hy = 0, tries = 0;
+    do {
+      hx = 40 + Math.random() * (w - 80);
+      hy = 60 + Math.random() * (h - 110);
+      tries++;
+    } while (arenaBlocked(hx, hy, 26) && tries < 30);
+    ARENA.hearts.push({x: hx, y: hy, t: 12});
+  }
+  ARENA.hearts = ARENA.hearts.filter(function(heart){
+    heart.t -= dt;
+    if (Math.hypot(heart.x - h1.x, heart.y - h1.y) < 30){
+      h1.hp = Math.min(h1.max, h1.hp + Math.round(h1.max * 0.22));
+      ARENA.hits.push({x: heart.x, y: heart.y - 10, t: .8, v: "+"});
+      return false;
+    }
+    return heart.t > 0;
+  });
+
+  // ---- залп со всех сторон в третьей фазе (как у эльфа) ----
+  if (b.phase >= 3){
+    ARENA.volleyCd -= dt * 1000;
+    if (ARENA.volleyCd <= 0){
+      ARENA.volleyCd = 12000;
+      ARENA.volley = 4;
+      ARENA.volleyNext = 0;
+    }
+    if (ARENA.volley > 0 && ARENA.volleyNext <= ARENA.t){
+      ARENA.volley -= 1;
+      ARENA.volleyNext = ARENA.t + 0.22;
+      const from = [
+        {x: -20, y: Math.random() * h},
+        {x: w + 20, y: Math.random() * h},
+        {x: Math.random() * w, y: -20},
+        {x: Math.random() * w, y: h + 20}
+      ];
+      from.forEach(function(side){
+        const a = Math.atan2(h1.y - side.y, h1.x - side.x);
+        ARENA.arrows.push({x: side.x, y: side.y,
+          vx: Math.cos(a) * 560, vy: Math.sin(a) * 560, t: 2.4});
+      });
+    }
+  }
+
   // ---- рисуем босса ----
   const bob = Math.sin(ARENA.t * 3) * 3;
-  const bossSheet = arenaBossSheet(ARENA.zi);
+  const bossState = ARENA.over && ARENA.won ? "dead"
+    : (b.tell > 0 || b.state === "shot" || b.state === "fan" || b.state === "ring") ? "atk"
+    : "idle";
+  const bossSheet = arenaBossSheet(ARENA.zi, bossState);
   if (bossSheet.img.complete && bossSheet.img.naturalWidth){
     ctx.save();
     ctx.translate(b.x, b.y + bob);
@@ -12591,6 +12658,14 @@ function arenaLoop(){
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
   }
 
+  // аптечки
+  ctx.textAlign = "center";
+  ctx.font = "bold 18px sans-serif";
+  ARENA.hearts.forEach(function(heart){
+    ctx.globalAlpha = heart.t < 3 ? (0.4 + 0.6 * Math.abs(Math.sin(ARENA.t * 6))) : 1;
+    ctx.fillText("❤️", heart.x, heart.y);
+    ctx.globalAlpha = 1;
+  });
   // снаряды и цифры
   ctx.fillStyle = "#ffb15c";
   ARENA.arrows.forEach(function(a){ ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, 7); ctx.fill(); });

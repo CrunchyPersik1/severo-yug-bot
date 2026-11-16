@@ -33,9 +33,9 @@ def test_hero_sprite_depends_on_weapon_kind():
 
 
 def test_boss_sprite_cycles_by_zone():
-    assert "function arenaBossSheet(zi)" in DUNGEON_PAGE
+    assert "function arenaBossSheet(zi, state)" in DUNGEON_PAGE
     assert "ARENA_BOSS_SHEETS" in DUNGEON_PAGE
-    assert "arenaBossSheet(ARENA.zi)" in DUNGEON_PAGE
+    assert "arenaBossSheet(ARENA.zi, bossState)" in DUNGEON_PAGE
 
 
 def test_frames_are_sliced_not_stretched():
