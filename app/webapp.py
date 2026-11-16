@@ -857,6 +857,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 .flash.on{animation:__fl .8s ease-out}
 @keyframes __fl{0%{opacity:0;transform:scale(.2)}30%{opacity:1;transform:scale(1)}
   100%{opacity:0;transform:scale(1.5)}}
+
+/* сток карт: общий на всех, обновляется каждые 5 минут */
+.stockbox{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-2);
+  padding:var(--sp-3);margin-bottom:var(--sp-4)}
+.shead{display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-2)}
+.shead b{font-size:var(--fs-sm);letter-spacing:.8px;color:var(--muted)}
+.shead span{font-family:var(--mono);font-size:var(--fs-sm);color:var(--acc2)}
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.scard{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-1);
+  padding:6px;text-align:center}
+.scard img{width:100%;height:54px;object-fit:cover;border-radius:8px;display:block}
+.scard .sn{font-size:9.5px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scard button{width:100%;margin-top:5px;border:0;border-radius:8px;padding:7px 2px;
+  font-family:inherit;font-size:10px;font-weight:800;background:var(--acc);color:var(--acc-ink)}
+.scard button[disabled]{background:var(--panel);color:var(--muted)}
+.scard.own{opacity:.55}
+.sempty{grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center;padding:14px}
 </style>
 </head>
 <body>
@@ -869,6 +886,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 </div>
 
 <div class="wrap">
+  <div class="stockbox" id="stockBox">
+    <div class="shead"><b>СТОК КАРТ</b><span id="stkTimer">5:00</span></div>
+    <div class="sgrid" id="stkGrid"><div class="sempty">загружаю…</div></div>
+  </div>
+
   <section class="section on" id="s-deals">
     <div id="dailyBox"></div>
     <div class="hint" id="dealsHint">…</div>
@@ -1086,6 +1108,62 @@ async function send(path, body){
   const r = await fetch(path, {method: "POST", headers, body: JSON.stringify(body || {})});
   return await r.json();
 }
+
+/* ---------- сток карт: общий, обновляется каждые 5 минут ---------- */
+let STOCK_LEFT = 0, STOCK_TIMER = 0, STOCK_WINDOW = -1;
+async function stockLoad(){
+  const grid = document.getElementById("stkGrid");
+  const data = await post("/api/shop/stock", {});
+  if (!data || !data.ok){
+    if (grid) grid.innerHTML = '<div class="sempty">сток недоступен</div>';
+    return;
+  }
+  if (STOCK_WINDOW !== -1 && data.window !== STOCK_WINDOW){
+    toast("Сток обновился — загляни в магазин");
+  }
+  STOCK_WINDOW = data.window;
+  STOCK_LEFT = data.seconds_left;
+  stockPaint(data.stock);
+  stockTick();
+}
+function stockPaint(items){
+  const grid = document.getElementById("stkGrid");
+  if (!grid) return;
+  grid.innerHTML = items.map(function(it){
+    const price = it.currency === "gems" ? it.price + " 💎" : money(it.price);
+    return '<div class="scard' + (it.owned ? " own" : "") + '">' +
+      (it.image ? '<img src="' + esc(it.image) + '" alt="">' : '<div style="height:54px"></div>') +
+      '<div class="sn">' + esc(it.name || it.id) + '</div>' +
+      '<button data-stk="' + esc(it.id) + '">' + price + '</button></div>';
+  }).join("") || '<div class="sempty">сегодня пусто</div>';
+  grid.querySelectorAll("[data-stk]").forEach(function(b){
+    b.onclick = function(){ stockBuy(b.dataset.stk, b); };
+  });
+}
+async function stockBuy(id, btn){
+  btn.disabled = true;
+  const data = await post("/api/shop/stock/buy", {id: id});
+  if (!data || !data.ok){
+    toast((data && data.error) || "не вышло");
+    btn.disabled = false;
+    return;
+  }
+  if (window.__revealCards) window.__revealCards([data.card], function(){});
+  stockLoad();
+}
+function stockTick(){
+  clearInterval(STOCK_TIMER);
+  STOCK_TIMER = setInterval(function(){
+    STOCK_LEFT -= 1;
+    const el = document.getElementById("stkTimer");
+    if (el && STOCK_LEFT > 0){
+      const m = Math.floor(STOCK_LEFT / 60), sec = STOCK_LEFT % 60;
+      el.textContent = m + ":" + (sec < 10 ? "0" : "") + sec;
+    }
+    if (STOCK_LEFT <= 0){ clearInterval(STOCK_TIMER); stockLoad(); }
+  }, 1000);
+}
+
 async function load(){
   try{
     const r = await fetch("/api/shop", {headers});
@@ -13494,6 +13572,66 @@ async def ws_dungeon(websocket: WebSocket) -> None:
             spot = hub.snapshot_spot(user_id)
             hub.drop(user_id)          # сначала перестаём быть «живым»
             await _save_spot(state, user_id, spot, force=True)
+
+@router.get("/api/shop/stock")
+async def api_card_stock(request: Request) -> JSONResponse:
+    """Общий сток карт: обновляется каждые 5 минут, у всех одинаковый."""
+    from . import card_stock as stock_mod
+
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    user_id = int(user["id"])
+    counts = await state.db.get_collection(user_id)
+    data = stock_mod.payload(set(counts), stock_mod.window_key())
+    data["ok"] = True
+    return JSONResponse(data)
+
+
+@router.post("/api/shop/stock/buy")
+async def api_card_stock_buy(request: Request) -> JSONResponse:
+    """Купить карту из стока: очки или гемы, покупка только для себя."""
+    from . import card_stock as stock_mod
+    from . import upgrader as upgrader_mod
+
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    card_id = str(body.get("id") or "")
+    user_id = int(user["id"])
+    # окно могло смениться, пока игрок смотрел витрину
+    data = stock_mod.payload(set(), stock_mod.window_key())
+    item = next((x for x in data["stock"] if x["id"] == card_id), None)
+    if item is None:
+        return JSONResponse(
+            {"error": "Эта карта больше не в стоке — витрина обновилась."},
+            status_code=400,
+        )
+    price = int(item["price"])
+    if item["currency"] == "gems":
+        if not await state.db.spend_crystals(user_id, price):
+            return JSONResponse({"error": f"Не хватает {price} 💎"}, status_code=400)
+    else:
+        if not await state.db.spend_points(user_id, price):
+            return JSONResponse(
+                {"error": "Не хватает очков: нужно " + str(price)}, status_code=400
+            )
+    count = await state.db.add_card(user_id, card_id)
+    from . import cards as cards_mod
+    from . import cards_d as cards_d_mod
+
+    card = cards_mod.CARDS_BY_ID.get(card_id) or cards_d_mod.CARDS_D_BY_ID.get(card_id)
+    payload = upgrader_mod.card_payload(card, count) if card else {"id": card_id}
+    return JSONResponse({"ok": True, "card": payload, "left": data["seconds_left"]})
+
 
 @router.get("/api/dungeon/shop")
 async def api_dungeon_shop(request: Request) -> JSONResponse:
