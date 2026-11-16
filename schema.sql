@@ -1018,3 +1018,26 @@ drop trigger if exists points_audit_trg on players;
 create trigger points_audit_trg
     after update of bonus_points on players
     for each row execute function points_audit_fn();
+
+
+-- Безопасность базы.
+-- Supabase по умолчанию выдаёт ролям anon и authenticated права на все
+-- таблицы public, а RLS обычно выключен. С публичным anon-ключом это значит,
+-- что любой мог читать и ПРАВИТЬ players через REST (/rest/v1/players).
+-- Мы ходим в базу напрямую как postgres, поэтому публичные роли нам не нужны.
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from anon, authenticated;
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+alter default privileges in schema public revoke all on functions from anon, authenticated;
+
+-- Второй слой: RLS на всех таблицах. Политик нет, значит для чужих ролей
+-- доступа нет вовсе; владелец таблиц (postgres) работает как раньше.
+do $$
+declare t text;
+begin
+    for t in select tablename from pg_tables where schemaname = 'public' loop
+        execute format('alter table public.%I enable row level security', t);
+    end loop;
+end $$;
