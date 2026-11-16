@@ -16,7 +16,7 @@ def test_help_mentions_key_sections():
 def test_help_lists_every_action():
     help_text = admin_actions.HELP
     for name in admin_actions.COMMANDS:
-        if name in ("курс", "лог", "тема"):
+        if name in ("курс", "лог", "тема", "очкилог", "аудит"):
             continue  # это алиасы
         assert name in help_text, name
 

@@ -736,6 +736,55 @@ async def act_log(con: asyncpg.Connection, args: list[str]) -> str:
     return "\n".join(out)
 
 
+async def act_pointslog(con: asyncpg.Connection, args: list[str]) -> str:
+    """Журнал начислений очков: /admin pointslog @ник."""
+    if not args:
+        raise ValueError("формат: pointslog @ник")
+    player = await _resolve_player(con, args[0])
+    rows = await con.fetch(
+        "select amount, source, detail, created_at from points_log "
+        "where user_id = $1 order by created_at desc limit 15",
+        int(player["user_id"]),
+    )
+    if not rows:
+        return (
+            "[пусто] журнал появился только с последнего обновления — "
+            "старые начисления не записаны"
+        )
+    lines = [
+        f"{row['created_at']:%d.%m %H:%M}  {int(row['amount']):+d}  "
+        f"{row['source']}  {row['detail'] or ''}".strip()
+        for row in rows
+    ]
+    who = player["first_name"] or player["username"] or player["user_id"]
+    return f"Журнал очков: {who}\n" + "\n".join(lines)
+
+
+async def act_pointsaudit(con: asyncpg.Connection, args: list[str]) -> str:
+    """Правки баланса на уровне базы: /admin pointsaudit @ник."""
+    if not args:
+        raise ValueError("формат: pointsaudit @ник")
+    player = await _resolve_player(con, args[0])
+    rows = await con.fetch(
+        "select old_points, new_points, delta, db_user, app_name, created_at "
+        "from points_audit where user_id = $1 order by created_at desc limit 15",
+        int(player["user_id"]),
+    )
+    if not rows:
+        return (
+            "[пусто] триггер включён недавно — изменения с этого момента "
+            "будут записаны"
+        )
+    lines = [
+        f"{row['created_at']:%d.%m %H:%M}  {int(row['delta']):+d}  "
+        f"({int(row['old_points'])} → {int(row['new_points'])})  "
+        f"{row['db_user'] or '?'}/{row['app_name'] or '-'}"
+        for row in rows
+    ]
+    who = player["first_name"] or player["username"] or player["user_id"]
+    return f"Аудит правок: {who}\n" + "\n".join(lines)
+
+
 COMMANDS = {
     "event": act_event,
     "minuta": act_minuta,
@@ -754,6 +803,10 @@ COMMANDS = {
     "лог": act_log,
     "theme": act_theme,
     "тема": act_theme,
+    "pointslog": act_pointslog,
+    "очкилог": act_pointslog,
+    "pointsaudit": act_pointsaudit,
+    "аудит": act_pointsaudit,
 }
 
 
