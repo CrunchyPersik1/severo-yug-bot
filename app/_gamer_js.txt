@@ -1,0 +1,85 @@
+
+  /* ---------- Геймерский стиль: эффекты, звук, режимы ---------- */
+  var GM = {on:false, mode:"full", audio:null, marquee:null};
+
+  function gmBeep(freq, dur, type, gain){
+    if (!GM.on) return;
+    if (GM.mode === "lite" && freq !== 720) return;   // в оптимизации только клик
+    try{
+      if (!GM.audio) GM.audio = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = GM.audio;
+      if (ctx.state === "suspended") ctx.resume();
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type || "square";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(gain || 0.045, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + dur);
+    }catch(e){}
+  }
+
+  function gmMarquee(){
+    if (document.querySelector(".gm-marquee")) return;
+    var host = document.querySelector(".top, header, .head, .wrap > h1");
+    if (!host) return;
+    var box = document.createElement("div");
+    box.className = "gm-marquee";
+    var line = "СЕВЕРО-ПАСС · КВЕСТЫ КОПЯТСЯ · НАГРАДЫ ЗА УРОВНИ";
+    box.innerHTML = "<div><span><b>▪</b> " + line + " <b>▪</b> " + line +
+      "</span><span><b>▪</b> " + line + " <b>▪</b> " + line + "</span></div>";
+    var anchor = host.classList.contains("wrap") ? host : host;
+    anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    GM.marquee = box;
+  }
+
+  function gmGlitch(){
+    if (GM.mode !== "full") return;
+    document.body.classList.add("gm-glitch");
+    setTimeout(function(){ document.body.classList.remove("gm-glitch"); }, 190);
+  }
+
+  function gmSound(mode){
+    document.addEventListener("click", function(ev){
+      if (!GM.on) return;
+      var el = ev.target.closest && ev.target.closest("button,.btn,[role=button],.tab");
+      if (!el) return;
+      gmBeep(720, 0.045, "square", 0.05);
+      if (el.disabled) return;
+      gmGlitch();
+      if (mode !== "lite") setTimeout(function(){ gmBeep(980, 0.05, "triangle", 0.03); }, 55);
+    }, true);
+    /* награда/покупка: слушаем всплывающие тосты */
+    var obs = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        if (m.addedNodes.length) gmBeep(1280, 0.07, "sine", 0.035);
+      });
+    });
+    document.querySelectorAll(".toast,#toast").forEach(function(t){
+      obs.observe(t, {childList:true, characterData:true, subtree:true});
+    });
+  }
+
+  function gamerOn(themeId){
+    var was = GM.on;
+    GM.on = themeId === "gamer";
+    window.__THEME = themeId || "";
+    if (!GM.on){
+      document.body.classList.remove("theme-gamer","gm-lite","gm-full");
+      return;
+    }
+    document.body.classList.add("theme-gamer");
+    if (!was){
+      gmMarquee();
+      gmSound(GM.mode);
+    }
+    gmApplyMode();
+  }
+
+  function gmApplyMode(){
+    document.body.classList.toggle("gm-lite", GM.mode === "lite");
+    document.body.classList.toggle("gm-full", GM.mode === "full");
+    if (GM.marquee){
+      GM.marquee.querySelectorAll("div").forEach(function(d){ d.style.animation = ""; });
+    }
+  }

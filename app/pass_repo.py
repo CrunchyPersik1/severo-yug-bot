@@ -282,6 +282,7 @@ class PassRepo:
                     )
         if kind != "plus":
             await self._grant_skin(user_id)
+            await self._grant_gamer(user_id)
         return {
             "paid": int(price),
             "boost": int(pass_config.TOTAL_XP * pass_config.PREMIUM_BOOST)
@@ -304,6 +305,15 @@ class PassRepo:
                 "on conflict (user_id, card_id) do update set count = collection.count + 1",
                 int(user_id),
                 SKIN_CARD,
+            )
+
+    async def _grant_gamer(self, user_id: int) -> None:
+        """Стиль «Геймерский» — навсегда, за покупку Пасс++."""
+        async with self.pool.acquire() as con:
+            await con.execute(
+                "insert into player_themes (user_id, theme_id) values ($1, 'gamer') "
+                "on conflict do nothing",
+                int(user_id),
             )
 
     async def ensure_title(self, user_id: int, season: str | None = None) -> str | None:

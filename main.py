@@ -20,7 +20,7 @@ from fastapi import FastAPI, Request, Response
 from app.ban import BanMiddleware
 from app.battle_service import BattleService
 from app.boss_repo import BossRepo
-from app.cards import CARDS, card_rows
+from app.cards import CARDS, SKINS, card_rows
 from app.commands import ADMIN_COMMANDS, COMMANDS
 from app.config import settings
 from app import event
@@ -130,8 +130,12 @@ async def lifespan(app: FastAPI):
     # заливалась и тут же удалялась при каждом старте.
     from app.cards_d import CARDS_D
 
+    # скины тоже валидны: без них purge удалял «Ученицу Валерию» сразу
+    # после upsert, и покупка падала на внешнем ключе collection
     await db.purge_missing_cards(
-        [card.card_id for card in CARDS] + [card.card_id for card in CARDS_D]
+        [card.card_id for card in CARDS]
+        + [card.card_id for card in CARDS_D]
+        + [card.card_id for card in SKINS]
     )
 
     market = MarketRepo(db)

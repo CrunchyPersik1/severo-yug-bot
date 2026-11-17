@@ -1,0 +1,1524 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Северо-Пасс</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{
+  --bg:#0d1020; --panel:#161a30; --panel2:#1e2340; --line:#2b3050;
+  --ink:#f2f0ff; --muted:#9aa0c4; --gold:#f6c94a; --acc:#7c5cff; --acc2:#31d0aa;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --r-1:12px; --r-2:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;max-width:100vw;overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding-bottom:90px}
+.top{position:sticky;top:0;z-index:5;padding:12px 16px;display:flex;align-items:center;flex-wrap:wrap;
+  justify-content:space-between;gap:10px;background:rgba(13,16,32,.94);
+  border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}
+.top h1{margin:0;font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+.season{font-size:11px;color:var(--gold);font-weight:800;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto}
+.wrap{width:100%;max-width:560px;margin:0 auto;padding:14px;overflow:hidden}
+.hero{min-width:0;border-radius:var(--r-2);padding:16px;margin-bottom:14px;
+  background:linear-gradient(135deg,#221a3f,#111528 65%);
+  border:1px solid #3a2f66;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:-40% -10% auto;height:140%;
+  background:radial-gradient(circle at 30% 20%,rgba(246,201,74,.18),transparent 60%);
+  pointer-events:none}
+.hero .name{font-size:18px;font-weight:900;line-height:1.25}
+.hero .sub{margin-top:5px;font-size:12px;color:var(--muted)}
+.hero .timer{margin-top:10px;font-size:12px;color:var(--gold);font-weight:800}
+.bar{margin-top:12px;height:12px;border-radius:7px;background:rgba(255,255,255,.12);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:7px;
+  background:linear-gradient(90deg,var(--acc2),var(--gold));transition:width .3s}
+.rowxp{display:flex;justify-content:space-between;margin-top:7px;font-size:12px;
+  color:var(--muted);font-variant-numeric:tabular-nums}
+.lvl{font-size:22px;font-weight:900;color:var(--gold)}
+.buys{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.buys button{flex:1 1 45%;min-width:130px;border:0;border-radius:var(--r-1);padding:12px;
+  font-family:inherit;font-size:13px;font-weight:900;background:var(--acc);color:#fff}
+.buys button.alt{background:linear-gradient(135deg,#f6c94a,#c98a1a);color:#241a03}
+.buys button:disabled{background:var(--panel2);color:var(--muted)}
+.section{margin-top:18px}
+.section h2{margin:0 0 8px;font-size:12px;letter-spacing:1.3px;text-transform:uppercase;
+  color:var(--muted)}
+.quest{border-radius:var(--r-1);background:var(--panel);border:1px solid var(--line);
+  padding:12px;margin-bottom:8px}
+.quest.done{border-color:#3f7a4f;background:#152418}
+.quest .qt{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;font-weight:800}
+.quest .qm{margin-top:6px;font-size:12px;color:var(--muted);display:flex;
+  justify-content:space-between;gap:8px}
+.quest button{margin-top:10px;width:100%;border:0;border-radius:10px;padding:10px;
+  font-family:inherit;font-weight:900;font-size:13px;background:var(--acc2);color:#07231c}
+.quest button:disabled{background:var(--panel2);color:var(--muted)}
+.quest .plus{color:var(--gold);font-weight:900;font-size:11px}
+.track{display:flex;gap:6px;align-items:stretch;margin-bottom:8px;overflow:hidden}
+.level{width:44px;flex:0 0 44px;border-radius:10px;background:var(--panel2);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-weight:900;font-size:13px;color:var(--muted);border:1px solid var(--line)}
+.level.open{color:var(--gold);border-color:#5c4a1a;background:#241d0c}
+.cell{flex:1;min-width:0;overflow:hidden;border-radius:10px;background:var(--panel);border:1px solid var(--line);
+  padding:9px;font-size:11.5px;line-height:1.35;min-height:54px}
+.cell.plus{border-color:#4a3f8a;background:#1b1a35}
+.cell.prem{border-color:#8a5a1a;background:#2a1f0d}
+.cell.locked{opacity:.45}
+.cell button{margin-top:6px;width:100%;border:0;border-radius:8px;padding:6px;
+  font-family:inherit;font-size:11px;font-weight:900;background:var(--acc2);color:#07231c}
+.cell button:disabled{background:var(--panel2);color:var(--muted)}
+.toast{position:fixed;left:12px;right:12px;bottom:16px;padding:12px 14px;border-radius:12px;
+  background:#241a3f;border:1px solid #4a3f8a;font-size:13px;font-weight:700;
+  transform:translateY(140%);transition:transform .25s;z-index:20}
+.toast.on{transform:translateY(0)}
+.small{font-size:11px;color:var(--muted)}
+</style>
+
+<script>
+window.Telegram = window.Telegram || {WebApp:{ready:function(){},expand:function(){},initData:"stub",themeParams:{}}};
+(function(){
+  const PASS = {
+    ok: true,
+    season: {key:"2026-11", name:"Академия Северо-Южных · 11.2026",
+      theme:{name:"Академия Северо-Южных", title:"Лучший из лучших"}, key:"2026-11", days_left: 13},
+    progress: {xp: 9300, level: 16, into: 300, need: 350, plus: true, premium: true,
+      total: 44000, bonus_steps: 0, claimed_free:[1,2,3,4,5,6,7], claimed_plus:[1,2,3,4,5], claimed_prem:[1,2,3]},
+    prices: {plus: 179, premium: 240, upgrade: 60},
+    bonus: {steps:0, claimed:0, left:0, to_next: 2800, options: []},
+    reports: [],
+    title: null,
+    quests: [
+      {slot:0,tier:"light",title:"Открой карту «Северо-Юг»",need:2,xp:200,progress:2,claimed:false,plus:false,ready:true},
+      {slot:1,tier:"light",title:"Крути апгрейдер",need:2,xp:200,progress:1,claimed:false,plus:false,ready:false},
+      {slot:2,tier:"light",title:"Сыграй в казино",need:3,xp:200,progress:3,claimed:true,plus:false,ready:false},
+      {slot:3,tier:"medium",title:"Победи в PvP",need:2,xp:500,progress:1,claimed:false,plus:false,ready:false},
+      {slot:4,tier:"medium",title:"Открой кейсы",need:3,xp:500,progress:3,claimed:false,plus:false,ready:true},
+      {slot:5,tier:"medium",title:"Сдай карты скупщику",need:6,xp:500,progress:2,claimed:false,plus:false,ready:false},
+      {slot:6,tier:"hard",title:"Купи что-нибудь в магазине",need:5,xp:1000,progress:1,claimed:false,plus:false,ready:false},
+      {slot:7,tier:"light",title:"Проведи PvP-бои",need:1,xp:200,progress:1,claimed:false,plus:true,ready:true},
+      {slot:8,tier:"hard",title:"Сдай карты скупщику",need:10,xp:1000,progress:3,claimed:false,plus:true,ready:false}
+    ],
+    rewards: []
+  };
+  for (let l=1;l<=50;l++){
+    PASS.rewards.push({level:l,
+      free:{text: (l%5===0? "12 гемов + кейс 7Г" : l%2===0 ? "1 кейс 7Г" : (400+l*120)+" очков")},
+      plus:{text: (l%10===0? "кейс «Ультра» + 25 гемов" : l%5===0 ? "12 гемов + 20 акций" : l%3===0 ? "карта" : "1 кейс 7Д")},
+      premium: (l<=10||l>=41) ? {text:"карта + " + (6+Math.floor(l/6)) + " гемов"} : null});
+  }
+  const real = window.fetch;
+  window.fetch = function(url, opts){
+    const s = String(url);
+    if (s.indexOf("/api/pass") === 0) return Promise.resolve(new Response(JSON.stringify(PASS),{status:200,headers:{"Content-Type":"application/json"}}));
+    if (s.indexOf("/api/theme") === 0) return Promise.resolve(new Response(JSON.stringify(
+      {theme:"gamer", name:"Геймерский", particles:"spark",
+       vars:{bg:"#08090a",panel:"#0f1113",panel2:"#15181b",line:"#23272b",
+             ink:"#f2f3f5",muted:"#8b9198",acc:"#ffd400",acc2:"#f2f3f5","acc-ink":"#0a0a0a"},
+       owned:["gamer"], all:[]}),{status:200,headers:{"Content-Type":"application/json"}}));
+    if (s.indexOf("/api/") === 0) return Promise.resolve(new Response(JSON.stringify({ok:true,prefs:{fx_mode:"full"}}),{status:200,headers:{"Content-Type":"application/json"}}));
+    return real.apply(this, arguments);
+  };
+})();
+</script>
+</head>
+<body class="theme-gamer gm-full" style="--bg:#08090a;--panel:#0f1113;--panel2:#15181b;--line:#23272b;--ink:#f2f3f5;--muted:#8b9198;--acc:#ffd400;--acc2:#f2f3f5;--acc-ink:#0a0a0a;">
+<div class="top">
+  <h1>Северо-Пасс</h1>
+  <div class="season" id="seasonName">—</div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="name" id="heroName">Академия Северо-Южных</div>
+    <div class="sub" id="heroSub">Сезонный пропуск</div>
+    <div class="timer" id="timer">—</div>
+    <div class="bar"><i id="xpFill" style="width:0%"></i></div>
+    <div class="rowxp"><span id="xpText">0 / 0</span><span class="lvl" id="lvlText">0 ур.</span></div>
+    <div class="buys" id="buys"></div>
+  </div>
+
+  <div class="section">
+    <h2>Квесты сегодня</h2>
+    <div id="quests"></div>
+  </div>
+
+  <div class="section" id="bonusBox" style="display:none">
+    <h2>Бонусы после 50 уровня</h2>
+    <div class="small" id="bonusHint" style="margin-bottom:8px"></div>
+    <div id="bonusList"></div>
+  </div>
+
+  <div class="section">
+    <h2>Дорожки наград</h2>
+    <div class="small" style="margin-bottom:8px">
+      Фри — валюта и кейсы. Пасс+ — карты, стили и акции. Пасс++ — бонусы на 1-10 и 41-50.
+    </div>
+    <div id="tracks"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let S = null;
+function tg(){ try { return window.Telegram && Telegram.WebApp ? Telegram.WebApp : null; } catch(e){ return null; } }
+function headers(){
+  const t = tg();
+  const init = (t && t.initData) || sessionStorage.getItem("tginit") || "";
+  return {"X-Telegram-Init-Data": init};
+}
+function esc(s){ return String(s == null ? "" : s).replace(/[<>&]/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[c])); }
+function toast(text){
+  const el = document.getElementById("toast");
+  el.textContent = text; el.className = "toast on";
+  clearTimeout(el._t); el._t = setTimeout(() => el.className = "toast", 2600);
+}
+function money(n){ return String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+async function api(path, body){
+  const opts = {headers: Object.assign({"Content-Type":"application/json"}, headers())};
+  if (body !== undefined){ opts.method = "POST"; opts.body = JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+function showReports(){
+  const reports = (S.reports || []);
+  if (!reports.length) return;
+  const r = reports[0];
+  const items = (r.items || []).slice(0, 12).map(x => "· " + x).join("\n");
+  alert("Сезон " + r.season + " закрыт.\n" +
+        "Уровень: " + r.level + (r.premium ? " · Пасс++" : r.plus ? " · Пасс+" : "") + "\n" +
+        "Незабранные награды выданы автоматически (" + (r.count || 0) + "):\n" + items);
+}
+
+function paint(){
+  const p = S.progress;
+  document.getElementById("seasonName").textContent = S.season.name;
+  document.getElementById("heroName").textContent = S.season.theme.name;
+  const own = S.title && S.title.title;
+  document.getElementById("heroSub").textContent = own
+    ? ("Твой титул: «" + own + "»")
+    : ("Сезон " + S.season.key + " · титул «" + S.season.theme.title + "» за полное прохождение Пасс++");
+  document.getElementById("lvlText").textContent = p.level + " ур.";
+  const need = p.need || 0;
+  const pct = p.level >= 50 ? 100 : Math.round((p.into / (need || 1)) * 100);
+  document.getElementById("xpFill").style.width = pct + "%";
+  document.getElementById("xpText").textContent =
+    p.level >= 50 ? (money(p.xp) + " XP · бонусы после 50") : (p.into + " / " + need + " XP");
+
+  const buys = document.getElementById("buys");
+  const items = [];
+  if (!p.plus) items.push({kind:"plus", label:"Северо-Пасс+ · " + S.prices.plus + " 💎", alt:false});
+  if (!p.premium) items.push({kind:"upgrade", label:(p.plus ? "До Пасс++ · " + S.prices.upgrade : "Северо-Пасс++ · " + S.prices.premium) + " 💎", alt:true});
+  buys.innerHTML = items.length
+    ? items.map(i => '<button data-buy="' + i.kind + '" class="' + (i.alt ? "alt" : "") + '">' + i.label + '</button>').join("")
+    : '<button disabled>Обе дорожки куплены</button>';
+  buys.querySelectorAll("[data-buy]").forEach(b => b.onclick = () => buy(b.dataset.buy, b));
+
+  const q = document.getElementById("quests");
+  q.innerHTML = S.quests.map(item => {
+    const done = item.claimed;
+    const ready = item.ready && (S.progress.plus || !item.plus);
+    return '<div class="quest ' + (done ? "done" : "") + '">' +
+      '<div class="qt"><span>' + esc(item.title) + '</span>' +
+      '<span>' + (item.plus ? '<span class="plus">ПАСС+</span>' : "") + '</span></div>' +
+      '<div class="qm"><span>' + Math.min(item.progress, item.need) + ' / ' + item.need + '</span>' +
+      '<span>+' + item.xp + ' XP</span></div>' +
+      '<button data-quest="' + item.slot + '" ' + (ready ? "" : "disabled") + '>' +
+      (done ? "Забрано" : ready ? "Забрать" : (item.plus && !S.progress.plus ? "Нужен Пасс+" : "В процессе")) +
+      '</button></div>';
+  }).join("");
+  q.querySelectorAll("[data-quest]").forEach(b => b.onclick = () => claimQuest(Number(b.dataset.quest)));
+
+  paintBonus();
+
+  const t = document.getElementById("tracks");
+  t.innerHTML = S.rewards.map(row => {
+    const open = row.level <= p.level;
+    const freeCell = cell(row.free, open, p.claimed_free.includes(row.level), "free", row.level);
+    const plusCell = row.plus ? cell(row.plus, open && p.plus, p.claimed_plus.includes(row.level), "plus", row.level) : '<div class="cell locked">—</div>';
+    const premCell = row.premium ? cell(row.premium, open && p.premium, p.claimed_prem.includes(row.level), "prem", row.level) : '<div class="cell locked">—</div>';
+    return '<div class="track"><div class="level ' + (open ? "open" : "") + '">' + row.level + '</div>' +
+      freeCell + plusCell + premCell + '</div>';
+  }).join("");
+  t.querySelectorAll("[data-claim]").forEach(b => b.onclick = () => claim(Number(b.dataset.level), b.dataset.track));
+}
+
+function cell(data, open, claimed, track, level){
+  if (!data) return '<div class="cell locked">—</div>';
+  const cls = "cell " + (track === "plus" ? "plus" : track === "premium" ? "prem" : "") + (open ? "" : " locked");
+  const btn = !open ? "" :
+    claimed ? '<button disabled>Забрано</button>' :
+    '<button data-claim="1" data-level="' + level + '" data-track="' + track + '">Забрать</button>';
+  return '<div class="' + cls + '">' + esc(data.text) + btn + '</div>';
+}
+
+function paintBonus(){
+  const box = document.getElementById("bonusBox");
+  const list = document.getElementById("bonusList");
+  const hint = document.getElementById("bonusHint");
+  const b = S.bonus || {steps: 0, claimed: 0, left: 0, to_next: 2800, options: []};
+  if (!b.steps && !b.left){ box.style.display = "none"; return; }
+  box.style.display = "block";
+  hint.textContent = "Заработано шагов: " + b.claimed + " из " + b.steps +
+    " · до следующего " + b.to_next + " XP";
+  if (!b.left || !b.options.length){ list.innerHTML = '<div class="small">Все бонусы забраны</div>'; return; }
+  const step = b.steps;
+  list.innerHTML = b.options.map(opt =>
+    '<div class="quest"><div class="qt"><span>Шаг ' + step + '</span>' +
+    '<span>' + (opt.gems ? opt.gems + ' 💎' : 'бесплатно') + '</span></div>' +
+    '<div class="qm"><span>' + esc((opt.bundle && opt.bundle.text) || '') + '</span></div>' +
+    '<button data-bonus="' + opt.index + '">' + (opt.gems ? "Забрать за гемы" : "Забрать") +
+    '</button></div>'
+  ).join("");
+  list.querySelectorAll("[data-bonus]").forEach(btn =>
+    btn.onclick = () => takeBonus(step, Number(btn.dataset.bonus)));
+}
+
+async function takeBonus(step, index){
+  const d = await api("/api/pass/bonus", {step: step, index: index});
+  if (d.error){ toast(d.error); return; }
+  toast("Получено: " + (d.granted || []).join(", "));
+  await load();
+}
+
+async function load(){
+  try{
+    const d = await api("/api/pass");
+    if (d.error){ toast(d.error); return; }
+    const first = !S;
+    S = d; paint();
+    if (first) showReports();
+  }catch(e){ toast("Связь потерялась"); }
+}
+
+async function claimQuest(slot){
+  const d = await api("/api/pass/quest", {slot: slot});
+  if (d.error){ toast(d.error); return; }
+  toast("+" + d.amount + " XP в пасс");
+  await load();
+}
+async function claim(level, track){
+  const d = await api("/api/pass/claim", {level: level, track: track});
+  if (d.error){ toast(d.error); return; }
+  toast("Получено: " + (d.granted || []).join(", "));
+  await load();
+}
+async function buy(kind, btn){
+  btn.disabled = true;
+  const d = await api("/api/pass/buy", {kind: kind});
+  if (d.error){ toast(d.error); btn.disabled = false; return; }
+  toast(kind === "plus" ? "Северо-Пасс+ открыт!" : "Северо-Пасс++ открыт · +20% прогресса");
+  await load();
+}
+
+const t = tg();
+if (t){ try { t.ready(); t.expand(); } catch(e){} }
+load();
+</script>
+<script>window.__APP_VERSION="10.3.1";</script><style>
+  :root{
+    --radius:14px; --edge:0 6px 20px rgba(0,0,0,.20);
+    /* шкала, общая для всех страниц: отступы, радиусы, типографика */
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+    --r-1:10px; --r-2:14px; --r-pill:999px;
+    --fs-xs:11px; --fs-sm:12.5px; --fs-md:14px; --fs-lg:17px;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --money:var(--acc2);
+  }
+  *{ -webkit-tap-highlight-color:transparent }
+  html{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility }
+  body{
+    background:var(--bg)!important;
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+
+  /* Мягкое свечение вместо пустой черноты */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(115% 52% at 50% -18%,
+        color-mix(in srgb, var(--acc) 20%, transparent), transparent 72%),
+      radial-gradient(75% 42% at 88% 108%,
+        color-mix(in srgb, var(--acc2) 11%, transparent), transparent 70%);
+  }
+  body>*{ position:relative; z-index:1 }
+
+  /* Шапки */
+  header,.top{
+    background:color-mix(in srgb, var(--bg) 88%, transparent)!important;
+    border-color:var(--line)!important;
+  }
+
+  /* Карточки и панели */
+  .card,.item,.lot,.box,.slot,.tile,.unit,.panel,.stat{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--edge);
+    animation:__rise .46s cubic-bezier(.2,.8,.25,1) both;
+    transition:transform .16s cubic-bezier(.2,.8,.25,1),
+               box-shadow .22s ease, border-color .22s ease;
+  }
+  .card:nth-child(2n),.item:nth-child(2n),.lot:nth-child(2n){ animation-delay:.03s }
+  .card:nth-child(3n),.item:nth-child(3n),.lot:nth-child(3n){ animation-delay:.06s }
+  .card:nth-child(5n),.item:nth-child(5n),.lot:nth-child(5n){ animation-delay:.1s }
+  .card:active,.item:active,.lot:active{ transform:scale(.975) }
+  @keyframes __rise{ from{opacity:0;transform:translateY(11px) scale(.986)} to{opacity:1;transform:none} }
+
+  /* Кнопки: плоский акцент, тонкая внутренняя подсветка, без шаблонных градиентов */
+  button,.go,.buy,.sell,.btn,.mult,.tab,.act{
+    border:0!important;
+    border-radius:12px!important;
+    background:var(--acc)!important;
+    background-image:none!important;
+    color:var(--acc-ink)!important;
+    font-weight:800!important;
+    letter-spacing:.35px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.16),
+               0 4px 14px color-mix(in srgb, var(--acc) 28%, transparent)!important;
+    transition:transform .13s ease, filter .13s ease, box-shadow .2s ease;
+  }
+  button:active,.go:active,.buy:active,.sell:active,.btn:active,.mult:active,.tab:active{
+    transform:scale(.968); filter:brightness(.96);
+  }
+  button:not([disabled]):hover,.go:not([disabled]):hover,.buy:not([disabled]):hover{
+    filter:brightness(1.06);
+  }
+  button[disabled],.go[disabled],.buy[disabled],.sell[disabled]{
+    background:var(--panel2)!important;
+    color:var(--muted)!important;
+    box-shadow:none!important;
+  }
+  /* Второстепенные кнопки — контурные, не сплошные */
+  .btn.ghost,.ghost,.tab:not(.on),.mult:not(.on){
+    background:transparent!important;
+    color:var(--muted)!important;
+    border:1px solid var(--line)!important;
+    box-shadow:none!important;
+  }
+  .tab.on,.mult.on{
+    background:var(--acc)!important;
+    color:var(--acc-ink)!important;
+    border-color:transparent!important;
+  }
+
+  /* Цены и суммы */
+  .price,.pr,.bal,.wallet,.money{ color:var(--acc2)!important }
+
+  /* Балансы: знак валюты, ровные цифры и мягкая подложка */
+  .bal,.b.bal,.wallet{
+    font-variant-numeric:tabular-nums;
+    letter-spacing:.3px;
+    font-weight:900;
+  }
+  body .bal,body .b.bal,body .wallet{
+    background:color-mix(in srgb, var(--acc) 13%, var(--panel))!important;
+    border:1px solid color-mix(in srgb, var(--acc) 28%, var(--line))!important;
+    border-radius:999px!important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 3px 12px rgba(0,0,0,.18);
+  }
+
+  /* Длинный текст не выпирает за карточку — обрезается с многоточием */
+  .card .nm,.item .nm,.row .nm,.res .nm,.line .nm,.tile .tt,.tile .tn,
+  .stat b,.name,.tname,.cn,.cp{
+    min-width:0;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  /* Пустые состояния */
+  .empty,.ph,.noart{
+    color:var(--muted);
+    background:color-mix(in srgb, var(--panel) 60%, transparent);
+    border:1px dashed var(--line);
+    border-radius:var(--radius);
+  }
+
+  /* Скроллбары */
+  ::-webkit-scrollbar{ width:6px; height:6px }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:99px }
+  ::-webkit-scrollbar-track{ background:transparent }
+
+  img{ transition:opacity .3s ease }
+
+  /* ===================== СОЧНОСТЬ ===================== */
+
+  /* Страница мягко проявляется */
+  @keyframes __pageIn{ from{opacity:0; transform:translateY(7px)} to{opacity:1; transform:none} }
+  body{ animation:__pageIn .42s cubic-bezier(.2,.8,.25,1) both }
+
+  /* Картинки не «выскакивают», а проявляются */
+  @keyframes __imgIn{ from{opacity:0; transform:scale(1.04)} to{opacity:1; transform:none} }
+  img{ animation:__imgIn .45s cubic-bezier(.2,.8,.25,1) both }
+
+  /* Кнопки: живой отклик на нажатие */
+  body button,body .btn,body .go,body .buy,body .sell,body .tab,body .ch,body .bt{
+    transition:transform .13s cubic-bezier(.2,.8,.3,1),
+               filter .16s ease, box-shadow .22s ease,
+               background .2s ease, color .2s ease!important;
+    will-change:transform;
+  }
+  body button:active,body .btn:active,body .go:active,body .buy:active,
+  body .sell:active,body .tab:active,body .ch:active,body .bt:active{
+    transform:scale(.955)!important;
+  }
+  /* Радиус нажатия (рисуется скриптом внизу) */
+  @keyframes __ripple{ from{transform:scale(0); opacity:.55} to{transform:scale(1); opacity:0} }
+
+  /* Оверлеи: открываются зумом, содержимое подъезжает */
+  @keyframes __fadeIn{ from{opacity:0} to{opacity:1} }
+  @keyframes __zoomIn{
+    from{opacity:0; transform:scale(.86) translateY(14px)}
+    to{opacity:1; transform:none}
+  }
+  .result.on,.flying.on,.modal.on,.sheet.on,.popup.on,.overlay.on{
+    animation:__fadeIn .26s ease both;
+  }
+  .result.on>*,.flying.on>*,.modal.on>*,.sheet.on>*,.popup.on>*{
+    animation:__zoomIn .36s cubic-bezier(.2,.9,.3,1.06) both;
+  }
+
+  /* Списки и сетки: содержимое подъезжает волной */
+  @keyframes __slideIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+  .cards>*,.grid>*,.list>*,.rows>*,.ticker>*{
+    animation:__slideIn .42s cubic-bezier(.2,.8,.25,1) both;
+  }
+  .cards>*:nth-child(2n),.grid>*:nth-child(2n),.list>*:nth-child(2n){ animation-delay:.04s }
+  .cards>*:nth-child(3n),.grid>*:nth-child(3n),.list>*:nth-child(3n){ animation-delay:.08s }
+  .cards>*:nth-child(5n),.grid>*:nth-child(5n),.list>*:nth-child(5n){ animation-delay:.13s }
+
+  /* Переключение вкладок: активная подчёркивается */
+  .tab,.ch,.bt{ position:relative; overflow:hidden }
+  .tab::after,.ch::after,.bt::after{
+    content:"";position:absolute;left:12%;right:12%;bottom:3px;height:2px;border-radius:2px;
+    background:currentColor;opacity:0;transform:scaleX(.4);
+    transition:opacity .2s ease, transform .25s cubic-bezier(.2,.8,.3,1);
+  }
+  .tab.on::after,.ch.on::after,.bt.on::after{ opacity:.5; transform:scaleX(1) }
+
+  /* Тост выезжает с лёгким отскоком */
+  @keyframes __toastIn{ from{opacity:0; transform:translateY(140%)} to{opacity:1; transform:none} }
+  #toast.on{ animation:__toastIn .34s cubic-bezier(.2,.9,.3,1.08) both }
+
+  @media (prefers-reduced-motion: reduce){
+    body,img,.cards>*,.grid>*,.list>*,#toast.on,
+    .result.on,.flying.on,.modal.on,.sheet.on,.popup.on,
+    .result.on>*,.flying.on>*,.modal.on>*{
+      animation:none!important;
+    }
+  }
+
+  /* Кнопка «Назад» в главное приложение — на всех аппках, кроме самого хаба */
+  #__back{
+    display:flex;align-items:center;gap:10px;padding:11px 15px;
+    background:color-mix(in srgb, var(--bg) 82%, transparent);
+    border-bottom:1px solid var(--line);position:relative;z-index:60;
+    backdrop-filter:blur(10px);
+  }
+  body #__back button{
+    background:var(--panel)!important;color:var(--ink)!important;
+    border:1px solid var(--line)!important;box-shadow:none!important;
+    border-radius:999px!important;padding:9px 17px!important;
+    font-size:13.5px!important;font-weight:800!important;letter-spacing:0;
+  }
+  body #__back button:active{ background:var(--panel2)!important }
+  #__back .__ttl{
+    flex:1;text-align:right;font-size:11.5px;color:var(--muted);
+    letter-spacing:1.2px;text-transform:uppercase;font-weight:800;
+  }
+
+  /* Настройки приложения: кнопка и модалка (одна на все страницы) */
+  #__gear{
+    position:fixed;right:14px;bottom:18px;z-index:9400;width:46px;height:46px;padding:0!important;
+    border-radius:50%!important;border:1px solid var(--line)!important;
+    background:var(--panel)!important;color:var(--ink)!important;font-size:20px!important;
+    line-height:1!important;box-shadow:0 8px 22px rgba(0,0,0,.45)!important;
+  }
+  body #__gear:active{ transform:scale(.93)!important }
+  .__ov{position:fixed;inset:0;z-index:9600;background:rgba(6,8,12,.74);
+    display:none;align-items:flex-end;justify-content:center}
+  .__ov.on{display:flex;animation:__fadeIn .2s ease both}
+  .__sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+    border-radius:20px 20px 0 0;padding:16px 16px 26px;max-height:82vh;overflow-y:auto;
+    animation:__zoomIn .26s cubic-bezier(.2,.9,.3,1.05) both}
+  .__hd{display:flex;justify-content:space-between;align-items:center;
+    font-size:16px;font-weight:900;margin-bottom:8px}
+  .__hd button{width:34px;height:34px;padding:0!important;border-radius:10px!important;
+    background:var(--panel2)!important;color:var(--ink)!important;
+    border:1px solid var(--line)!important;font-size:17px!important;box-shadow:none!important}
+  .__row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:12px 0;border-top:1px solid var(--line)}
+  .__row .__t{font-size:13.5px;font-weight:800}
+  .__row .__s{font-size:11.5px;color:var(--muted);margin-top:2px;max-width:190px;line-height:1.35}
+  .__seg{display:flex;gap:6px;flex:0 0 auto}
+  .__seg button{border:1px solid var(--line)!important;background:transparent!important;
+    color:var(--muted)!important;border-radius:10px!important;padding:8px 11px!important;
+    font-size:12px!important;font-weight:800!important;box-shadow:none!important}
+
+  /* ---------- обучение: общий оверлей для всех страниц ---------- */
+  #__tut{position:fixed;inset:0;z-index:9600;display:none}
+  #__tut.on{display:block}
+  #__tut .__spot{position:absolute;border-radius:14px;pointer-events:none;
+    box-shadow:0 0 0 9999px rgba(4,8,14,.80);border:2px solid var(--acc);
+    transition:left .12s ease,top .12s ease,width .12s ease,height .12s ease}
+  #__tut .__tip{position:absolute;left:14px;right:14px;background:var(--panel);
+    border:1px solid color-mix(in srgb,var(--acc) 45%,var(--line));
+    border-radius:var(--r-2);padding:14px;box-shadow:0 18px 40px -18px #000}
+  #__tut .__tip b{display:block;font-size:var(--fs-md);margin-bottom:6px}
+  #__tut .__tip p{margin:0 0 12px;font-size:var(--fs-sm);color:var(--muted);line-height:1.5}
+  #__tut .__row{display:flex;gap:8px}
+  #__tut .__row button{flex:1;border:0;border-radius:var(--r-1);padding:12px;
+    font-family:inherit;font-size:var(--fs-sm);font-weight:800}
+  #__tut .__next{background:var(--acc);color:var(--acc-ink)}
+  #__tut .__skip{background:var(--panel2);color:var(--muted);flex:0 0 auto;padding:12px 16px}
+  .__tut{width:100%;margin-top:10px;border:1px solid var(--line)!important;
+    background:var(--panel2)!important;color:var(--ink)!important;border-radius:12px!important;
+    padding:12px;font-family:inherit;font-size:13px;font-weight:700;box-shadow:none!important}
+  .__seg button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
+  .__sw{border:1px solid var(--line)!important;background:var(--panel2)!important;
+    color:var(--muted)!important;border-radius:999px!important;padding:9px 16px!important;
+    font-size:12.5px!important;font-weight:800!important;box-shadow:none!important}
+  .__sw.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
+  .__opts{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
+  .__opts button{flex:1 0 30%;border:1px solid var(--line)!important;background:transparent!important;
+    color:var(--muted)!important;border-radius:10px!important;padding:9px 6px!important;
+    font-size:11.5px!important;font-weight:800!important;box-shadow:none!important}
+  .__opts button.on{background:var(--acc)!important;color:var(--acc-ink)!important;
+    border-color:transparent!important}
+  .__note{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+
+  /* ==================== Получение карты: оверлей ==================== */
+  .rv{position:fixed;inset:0;z-index:9700;display:flex;align-items:center;justify-content:center;
+    padding:18px;background:rgba(4,6,10,.9);--fxc:#334155;animation:__fadeIn .2s ease both;
+    overflow:hidden;touch-action:manipulation}
+  .rv.out{opacity:0;transition:opacity .28s ease}
+  .rv .rv-rays{position:absolute;left:50%;top:50%;width:150vmax;height:150vmax;
+    transform:translate(-50%,-50%);opacity:.2;pointer-events:none;
+    background:conic-gradient(from 0deg,transparent 0 5deg,var(--fxc) 5deg 7deg,transparent 7deg 30deg);
+    animation:__rvspin 10s linear infinite}
+  .rv .rv-flash{position:absolute;left:50%;top:50%;width:20px;height:20px;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;
+    background:radial-gradient(circle,#fff,var(--fxc) 45%,transparent 72%);
+    animation:__rvflash 1s ease-out both}
+  .rv .rv-spark{position:absolute;width:7px;height:7px;border-radius:50%;background:#ffe9a8;
+    box-shadow:0 0 12px #ffd166;pointer-events:none;animation:__rvspark 1.4s ease-out both}
+  .rv-card{position:relative;z-index:2;width:100%;max-width:330px;border-radius:20px;
+    padding:20px;background:var(--panel);border:2px solid var(--fxc);
+    box-shadow:0 0 40px -8px var(--fxc),0 18px 50px rgba(0,0,0,.6);
+    animation:__rvpop .55s cubic-bezier(.2,.9,.3,1.15) both}
+  .rv-card.hi{border-width:3px;
+    background:linear-gradient(var(--panel),var(--panel)) padding-box,
+      conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#111,var(--fxc)) border-box}
+  .rv-emoji{font-size:64px;line-height:1;text-align:center;
+    filter:drop-shadow(0 6px 18px var(--fxc))}
+  .rv-name{text-align:center;font-size:21px;font-weight:900;margin-top:10px;line-height:1.15}
+  .rv-rar{text-align:center;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;
+    color:var(--fxc);font-weight:900;margin-top:5px}
+  .rv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:14px}
+  .rv-stats div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:8px 4px;text-align:center}
+  .rv-stats b{display:block;font-size:15px;font-weight:900}
+  .rv-stats span{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .rv-block{margin-top:11px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;padding:9px 11px}
+  .rv-block .t{font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;
+    color:var(--muted);font-weight:900}
+  .rv-block .v{font-size:12.5px;margin-top:3px;line-height:1.45}
+  .rv-new{position:absolute;top:-11px;left:50%;transform:translateX(-50%);
+    background:var(--acc);color:var(--acc-ink);font-size:10px;font-weight:900;
+    border-radius:8px;padding:3px 9px;letter-spacing:.6px}
+  .rv-tap{margin-top:14px;text-align:center;font-size:11px;color:var(--muted)}
+  /* ===== ПРЕМИУМ: карта летит из далека, вспышка, конфетти и огонь ===== */
+  .rv.ultra{background:#04070d}
+  .rv.ultra .rv-card{animation:__rvfly .78s cubic-bezier(.2,.9,.2,1) both,
+      __rvshimmer 3.2s linear .8s infinite}
+  .rv.ultra .rv-card::after{content:"";position:absolute;inset:-2px;border-radius:22px;
+    padding:2px;pointer-events:none;
+    background:conic-gradient(from 0deg,var(--fxc),#fff,var(--fxc),#000,var(--fxc));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.85;
+    animation:__rvspin 4.5s linear infinite}
+  .rv.ultra .rv-card::before{content:"";position:absolute;inset:-40%;pointer-events:none;
+    background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.5) 50%,transparent 58%);
+    animation:__rvshine 2.6s linear infinite}
+  .rv .rv-burst{position:absolute;left:50%;top:50%;width:10px;height:10px;border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;z-index:1;
+    background:radial-gradient(circle,#fff,var(--fxc) 40%,transparent 70%);
+    animation:__rvwhite .5s ease-out both}
+  .rv .rv-jet{position:absolute;bottom:-30px;width:120px;height:70%;pointer-events:none;z-index:1;
+    opacity:.9;filter:blur(1px)}
+  .rv .rv-jet.left{left:-20px;transform:rotate(14deg);
+    background:linear-gradient(to top,rgba(255,120,0,.0) 0%,#ff8a00 30%,#ffd166 60%,rgba(255,209,102,0) 100%);
+    clip-path:polygon(0% 100%,100% 100%,62% 0%,38% 0%);animation:__rvjet 1.6s ease-out both}
+  .rv .rv-jet.right{right:-20px;transform:rotate(-14deg);
+    background:linear-gradient(to top,rgba(255,120,0,.0) 0%,#ff8a00 30%,#ffd166 60%,rgba(255,209,102,0) 100%);
+    clip-path:polygon(0% 100%,100% 100%,62% 0%,38% 0%);animation:__rvjet 1.6s ease-out both}
+  .rv .rv-conf{position:absolute;bottom:0;width:9px;height:14px;border-radius:2px;
+    pointer-events:none;z-index:3;animation:__rvconf 2.2s cubic-bezier(.2,.6,.4,1) both}
+  @keyframes __rvfly{
+    0%{transform:scale(.08) translateZ(0);filter:blur(6px) brightness(1.6);opacity:0}
+    55%{transform:scale(1.06);filter:blur(0) brightness(1.2);opacity:1}
+    100%{transform:scale(1);filter:none}
+  }
+  @keyframes __rvwhite{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
+    40%{opacity:1}100%{transform:translate(-50%,-50%) scale(60);opacity:0}}
+  @keyframes __rvshine{from{transform:translateX(-60%) rotate(0)}to{transform:translateX(60%) rotate(0)}}
+  @keyframes __rvshimmer{0%,100%{box-shadow:0 0 34px -6px var(--fxc)}50%{box-shadow:0 0 62px -2px var(--fxc)}}
+  @keyframes __rvjet{0%{transform:scaleY(.05) translateY(30%);opacity:0}
+    25%{opacity:.95}70%{opacity:.7}100%{transform:scaleY(1) translateY(0);opacity:0}}
+  @keyframes __rvconf{0%{transform:translate(0,0) rotate(0);opacity:1}
+    100%{transform:translate(var(--cx,0),var(--cy,-320px)) rotate(var(--cr,540deg));opacity:0}}
+  @keyframes __rvspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  @keyframes __rvflash{0%{transform:translate(-50%,-50%) scale(.2);opacity:0}
+    35%{opacity:1}100%{transform:translate(-50%,-50%) scale(30);opacity:0}}
+  @keyframes __rvpop{from{opacity:0;transform:scale(.82) translateY(16px)}
+    to{opacity:1;transform:none}}
+  @keyframes __rvspark{0%{transform:translate(0,0) scale(1);opacity:1}
+    100%{transform:translate(var(--dx,0),var(--dy,-120px)) scale(.2);opacity:0}}
+
+
+  /* ==================== Геймерский стиль ====================
+     Чёрный терминал с жёлтым акцентом. Переделываем ТОЛЬКО кнопки и
+     карточки: остальная вёрстка страниц не двигается. */
+  body.theme-gamer{
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:22px 22px;
+  }
+  body.theme-gamer::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9000;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 3px);
+    mix-blend-mode:overlay;opacity:.9;
+  }
+  body.gm-lite::after{display:none}
+
+  /* кнопки: срезанный угол, жёлтая заливка, штриховка */
+  body.theme-gamer button,body.theme-gamer .btn,body.theme-gamer .tab,
+  body.theme-gamer [role="button"]{
+    position:relative;border-radius:0!important;border:0!important;
+    background:var(--acc)!important;color:#0a0a0a!important;
+    font-weight:800!important;letter-spacing:.2px;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+    box-shadow:none!important;transition:transform .12s ease,filter .12s ease;
+    overflow:hidden;
+  }
+  body.theme-gamer button::after,body.theme-gamer .btn::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,rgba(0,0,0,.16) 0 2px,transparent 2px 5px);
+    opacity:.45;
+  }
+  body.theme-gamer button:hover,body.theme-gamer .btn:hover{filter:brightness(1.08)}
+  body.theme-gamer button:active,body.theme-gamer .btn:active{transform:translateY(1px) scale(.995)}
+  body.theme-gamer button[disabled],body.theme-gamer .btn[disabled]{
+    background:#15181b!important;color:#5b6167!important;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+  }
+  body.theme-gamer button[disabled]::after{display:none}
+
+  /* вторичные кнопки: прозрачные с белой рамкой */
+  body.theme-gamer .btn.ghost,body.theme-gamer button.ghost,body.theme-gamer .tab{
+    background:transparent!important;color:var(--ink)!important;
+    border:1px solid #3a4046!important;
+  }
+  body.theme-gamer .btn.ghost::after,body.theme-gamer .tab::after{display:none}
+  body.theme-gamer .tab.on{
+    background:transparent!important;color:var(--acc)!important;
+    border-color:var(--acc)!important;
+  }
+
+  /* карточки: срезанный угол и жёлтый уголок */
+  body.theme-gamer .card,body.theme-gamer .item,body.theme-gamer .tile,
+  body.theme-gamer .quest,body.theme-gamer .cell,body.theme-gamer .case,
+  body.theme-gamer .lot,body.theme-gamer .nsrow,body.theme-gamer .scard{
+    border-radius:0!important;border:1px solid var(--line)!important;
+    background:var(--panel)!important;position:relative;
+    clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%);
+  }
+  body.theme-gamer .card::before,body.theme-gamer .item::before{
+    content:"";position:absolute;top:0;right:0;width:14px;height:14px;
+    background:linear-gradient(225deg,var(--acc) 0 46%,transparent 47%);
+    pointer-events:none;
+  }
+
+  /* сегментный прогресс вместо полосы */
+  body.theme-gamer .bar,body.theme-gamer .progress{
+    border-radius:0!important;background:#15181b!important;
+    border:1px solid var(--line)!important;
+  }
+  body.theme-gamer .bar i,body.theme-gamer .progress i{
+    border-radius:0!important;background:var(--acc)!important;
+  }
+
+  /* поля ввода — как терминал */
+  body.theme-gamer input,body.theme-gamer textarea,body.theme-gamer select{
+    border-radius:0!important;background:#0b0d0f!important;
+    border:1px solid var(--line)!important;color:var(--ink)!important;
+    font-family:var(--mono)!important;
+  }
+  body.theme-gamer input:focus,body.theme-gamer textarea:focus{
+    border-color:var(--acc)!important;outline:none!important;
+  }
+
+  /* тосты и модалки */
+  body.theme-gamer .toast,body.theme-gamer .__note{
+    border-radius:0!important;border-left:2px solid var(--acc)!important;
+  }
+
+  /* пасс: герой-панель тоже в терминальном стиле */
+  body.theme-gamer .hero{
+    background:#0f1113!important;border:1px solid var(--line)!important;
+    border-radius:0!important;
+    clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%);
+  }
+  body.theme-gamer .hero::after{display:none}
+  body.theme-gamer .hero .timer,body.theme-gamer .hero .lvl{color:var(--acc)!important}
+  body.theme-gamer .hero .name{color:var(--ink)!important}
+  body.theme-gamer .season{color:var(--acc)!important}
+  body.theme-gamer .section h2{color:var(--muted)!important}
+  body.theme-gamer .level{background:#15181b!important;border-color:var(--line)!important;color:var(--muted)!important}
+  body.theme-gamer .level.open{background:#1d1a08!important;border-color:#5c4a1a!important;color:var(--acc)!important}
+  body.theme-gamer .cell.plus,body.theme-gamer .cell.prem{
+    background:#101214!important;border-color:var(--line)!important;
+  }
+  body.theme-gamer .quest.done{border-color:var(--acc)!important;background:#151208!important}
+  body.theme-gamer .toast{background:#0b0d0f!important;border:1px solid var(--line)!important;
+    border-left:2px solid var(--acc)!important;border-radius:0!important;color:var(--ink)!important}
+
+  /* бегущая строка */
+  /* бегущая строка: внутренность абсолютная, иначе flex-элемент
+     растягивал страницу по ширине и появлялся горизонтальный скролл */
+  .gm-marquee{
+    position:relative;overflow:hidden;margin:10px 0 12px;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    background:#0b0d0f;height:24px;max-width:100%;
+  }
+  .gm-marquee div{position:absolute;top:0;left:0;height:24px;display:flex;
+    width:max-content;animation:gm-slide 26s linear infinite}
+  .gm-lite .gm-marquee div{animation:none;width:100%;justify-content:center}
+  .gm-marquee span{flex:0 0 auto;white-space:nowrap;font-family:var(--mono);
+    font-size:9.5px;letter-spacing:1.8px;color:var(--muted);line-height:24px;
+    padding-right:44px}
+  .gm-marquee b{color:var(--acc)}
+  @keyframes gm-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  /* глитч */
+  body.gm-glitch{animation:gm-jitter .18s steps(2) 1}
+  @keyframes gm-jitter{
+    0%{transform:translate(0,0)}
+    25%{transform:translate(-2px,1px)}
+    50%{transform:translate(2px,-1px)}
+    75%{transform:translate(-1px,-1px)}
+    100%{transform:translate(0,0)}
+  }
+  body.theme-gamer.gm-full .gm-flicker{animation:gm-flick 6s infinite}
+  @keyframes gm-flick{0%,96%,100%{opacity:1}97%{opacity:.86}98%{opacity:1}99%{opacity:.9}}
+
+  /* ==================== Снежная тема ==================== */
+  body.theme-snow button,body.theme-snow .btn,body.theme-snow .tab{
+    position:relative;overflow:hidden}
+  body.theme-snow button::before,body.theme-snow .tab::before{
+    content:"\2744";position:absolute;right:4px;top:1px;font-size:9px;opacity:.45;
+    color:var(--acc2);pointer-events:none;line-height:1}
+  .__snowfront{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:3}
+  .__snowfront span{position:absolute;top:-40px;color:#eaf6ff;
+    animation:__snowfall linear infinite}
+  @keyframes __snowfall{to{transform:translateY(115vh) translateX(30px) rotate(200deg);opacity:0}}
+</style>
+<script>
+(function(){
+  var tg = window.Telegram ? window.Telegram.WebApp : null;
+  var headers = {"X-Telegram-Init-Data": tg ? tg.initData : ""};
+  function apply(vars){
+    var r = document.documentElement.style;
+    for (var k in vars) r.setProperty("--" + k, vars[k]);
+  }
+  function particles(kind){
+    var glyphs = {
+      leaf: ["\uD83C\uDF41", "\uD83C\uDF42", "\uD83C\uDF43"],
+      star: ["\u2726", "\u2727", "\u00B7"],
+      snow: ["\u2744", "\u00B7", "\u2022"],
+      spark: ["\u2726", "\u2022", "\u2727"],
+      ember: ["\u2022", "\u00B7", "\u2727"]
+    }[kind] || ["\u2022"];
+    var colors = ["var(--acc)", "var(--acc2)", "var(--muted)"];
+    var box = document.createElement("div");
+    box.style.cssText = "position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0";
+    document.body.appendChild(box);
+    for (var i = 0; i < 22; i++){
+      var s = document.createElement("span");
+      s.textContent = glyphs[Math.floor(Math.random() * glyphs.length)];
+      s.style.cssText = "position:absolute;top:-48px;opacity:" + (0.08 + Math.random() * 0.3) +
+        ";font-size:" + (9 + Math.random() * 13) + "px;color:" + colors[i % colors.length] +
+        ";left:" + (Math.random() * 100) + "vw;animation:__fall " + (8 + Math.random() * 12) +
+        "s linear " + (Math.random() * 10) + "s infinite";
+      box.appendChild(s);
+    }
+    var st = document.createElement("style");
+    st.textContent = "@keyframes __fall{to{transform:translateY(118vh) rotate(400deg);opacity:0}}";
+    document.head.appendChild(st);
+    if (kind === "snow"){
+      document.body.classList.add("theme-snow");
+      snowFront();
+    }
+  }
+  function backBar(){
+    if (location.pathname === "/hub") return;
+    if (document.getElementById("__back")) return;
+    var bar = document.createElement("div");
+    bar.id = "__back";
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "‹ Назад";
+    btn.onclick = function(){ location.href = "/hub"; };
+    bar.appendChild(btn);
+    var ttl = document.createElement("div");
+    ttl.className = "__ttl";
+    ttl.textContent = "Северо-Юг";
+    bar.appendChild(ttl);
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
+  /* Волна от нажатия на любой кнопке — «сочный» отклик */
+  document.addEventListener("pointerdown", function(e){
+    var b = e.target && e.target.closest
+      ? e.target.closest("button,.btn,.go,.buy,.sell,.tab,.ch,.bt,.mult")
+      : null;
+    if (!b || b.disabled) return;
+    try{
+      var r = b.getBoundingClientRect();
+      if (getComputedStyle(b).position === "static") b.style.position = "relative";
+      b.style.overflow = "hidden";
+      var size = Math.max(r.width, r.height) * 2.2;
+      var s = document.createElement("span");
+      s.style.cssText = "position:absolute;border-radius:50%;pointer-events:none;z-index:3;" +
+        "background:radial-gradient(circle,rgba(255,255,255,.5),transparent 68%);" +
+        "width:" + size + "px;height:" + size + "px;" +
+        "left:" + (e.clientX - r.left - size / 2) + "px;" +
+        "top:" + (e.clientY - r.top - size / 2) + "px;" +
+        "animation:__ripple .55s ease-out forwards";
+      b.appendChild(s);
+      setTimeout(function(){ s.remove(); }, 580);
+    }catch(err){}
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+  }, {passive:true});
+
+
+  /* ---------- Настройки приложения ---------- */
+  var PREFS = null;
+  var GEAR_SKIP = ["/proto_dungeon", "/proto_yugi"];
+
+  function prefsRequest(method, body, done){
+    var opts = {method: method, headers: headers};
+    if (body){
+      opts.headers = {"X-Telegram-Init-Data": headers["X-Telegram-Init-Data"],
+                      "Content-Type": "application/json"};
+      opts.body = JSON.stringify(body);
+    }
+    fetch("/api/prefs", opts).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.prefs){ PREFS = d; }
+      if (done) done(d || {});
+    }).catch(function(){ if (done) done({}); });
+  }
+
+  function gearButton(){
+    if (document.getElementById("__gear")) return;
+    if (GEAR_SKIP.indexOf(location.pathname) >= 0) return;
+    prefsRequest("GET", null, function(d){
+      if (!d || !d.prefs) return;
+      PREFS = d;
+      var btn = document.createElement("button");
+      btn.id = "__gear";
+      btn.type = "button";
+      btn.textContent = "\u2699";
+      btn.setAttribute("aria-label", "Настройки");
+      btn.onclick = openSettings;
+      document.body.appendChild(btn);
+    });
+  }
+
+  function segRow(key, title, sub, value){
+    return '<div class="__row"><div><div class="__t">' + title + '</div>' +
+      '<div class="__s">' + sub + '</div></div><div class="__seg" data-key="' + key + '">' +
+      '<button data-v="wheel" class="' + (value === "wheel" ? "on" : "") + '">Колесо</button>' +
+      '<button data-v="reel" class="' + (value === "reel" ? "on" : "") + '">Лента</button>' +
+      '</div></div>';
+  }
+
+  function paintSettings(ov){
+    var d = PREFS || {};
+    var p = d.prefs || {fx: true, view_classic: "wheel", view_crystal: "wheel", pinned: "", stock_alerts: false};
+    var pin = d.pinned_card;
+    ov.innerHTML = '<div class="__sheet">' +
+      '<div class="__hd"><span>\u2699 Настройки</span>' +
+      '<button id="__gear-x">\u00d7</button></div>' +
+      '<div class="__row"><div><div class="__t">Эффекты карточек</div>' +
+      '<div class="__s">Вспышка, лучи и обводка при открытии редкой карты</div></div>' +
+      '<button class="__sw' + (p.fx ? " on" : "") + '" id="__sw-fx">' +
+      (p.fx ? "Вкл" : "Выкл") + '</button></div>' +
+      segRow("view_classic", "Классическая рулетка", "Как показывать приз",
+             p.view_classic || "wheel") +
+      segRow("view_crystal", "Кристальная рулетка", "Колесо или лента",
+             p.view_crystal || "wheel") +
+      '<div class="__row"><div><div class="__t">Карточка в профиле</div>' +
+      '<div class="__s">' +
+      (pin ? ("Сейчас: " + pin.name) : "Витрина пуста — повесь карту из коллекции") +
+      '</div></div>' +
+      (pin ? '<button class="__sw" id="__pin-clear">Снять</button>' : "") +
+      '</div>' +
+      '<div class="__row"><div><div class="__t">Уведомления о стоке</div>' +
+      '<div class="__s">Писать в личку, когда сток карт обновился</div></div>' +
+      '<button class="__sw' + (p.stock_alerts ? " on" : "") + '" id="__sw-stock">' +
+      (p.stock_alerts ? "Вкл" : "Выкл") + '</button></div>' +
+      ((window.__THEME === "gamer")
+        ? '<div class="__row"><div><div class="__t">Эффекты стиля</div>' +
+          '<div class="__s">' +
+          (p.fx_mode === "lite" ? "Оптимизация: без глитча и лишних звуков"
+                                : "Максимум: глитч, бегущая строка, звуки") +
+          '</div></div><button class="__sw' + (p.fx_mode === "lite" ? "" : " on") +
+          '" id="__sw-fxmode">' + (p.fx_mode === "lite" ? "Лайт" : "Макс") +
+          '</button></div>'
+        : "") +
+      '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
+      '<button class="__tut" id="__reset" style="border-color:#7a2b2b;color:#ffb4b4;' +
+      'background:#241318">⛔ Сбросить прогресс</button>' +
+      '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
+      'во всех мини-аппках.</div>' +
+      '<div class="__ver" style="margin-top:10px;text-align:center;font-size:11px;' +
+      'color:var(--muted);letter-spacing:.4px">Версия ' +
+      ((window.__APP_VERSION) ? window.__APP_VERSION : "—") + '</div></div>';
+    var resetBtn = document.getElementById("__reset");
+    if (resetBtn) resetBtn.onclick = openResetDialog;
+    var fxMode = document.getElementById("__sw-fxmode");
+    if (fxMode) fxMode.onclick = function(){
+      var next = (p.fx_mode === "lite") ? "full" : "lite";
+      p.fx_mode = next;
+      fxMode.className = "__sw" + (next === "lite" ? "" : " on");
+      fxMode.textContent = next === "lite" ? "Лайт" : "Макс";
+      prefsRequest("POST", {fx_mode: next}, function(saved){
+        if (saved && saved.prefs) p.fx_mode = saved.prefs.fx_mode || next;
+      });
+      if (window.GM) { window.GM.mode = next; }
+      document.body.classList.toggle("gm-lite", next === "lite");
+      document.body.classList.toggle("gm-full", next === "full");
+    };
+    var tutBtn = document.getElementById("__tut-run");
+    if (tutBtn) tutBtn.onclick = function(){
+      if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
+      location.href = "/hub?tutorial=1";
+    };
+    var x = document.getElementById("__gear-x");
+    if (x) x.onclick = function(){ ov.classList.remove("on"); };
+    var stkBtn = document.getElementById("__sw-stock");
+    if (stkBtn) stkBtn.onclick = function(){
+      var next = !p.stock_alerts;
+      stkBtn.className = "__sw" + (next ? " on" : "");
+      stkBtn.textContent = next ? "Вкл" : "Выкл";
+      p.stock_alerts = next;
+      prefsRequest("POST", {stock_alerts: next}, function(saved){
+        if (saved && saved.prefs) p.stock_alerts = !!saved.prefs.stock_alerts;
+      });
+    };
+    var fxBtn = document.getElementById("__sw-fx");
+    if (fxBtn) fxBtn.onclick = function(){
+      var next = !p.fx;
+      fxBtn.className = "__sw" + (next ? " on" : "");
+      fxBtn.textContent = next ? "Вкл" : "Выкл";
+      p.fx = next;
+      prefsRequest("POST", {fx: next}, function(saved){
+        if (saved && saved.prefs) p.fx = saved.prefs.fx;
+        if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
+      });
+    };
+    ov.querySelectorAll(".__seg").forEach(function(box){
+      var key = box.dataset.key;
+      box.querySelectorAll("button").forEach(function(b){
+        b.onclick = function(){
+          box.querySelectorAll("button").forEach(function(o){ o.className = ""; });
+          b.className = "on";
+          var patch = {};
+          patch[key] = b.dataset.v;
+          prefsRequest("POST", patch, function(saved){
+            if (window.__onPrefs) window.__onPrefs(saved && saved.prefs);
+          });
+        };
+      });
+    });
+    var clear = document.getElementById("__pin-clear");
+    if (clear) clear.onclick = function(){
+      prefsRequest("POST", {pinned: ""}, function(){
+        ov.classList.remove("on");
+        if (window.__onPrefs) window.__onPrefs(null);
+      });
+    };
+  }
+
+  function openSettings(){
+    var ov = document.getElementById("__gear-ov");
+    if (!ov){
+      ov = document.createElement("div");
+      ov.id = "__gear-ov";
+      ov.className = "__ov";
+      ov.onclick = function(e){ if (e.target === ov) ov.classList.remove("on"); };
+      document.body.appendChild(ov);
+    }
+    ov.classList.add("on");
+    prefsRequest("GET", null, function(){ paintSettings(ov); });
+  }
+
+  /* ---------- Сброс прогресса: три шага с полем ввода ----------
+     Не используем confirm()/prompt(): в Telegram-WebView они часто
+     возвращают null, и сброс молча не срабатывал. */
+  var RESET_WORD = "североюг";
+  function openResetDialog(){
+    var ov = document.getElementById("__reset-ov");
+    if (ov) ov.remove();
+    ov = document.createElement("div");
+    ov.id = "__reset-ov";
+    ov.className = "__ov on";
+    ov.style.alignItems = "center";
+    ov.style.justifyContent = "center";
+    ov.style.padding = "22px";
+    ov.innerHTML =
+      '<div style="max-width:340px;width:100%;background:#161b16;border:1px solid #7a2b2b;' +
+      'border-radius:16px;padding:18px;color:#f2ece0;font-family:inherit">' +
+        '<div id="__reset-step1">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'СБРОС ПРОГРЕССА</div>' +
+          '<div style="margin-top:8px;font-size:14px;line-height:1.45">' +
+          'Вы уверены, что хотите сбросить прогресс?' +
+          '<br><span style="color:#a8968a">Пропадёт коллекция, очки, кейсы, ' +
+          'питомцы, биржа и ивенты. Подземелье останется.</span></div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px">' +
+            '<button id="__r-cancel" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Отмена</button>' +
+            '<button id="__r-next1" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">Далее</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="__reset-step2" style="display:none">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'ТОЧНО?</div>' +
+          '<div style="margin-top:8px;font-size:14px;line-height:1.45">Вы точно уверены? ' +
+          'Вернуть ничего не получится.</div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px">' +
+            '<button id="__r-no2" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Нет</button>' +
+            '<button id="__r-next2" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">Далее</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="__reset-step3" style="display:none">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'ПОСЛЕДНИЙ ШАГ</div>' +
+          '<div style="margin-top:8px;font-size:13.5px;line-height:1.45">' +
+          'Мы не уверены. Впишите слово <b style="color:#ffd98a">североюг</b> ' +
+          'в поле ниже, и мы сбросим прогресс.</div>' +
+          '<input id="__r-word" placeholder="североюг" autocomplete="off" ' +
+          'style="margin-top:10px;width:100%;box-sizing:border-box;background:#0f1410;' +
+          'border:1px solid #3a3f3a;border-radius:10px;padding:11px 12px;color:#f2ece0;' +
+          'font-family:inherit;font-size:14px">' +
+          '<div id="__r-err" style="margin-top:8px;font-size:12px;color:#ff8a8a"></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px">' +
+            '<button id="__r-cancel3" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Отмена</button>' +
+            '<button id="__r-go" style="flex:1;border:0;background:#c0392b;color:#fff;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">' +
+            'Сбросить</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var s1 = document.getElementById("__reset-step1");
+    var s2 = document.getElementById("__reset-step2");
+    var s3 = document.getElementById("__reset-step3");
+    function close(){ ov.remove(); }
+    document.getElementById("__r-cancel").onclick = close;
+    document.getElementById("__r-no2").onclick = close;
+    document.getElementById("__r-cancel3").onclick = close;
+    document.getElementById("__r-next1").onclick = function(){
+      s1.style.display = "none"; s2.style.display = "block";
+    };
+    document.getElementById("__r-next2").onclick = function(){
+      s2.style.display = "none"; s3.style.display = "block";
+      var inp = document.getElementById("__r-word");
+      if (inp) inp.focus();
+    };
+    document.getElementById("__r-go").onclick = function(){
+      var inp = document.getElementById("__r-word");
+      var err = document.getElementById("__r-err");
+      var word = String((inp && inp.value) || "").trim().toLowerCase();
+      if (word !== RESET_WORD){
+        if (err) err.textContent = "Слово не совпало — прогресс не тронут.";
+        return;
+      }
+      var btn = document.getElementById("__r-go");
+      if (btn){ btn.disabled = true; btn.textContent = "Сбрасываю…"; }
+      // без initData сервер отвечает 401 «Открой магазин через кнопку в боте»
+      fetch("/api/reset", {method: "POST",
+        headers: {"X-Telegram-Init-Data": headers["X-Telegram-Init-Data"],
+                  "Content-Type": "application/json"},
+        body: JSON.stringify({word: word})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.ok){ close(); location.reload(); return; }
+          if (err) err.textContent = (d && d.error) || "Не получилось сбросить";
+          if (btn){ btn.disabled = false; btn.textContent = "Сбросить"; }
+        })
+        .catch(function(){
+          if (err) err.textContent = "Связь потерялась — прогресс не тронут";
+          if (btn){ btn.disabled = false; btn.textContent = "Сбросить"; }
+        });
+    };
+  }
+
+  /* ---------- Получение карты: оверлей с анимацией ---------- */
+  function rvEsc(s){
+    return String(s == null ? "" : s).replace(/[<>&"]/g, function(c){
+      return {"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c];
+    });
+  }
+  function rvShow(card){
+    return new Promise(function(resolve){
+      var fx = card.fx || {};
+      var lvl = Number(fx.level) || 0;
+      var color = fx.color || "#334155";
+      var ov = document.createElement("div");
+      ov.className = "rv";
+      ov.style.setProperty("--fxc", color);
+      var html = "";
+      var ultra = lvl >= 4;
+      if (ultra){ ov.className = "rv ultra"; }
+      if (lvl >= 3) html += '<div class="rv-rays"></div><div class="rv-flash"></div>';
+      if (ultra){
+        // белая вспышка на весь экран
+        html += '<div class="rv-burst"></div>';
+        // огонь из двух «труб» по краям снизу
+        html += '<div class="rv-jet left"></div><div class="rv-jet right"></div>';
+        // конфетти: вылетают из обоих нижних углов
+        var palette = [color, "#ffffff", "#ffd166", "#ff8a00"];
+        for (var c = 0; c < 34; c++){
+          var side = c % 2 === 0 ? -1 : 1;
+          var cx = side * (40 + Math.random() * 260);
+          var cy = -(180 + Math.random() * 320);
+          var rot = (side * (240 + Math.random() * 720)) | 0;
+          html += '<div class="rv-conf" style="' +
+            (side < 0 ? "left:6px;" : "right:6px;") +
+            "background:" + palette[c % palette.length] + ";" +
+            "--cx:" + cx + "px;--cy:" + cy + "px;--cr:" + rot + "deg;" +
+            'animation-delay:' + (0.15 + Math.random() * 0.5).toFixed(2) + 's"></div>';
+        }
+        // частицы цвета редкости прямо из карты
+        for (var i = 0; i < 26; i++){
+          var dx = Math.round(Math.random() * 320 - 160);
+          var dy = Math.round(-60 - Math.random() * 240);
+          html += '<div class="rv-spark" style="left:' + (44 + Math.random() * 12) +
+            "%;top:" + (42 + Math.random() * 14) + "%;--dx:" + dx + "px;--dy:" + dy +
+            'px;background:' + color + ';box-shadow:0 0 14px ' + color + ';' +
+            'animation-delay:' + (Math.random() * 0.6).toFixed(2) + 's"></div>';
+        }
+      }
+      html += '<div class="rv-card' + (lvl >= 4 ? " hi" : "") + '" style="--fxc:' + color + '">' +
+        (card.is_new ? '<div class="rv-new">НОВАЯ</div>' : "") +
+        '<div class="rv-emoji">' + (card.emoji || "?") + "</div>" +
+        '<div class="rv-name">' + rvEsc(card.name) + "</div>" +
+        '<div class="rv-rar">' + rvEsc(card.rarity_title || "") + "</div>" +
+        '<div class="rv-stats">' +
+          "<div><b>" + (card.hp || 0) + "</b><span>HP</span></div>" +
+          "<div><b>" + (card.atk || 0) + "</b><span>атака</span></div>" +
+          "<div><b>" + (card.points || 0) + "</b><span>очки</span></div>" +
+        "</div>" +
+        (card.ability
+          ? '<div class="rv-block"><div class="t">Способность</div><div class="v"><b>' +
+            rvEsc(card.ability) + "</b>" +
+            (card.ability_text ? "<br>" + rvEsc(card.ability_text) : "") + "</div></div>"
+          : "") +
+        (card.description
+          ? '<div class="rv-block"><div class="t">Описание</div><div class="v">' +
+            rvEsc(card.description) + "</div></div>"
+          : "") +
+        '<div class="rv-tap">' + (lvl >= 3 ? "\u2728 " : "") + "нажми, чтобы продолжить</div>" +
+        "</div>";
+      ov.innerHTML = html;
+      document.body.appendChild(ov);
+      if (tg && tg.HapticFeedback){
+        try{
+          if (lvl >= 3) tg.HapticFeedback.notificationOccurred("success");
+          tg.HapticFeedback.impactOccurred(lvl >= 4 ? "heavy" : "light");
+          if (lvl >= 4) setTimeout(function(){
+            try { tg.HapticFeedback.impactOccurred("heavy"); } catch(e){}
+          }, 520);
+        }catch(e){}
+      }
+      var closed = false;
+      function close(){
+        if (closed) return;
+        closed = true;
+        ov.classList.add("out");
+        setTimeout(function(){ ov.remove(); resolve(); }, 240);
+      }
+      ov.onclick = close;
+      setTimeout(close, lvl >= 4 ? 4200 : lvl >= 3 ? 2400 : 1600);
+    });
+  }
+  function revealCards(cards, done){
+    if (!cards || !cards.length){ if (done) done(); return; }
+    var index = 0;
+    function next(){
+      if (index >= cards.length){ if (done) done(); return; }
+      rvShow(cards[index++]).then(next);
+    }
+    next();
+  }
+
+  /* ---------- обучение: работает на любой странице ---------- */
+  var TUT = [
+    {sel: "[data-sec='drop']", title: "1/8 · Что это за игра",
+     text: "Коллекционная игра: собираешь карточки персонажей и сражаешься с другими. Карты падают из карты дня, кейсов и рулетки."},
+    {sel: "#bal", title: "2/8 · Очки",
+     text: "Очки — главная валюта. Приносят карточки, задания и кликер, тратятся в магазине и на рынке."},
+    {sel: "[data-sec='drop']", title: "3/8 · Карта дня",
+     text: "Бесплатная попытка раз в сутки, сброс в 12:00 по ЕКБ. Чем реже редкость — тем сильнее карта."},
+    {sel: "[data-sec='cases']", title: "4/8 · Кейсы и рулетка",
+     text: "Кейс открывается лентой, рулетка крутит колесо. Шансы всегда показаны списком."},
+    {sel: "[data-sec='yugi']", title: "5/8 · Кликер",
+     text: "Самый простой заработок: тапаешь, покупаешь здания, они приносят очки даже офлайн."},
+    {sel: "[data-sec='dungeon']", title: "6/8 · Подземелье",
+     text: "Ходишь по локациям, бьёшь мобов и боссов за монеты и оружие."},
+    {sel: "[data-sec='pets']", title: "7/8 · Питомцы и ивент",
+     text: "Питомник даёт петов с пассивками, в ивенте «Санта Егор» — сюжет и боссы."},
+    {sel: "#__gear", title: "8/8 · Настройки",
+     text: "Шестерня: темы, эффекты и это обучение. Пройти заново можно в любой момент."}
+  ];
+  var tutIndex = 0, tutRaf = 0, tutBox = null, tutSpot = null, tutTip = null;
+
+  function tutBuild(){
+    if (tutBox) return;
+    tutBox = document.createElement("div");
+    tutBox.id = "__tut";
+    tutBox.innerHTML =
+      '<div class="__spot"></div>' +
+      '<div class="__tip"><b></b><p></p>' +
+      '<div class="__row"><button class="__next">Далее</button>' +
+      '<button class="__skip">Пропустить</button></div></div>';
+    document.body.appendChild(tutBox);
+    tutSpot = tutBox.querySelector(".__spot");
+    tutTip = tutBox.querySelector(".__tip");
+    tutBox.querySelector(".__next").onclick = function(){ tutStep(1); };
+    tutBox.querySelector(".__skip").onclick = tutClose;
+  }
+
+  /* Цель шага: ищем по селектору, а если такого нет (другая страница) —
+     берём шестерёнку, чтобы рамка никогда не висела в пустоте. */
+  function tutTarget(step){
+    var el = step.sel ? document.querySelector(step.sel) : null;
+    if (el && el.getBoundingClientRect().height > 8) return el;
+    return document.getElementById("__gear") || document.body;
+  }
+
+  /* Позиция пересчитывается каждый кадр: рамка не отстаёт и не уезжает
+     вместе со списком. */
+  function tutSync(){
+    if (!tutBox || !tutBox.classList.contains("on")) return;
+    var step = TUT[tutIndex];
+    var el = tutTarget(step);
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    var pad = 8;
+    var top = Math.max(2, r.top - pad);
+    var left = Math.max(2, r.left - pad);
+    var wid = Math.min(window.innerWidth - 4, r.width + pad * 2);
+    var hei = Math.max(28, r.height + pad * 2);
+    tutSpot.style.top = top + "px";
+    tutSpot.style.left = left + "px";
+    tutSpot.style.width = wid + "px";
+    tutSpot.style.height = hei + "px";
+    var tipH = tutTip.offsetHeight || 170;
+    var below = top + hei + 12;
+    var pos = below + tipH < window.innerHeight - 10 ? below : (top - tipH - 12);
+    pos = Math.max(10, Math.min(window.innerHeight - tipH - 10, pos));
+    tutTip.style.top = pos + "px";
+    tutRaf = requestAnimationFrame(tutSync);
+  }
+
+  function tutStep(dir){
+    var next = tutIndex + dir;
+    if (next < 0) next = 0;
+    if (next >= TUT.length){ tutClose(); return; }
+    tutIndex = next;
+    var step = TUT[tutIndex];
+    tutBox.querySelector("b").textContent = step.title;
+    tutBox.querySelector("p").textContent = step.text;
+    tutBox.querySelector(".__next").textContent =
+      tutIndex === TUT.length - 1 ? "Готово" : "Далее";
+    var el = tutTarget(step);
+    if (el && el.scrollIntoView) el.scrollIntoView({block: "center", behavior: "smooth"});
+    cancelAnimationFrame(tutRaf);
+    tutSync();
+  }
+
+  function tutClose(){
+    cancelAnimationFrame(tutRaf);
+    if (tutBox) tutBox.classList.remove("on");
+  }
+
+  function tutStart(){
+    tutBuild();
+    tutIndex = -1;
+    tutBox.classList.add("on");
+    tutStep(1);
+  }
+
+  window.__startTutorial = tutStart;
+  document.addEventListener("DOMContentLoaded", function(){
+    if (location.search.indexOf("tutorial=1") >= 0) setTimeout(tutStart, 300);
+  });
+
+  window.__revealCards = revealCards;
+
+ // Сброс зума: WebView запоминает pinch/double-tap и остаётся увеличенным,
+ // а meta viewport уже не даёт это отменить. Один перезапуск страницы
+ // возвращает масштаб 1 — с защитой от цикла.
+ (function resetZoom(){
+   try {
+     var vv = window.visualViewport;
+     if (!vv) return;
+     var fix = function(){
+       if (Math.abs((vv.scale || 1) - 1) < 0.02) return;
+       var tries = Number(sessionStorage.getItem("__zoomTries") || 0);
+       if (tries >= 2) return;                 // две попытки и хватит
+       var last = Number(sessionStorage.getItem("__zoomFix") || 0);
+       if (Date.now() - last < 5000) return;
+       sessionStorage.setItem("__zoomTries", String(tries + 1));
+       sessionStorage.setItem("__zoomFix", String(Date.now()));
+       location.reload();
+     };
+     if (Math.abs((vv.scale || 1) - 1) > 0.02) fix();
+     vv.addEventListener("resize", fix);
+   } catch (e) {}
+ })();
+  window.__revealOne = function(card, done){ revealCards([card], done); };
+
+  /* ---------- Снег: крупные размытые хлопья поверх экрана ---------- */
+  function snowFront(){
+    if (document.querySelector(".__snowfront")) return;
+    var box = document.createElement("div");
+    box.className = "__snowfront";
+    document.body.appendChild(box);
+    for (var i = 0; i < 9; i++){
+      var flake = document.createElement("span");
+      flake.textContent = "\u2744";
+      flake.style.cssText =
+        "left:" + (Math.random() * 100).toFixed(1) + "vw;" +
+        "font-size:" + (14 + Math.random() * 26).toFixed(0) + "px;" +
+        "filter:blur(" + (Math.random() * 5).toFixed(1) + "px);" +
+        "opacity:" + (0.16 + Math.random() * 0.34).toFixed(2) + ";" +
+        "animation-duration:" + (16 + Math.random() * 16).toFixed(1) + "s;" +
+        "animation-delay:" + (Math.random() * 12).toFixed(1) + "s";
+      box.appendChild(flake);
+    }
+  }
+
+
+  /* ---------- Геймерский стиль: эффекты, звук, режимы ---------- */
+  var GM = {on:false, mode:"full", audio:null, marquee:null};
+  window.GM = GM;
+
+  function gmBeep(freq, dur, type, gain){
+    if (!GM.on) return;
+    if (GM.mode === "lite" && freq !== 720) return;   // в оптимизации только клик
+    try{
+      if (!GM.audio) GM.audio = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = GM.audio;
+      if (ctx.state === "suspended") ctx.resume();
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type || "square";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(gain || 0.045, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + dur);
+    }catch(e){}
+  }
+
+  function gmMarquee(){
+    if (document.querySelector(".gm-marquee")) return;
+    var host = document.querySelector(".top, header, .head, .wrap > h1");
+    if (!host) return;
+    var box = document.createElement("div");
+    box.className = "gm-marquee";
+    var line = "СЕВЕРО-ПАСС · КВЕСТЫ КОПЯТСЯ · НАГРАДЫ ЗА УРОВНИ";
+    box.innerHTML = "<div><span><b>▪</b> " + line + " <b>▪</b> " + line +
+      "</span><span><b>▪</b> " + line + " <b>▪</b> " + line + "</span></div>";
+    var anchor = host.classList.contains("wrap") ? host : host;
+    anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    GM.marquee = box;
+  }
+
+  function gmGlitch(){
+    if (GM.mode !== "full") return;
+    document.body.classList.add("gm-glitch");
+    setTimeout(function(){ document.body.classList.remove("gm-glitch"); }, 190);
+  }
+
+  function gmSound(mode){
+    document.addEventListener("click", function(ev){
+      if (!GM.on) return;
+      var el = ev.target.closest && ev.target.closest("button,.btn,[role=button],.tab");
+      if (!el) return;
+      gmBeep(720, 0.045, "square", 0.05);
+      if (el.disabled) return;
+      gmGlitch();
+      if (mode !== "lite") setTimeout(function(){ gmBeep(980, 0.05, "triangle", 0.03); }, 55);
+    }, true);
+    /* награда/покупка: слушаем всплывающие тосты */
+    var obs = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        if (m.addedNodes.length) gmBeep(1280, 0.07, "sine", 0.035);
+      });
+    });
+    document.querySelectorAll(".toast,#toast").forEach(function(t){
+      obs.observe(t, {childList:true, characterData:true, subtree:true});
+    });
+  }
+
+  function gamerOn(themeId){
+    var was = GM.on;
+    GM.on = themeId === "gamer";
+    window.__THEME = themeId || "";
+    if (!GM.on){
+      document.body.classList.remove("theme-gamer","gm-lite","gm-full");
+      return;
+    }
+    document.body.classList.add("theme-gamer");
+    if (!was){
+      gmMarquee();
+      gmSound(GM.mode);
+    }
+    gmApplyMode();
+  }
+
+  function gmApplyMode(){
+    document.body.classList.toggle("gm-lite", GM.mode === "lite");
+    document.body.classList.toggle("gm-full", GM.mode === "full");
+    if (GM.marquee){
+      GM.marquee.querySelectorAll("div").forEach(function(d){ d.style.animation = ""; });
+    }
+  }
+
+  backBar();
+  gearButton();
+  fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
+    if (d && d.vars) apply(d.vars);
+    particles(d && d.particles);
+    if (d && d.theme) fetch("/api/prefs", {headers: headers}).then(function(r){ return r.json(); })
+      .then(function(p){
+        GM.mode = (p && p.prefs && p.prefs.fx_mode === "lite") ? "lite" : "full";
+        gamerOn(d.theme);
+      }).catch(function(){ gamerOn(d.theme); });
+  }).catch(function(){});
+})();
+</script>
+</body>
+</html>

@@ -369,6 +369,142 @@ POLISH = r"""<style>
   @keyframes __rvspark{0%{transform:translate(0,0) scale(1);opacity:1}
     100%{transform:translate(var(--dx,0),var(--dy,-120px)) scale(.2);opacity:0}}
 
+
+  /* ==================== Геймерский стиль ====================
+     Чёрный терминал с жёлтым акцентом. Переделываем ТОЛЬКО кнопки и
+     карточки: остальная вёрстка страниц не двигается. */
+  body.theme-gamer{
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:22px 22px;
+  }
+  body.theme-gamer::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9000;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 3px);
+    mix-blend-mode:overlay;opacity:.9;
+  }
+  body.gm-lite::after{display:none}
+
+  /* кнопки: срезанный угол, жёлтая заливка, штриховка */
+  body.theme-gamer button,body.theme-gamer .btn,body.theme-gamer .tab,
+  body.theme-gamer [role="button"]{
+    position:relative;border-radius:0!important;border:0!important;
+    background:var(--acc)!important;color:#0a0a0a!important;
+    font-weight:800!important;letter-spacing:.2px;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+    box-shadow:none!important;transition:transform .12s ease,filter .12s ease;
+    overflow:hidden;
+  }
+  body.theme-gamer button::after,body.theme-gamer .btn::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,rgba(0,0,0,.16) 0 2px,transparent 2px 5px);
+    opacity:.45;
+  }
+  body.theme-gamer button:hover,body.theme-gamer .btn:hover{filter:brightness(1.08)}
+  body.theme-gamer button:active,body.theme-gamer .btn:active{transform:translateY(1px) scale(.995)}
+  body.theme-gamer button[disabled],body.theme-gamer .btn[disabled]{
+    background:#15181b!important;color:#5b6167!important;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+  }
+  body.theme-gamer button[disabled]::after{display:none}
+
+  /* вторичные кнопки: прозрачные с белой рамкой */
+  body.theme-gamer .btn.ghost,body.theme-gamer button.ghost,body.theme-gamer .tab{
+    background:transparent!important;color:var(--ink)!important;
+    border:1px solid #3a4046!important;
+  }
+  body.theme-gamer .btn.ghost::after,body.theme-gamer .tab::after{display:none}
+  body.theme-gamer .tab.on{
+    background:transparent!important;color:var(--acc)!important;
+    border-color:var(--acc)!important;
+  }
+
+  /* карточки: срезанный угол и жёлтый уголок */
+  body.theme-gamer .card,body.theme-gamer .item,body.theme-gamer .tile,
+  body.theme-gamer .quest,body.theme-gamer .cell,body.theme-gamer .case,
+  body.theme-gamer .lot,body.theme-gamer .nsrow,body.theme-gamer .scard{
+    border-radius:0!important;border:1px solid var(--line)!important;
+    background:var(--panel)!important;position:relative;
+    clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%);
+  }
+  body.theme-gamer .card::before,body.theme-gamer .item::before{
+    content:"";position:absolute;top:0;right:0;width:14px;height:14px;
+    background:linear-gradient(225deg,var(--acc) 0 46%,transparent 47%);
+    pointer-events:none;
+  }
+
+  /* сегментный прогресс вместо полосы */
+  body.theme-gamer .bar,body.theme-gamer .progress{
+    border-radius:0!important;background:#15181b!important;
+    border:1px solid var(--line)!important;
+  }
+  body.theme-gamer .bar i,body.theme-gamer .progress i{
+    border-radius:0!important;background:var(--acc)!important;
+  }
+
+  /* поля ввода — как терминал */
+  body.theme-gamer input,body.theme-gamer textarea,body.theme-gamer select{
+    border-radius:0!important;background:#0b0d0f!important;
+    border:1px solid var(--line)!important;color:var(--ink)!important;
+    font-family:var(--mono)!important;
+  }
+  body.theme-gamer input:focus,body.theme-gamer textarea:focus{
+    border-color:var(--acc)!important;outline:none!important;
+  }
+
+  /* тосты и модалки */
+  body.theme-gamer .toast,body.theme-gamer .__note{
+    border-radius:0!important;border-left:2px solid var(--acc)!important;
+  }
+
+  /* пасс: герой-панель тоже в терминальном стиле */
+  body.theme-gamer .hero{
+    background:#0f1113!important;border:1px solid var(--line)!important;
+    border-radius:0!important;
+    clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,0 100%);
+  }
+  body.theme-gamer .hero::after{display:none}
+  body.theme-gamer .hero .timer,body.theme-gamer .hero .lvl{color:var(--acc)!important}
+  body.theme-gamer .hero .name{color:var(--ink)!important}
+  body.theme-gamer .season{color:var(--acc)!important}
+  body.theme-gamer .section h2{color:var(--muted)!important}
+  body.theme-gamer .level{background:#15181b!important;border-color:var(--line)!important;color:var(--muted)!important}
+  body.theme-gamer .level.open{background:#1d1a08!important;border-color:#5c4a1a!important;color:var(--acc)!important}
+  body.theme-gamer .cell.plus,body.theme-gamer .cell.prem{
+    background:#101214!important;border-color:var(--line)!important;
+  }
+  body.theme-gamer .quest.done{border-color:var(--acc)!important;background:#151208!important}
+  body.theme-gamer .toast{background:#0b0d0f!important;border:1px solid var(--line)!important;
+    border-left:2px solid var(--acc)!important;border-radius:0!important;color:var(--ink)!important}
+
+  /* бегущая строка */
+  /* бегущая строка: внутренность абсолютная, иначе flex-элемент
+     растягивал страницу по ширине и появлялся горизонтальный скролл */
+  .gm-marquee{
+    position:relative;overflow:hidden;margin:10px 0 12px;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    background:#0b0d0f;height:24px;max-width:100%;
+  }
+  .gm-marquee div{position:absolute;top:0;left:0;height:24px;display:flex;
+    width:max-content;animation:gm-slide 26s linear infinite}
+  .gm-lite .gm-marquee div{animation:none;width:100%;justify-content:center}
+  .gm-marquee span{flex:0 0 auto;white-space:nowrap;font-family:var(--mono);
+    font-size:9.5px;letter-spacing:1.8px;color:var(--muted);line-height:24px;
+    padding-right:44px}
+  .gm-marquee b{color:var(--acc)}
+  @keyframes gm-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  /* глитч */
+  body.gm-glitch{animation:gm-jitter .18s steps(2) 1}
+  @keyframes gm-jitter{
+    0%{transform:translate(0,0)}
+    25%{transform:translate(-2px,1px)}
+    50%{transform:translate(2px,-1px)}
+    75%{transform:translate(-1px,-1px)}
+    100%{transform:translate(0,0)}
+  }
+  body.theme-gamer.gm-full .gm-flicker{animation:gm-flick 6s infinite}
+  @keyframes gm-flick{0%,96%,100%{opacity:1}97%{opacity:.86}98%{opacity:1}99%{opacity:.9}}
+
   /* ==================== Снежная тема ==================== */
   body.theme-snow button,body.theme-snow .btn,body.theme-snow .tab{
     position:relative;overflow:hidden}
@@ -526,6 +662,15 @@ BOOTSTRAP = POLISH + r"""<script>
       '<div class="__s">Писать в личку, когда сток карт обновился</div></div>' +
       '<button class="__sw' + (p.stock_alerts ? " on" : "") + '" id="__sw-stock">' +
       (p.stock_alerts ? "Вкл" : "Выкл") + '</button></div>' +
+      ((window.__THEME === "gamer")
+        ? '<div class="__row"><div><div class="__t">Эффекты стиля</div>' +
+          '<div class="__s">' +
+          (p.fx_mode === "lite" ? "Оптимизация: без глитча и лишних звуков"
+                                : "Максимум: глитч, бегущая строка, звуки") +
+          '</div></div><button class="__sw' + (p.fx_mode === "lite" ? "" : " on") +
+          '" id="__sw-fxmode">' + (p.fx_mode === "lite" ? "Лайт" : "Макс") +
+          '</button></div>'
+        : "") +
       '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
       '<button class="__tut" id="__reset" style="border-color:#7a2b2b;color:#ffb4b4;' +
       'background:#241318">⛔ Сбросить прогресс</button>' +
@@ -536,6 +681,19 @@ BOOTSTRAP = POLISH + r"""<script>
       ((window.__APP_VERSION) ? window.__APP_VERSION : "—") + '</div></div>';
     var resetBtn = document.getElementById("__reset");
     if (resetBtn) resetBtn.onclick = openResetDialog;
+    var fxMode = document.getElementById("__sw-fxmode");
+    if (fxMode) fxMode.onclick = function(){
+      var next = (p.fx_mode === "lite") ? "full" : "lite";
+      p.fx_mode = next;
+      fxMode.className = "__sw" + (next === "lite" ? "" : " on");
+      fxMode.textContent = next === "lite" ? "Лайт" : "Макс";
+      prefsRequest("POST", {fx_mode: next}, function(saved){
+        if (saved && saved.prefs) p.fx_mode = saved.prefs.fx_mode || next;
+      });
+      if (window.GM) { window.GM.mode = next; }
+      document.body.classList.toggle("gm-lite", next === "lite");
+      document.body.classList.toggle("gm-full", next === "full");
+    };
     var tutBtn = document.getElementById("__tut-run");
     if (tutBtn) tutBtn.onclick = function(){
       if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
@@ -956,11 +1114,103 @@ BOOTSTRAP = POLISH + r"""<script>
     }
   }
 
+
+  /* ---------- Геймерский стиль: эффекты, звук, режимы ---------- */
+  var GM = {on:false, mode:"full", audio:null, marquee:null};
+  window.GM = GM;
+
+  function gmBeep(freq, dur, type, gain){
+    if (!GM.on) return;
+    if (GM.mode === "lite" && freq !== 720) return;   // в оптимизации только клик
+    try{
+      if (!GM.audio) GM.audio = new (window.AudioContext || window.webkitAudioContext)();
+      var ctx = GM.audio;
+      if (ctx.state === "suspended") ctx.resume();
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = type || "square";
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(gain || 0.045, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + dur);
+    }catch(e){}
+  }
+
+  function gmMarquee(){
+    if (document.querySelector(".gm-marquee")) return;
+    var host = document.querySelector(".top, header, .head, .wrap > h1");
+    if (!host) return;
+    var box = document.createElement("div");
+    box.className = "gm-marquee";
+    var line = "СЕВЕРО-ПАСС · КВЕСТЫ КОПЯТСЯ · НАГРАДЫ ЗА УРОВНИ";
+    box.innerHTML = "<div><span><b>▪</b> " + line + " <b>▪</b> " + line +
+      "</span><span><b>▪</b> " + line + " <b>▪</b> " + line + "</span></div>";
+    var anchor = host.classList.contains("wrap") ? host : host;
+    anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    GM.marquee = box;
+  }
+
+  function gmGlitch(){
+    if (GM.mode !== "full") return;
+    document.body.classList.add("gm-glitch");
+    setTimeout(function(){ document.body.classList.remove("gm-glitch"); }, 190);
+  }
+
+  function gmSound(mode){
+    document.addEventListener("click", function(ev){
+      if (!GM.on) return;
+      var el = ev.target.closest && ev.target.closest("button,.btn,[role=button],.tab");
+      if (!el) return;
+      gmBeep(720, 0.045, "square", 0.05);
+      if (el.disabled) return;
+      gmGlitch();
+      if (mode !== "lite") setTimeout(function(){ gmBeep(980, 0.05, "triangle", 0.03); }, 55);
+    }, true);
+    /* награда/покупка: слушаем всплывающие тосты */
+    var obs = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        if (m.addedNodes.length) gmBeep(1280, 0.07, "sine", 0.035);
+      });
+    });
+    document.querySelectorAll(".toast,#toast").forEach(function(t){
+      obs.observe(t, {childList:true, characterData:true, subtree:true});
+    });
+  }
+
+  function gamerOn(themeId){
+    var was = GM.on;
+    GM.on = themeId === "gamer";
+    window.__THEME = themeId || "";
+    if (!GM.on){
+      document.body.classList.remove("theme-gamer","gm-lite","gm-full");
+      return;
+    }
+    document.body.classList.add("theme-gamer");
+    if (!was){
+      gmMarquee();
+      gmSound(GM.mode);
+    }
+    gmApplyMode();
+  }
+
+  function gmApplyMode(){
+    document.body.classList.toggle("gm-lite", GM.mode === "lite");
+    document.body.classList.toggle("gm-full", GM.mode === "full");
+    if (GM.marquee){
+      GM.marquee.querySelectorAll("div").forEach(function(d){ d.style.animation = ""; });
+    }
+  }
+
   backBar();
   gearButton();
   fetch("/api/theme", {headers: headers}).then(function(r){ return r.json(); }).then(function(d){
     if (d && d.vars) apply(d.vars);
     particles(d && d.particles);
+    if (d && d.theme) fetch("/api/prefs", {headers: headers}).then(function(r){ return r.json(); })
+      .then(function(p){
+        GM.mode = (p && p.prefs && p.prefs.fx_mode === "lite") ? "lite" : "full";
+        gamerOn(d.theme);
+      }).catch(function(){ gamerOn(d.theme); });
   }).catch(function(){});
 })();
 </script>

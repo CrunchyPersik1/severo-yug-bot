@@ -2200,6 +2200,7 @@ PREFS_DEFAULTS: dict[str, Any] = {
     "pinned": "",             # card_id карточки, висящей в профиле
     "stock_alerts": False,    # писать в личку о обновлении стока
     "dungeon_reset_ask": False,  # спросить про сброс подземелья после сброса
+    "fx_mode": "full",        # геймерский стиль: full | lite
 }
 
 ROULETTE_VIEWS: tuple[str, ...] = ("wheel", "reel")
@@ -2223,6 +2224,8 @@ def _prefs_clean(current: dict[str, Any] | None) -> dict[str, Any]:
     prefs["pinned"] = pinned if pinned in CARDS_BY_ID else ""
     prefs["stock_alerts"] = bool(prefs.get("stock_alerts", False))
     prefs["dungeon_reset_ask"] = bool(prefs.get("dungeon_reset_ask", False))
+    if prefs.get("fx_mode") not in ("full", "lite"):
+        prefs["fx_mode"] = "full"
     return prefs
 
 

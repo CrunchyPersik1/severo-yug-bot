@@ -412,5 +412,6 @@ def card_rows() -> list[tuple[object, ...]]:
             json.dumps(card.ability.effects, ensure_ascii=False),
             card.surname,
         )
-        for card in CARDS + CARDS_D
+        # скины тоже должны быть в таблице cards: на неё ссылается collection
+        for card in CARDS + CARDS_D + SKINS
     ]

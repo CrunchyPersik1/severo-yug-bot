@@ -1,0 +1,111 @@
+
+  /* ==================== Геймерский стиль ====================
+     Чёрный терминал с жёлтым акцентом. Переделываем ТОЛЬКО кнопки и
+     карточки: остальная вёрстка страниц не двигается. */
+  body.theme-gamer{
+    background-image:radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px);
+    background-size:22px 22px;
+  }
+  body.theme-gamer::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9000;
+    background:repeating-linear-gradient(0deg,rgba(255,255,255,.045) 0 1px,transparent 1px 3px);
+    mix-blend-mode:overlay;opacity:.9;
+  }
+  body.gm-lite::after{display:none}
+
+  /* кнопки: срезанный угол, жёлтая заливка, штриховка */
+  body.theme-gamer button,body.theme-gamer .btn,body.theme-gamer .tab,
+  body.theme-gamer [role="button"]{
+    position:relative;border-radius:0!important;border:0!important;
+    background:var(--acc)!important;color:#0a0a0a!important;
+    font-weight:800!important;letter-spacing:.2px;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+    box-shadow:none!important;transition:transform .12s ease,filter .12s ease;
+    overflow:hidden;
+  }
+  body.theme-gamer button::after,body.theme-gamer .btn::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,rgba(0,0,0,.16) 0 2px,transparent 2px 5px);
+    opacity:.45;
+  }
+  body.theme-gamer button:hover,body.theme-gamer .btn:hover{filter:brightness(1.08)}
+  body.theme-gamer button:active,body.theme-gamer .btn:active{transform:translateY(1px) scale(.995)}
+  body.theme-gamer button[disabled],body.theme-gamer .btn[disabled]{
+    background:#15181b!important;color:#5b6167!important;
+    clip-path:polygon(0 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%);
+  }
+  body.theme-gamer button[disabled]::after{display:none}
+
+  /* вторичные кнопки: прозрачные с белой рамкой */
+  body.theme-gamer .btn.ghost,body.theme-gamer button.ghost,body.theme-gamer .tab{
+    background:transparent!important;color:var(--ink)!important;
+    border:1px solid #3a4046!important;
+  }
+  body.theme-gamer .btn.ghost::after,body.theme-gamer .tab::after{display:none}
+  body.theme-gamer .tab.on{
+    background:transparent!important;color:var(--acc)!important;
+    border-color:var(--acc)!important;
+  }
+
+  /* карточки: срезанный угол и жёлтый уголок */
+  body.theme-gamer .card,body.theme-gamer .item,body.theme-gamer .tile,
+  body.theme-gamer .quest,body.theme-gamer .cell,body.theme-gamer .case,
+  body.theme-gamer .lot,body.theme-gamer .nsrow,body.theme-gamer .scard{
+    border-radius:0!important;border:1px solid var(--line)!important;
+    background:var(--panel)!important;position:relative;
+    clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%);
+  }
+  body.theme-gamer .card::before,body.theme-gamer .item::before{
+    content:"";position:absolute;top:0;right:0;width:14px;height:14px;
+    background:linear-gradient(225deg,var(--acc) 0 46%,transparent 47%);
+    pointer-events:none;
+  }
+
+  /* сегментный прогресс вместо полосы */
+  body.theme-gamer .bar,body.theme-gamer .progress{
+    border-radius:0!important;background:#15181b!important;
+    border:1px solid var(--line)!important;
+  }
+  body.theme-gamer .bar i,body.theme-gamer .progress i{
+    border-radius:0!important;background:var(--acc)!important;
+  }
+
+  /* поля ввода — как терминал */
+  body.theme-gamer input,body.theme-gamer textarea,body.theme-gamer select{
+    border-radius:0!important;background:#0b0d0f!important;
+    border:1px solid var(--line)!important;color:var(--ink)!important;
+    font-family:var(--mono)!important;
+  }
+  body.theme-gamer input:focus,body.theme-gamer textarea:focus{
+    border-color:var(--acc)!important;outline:none!important;
+  }
+
+  /* тосты и модалки */
+  body.theme-gamer .toast,body.theme-gamer .__note{
+    border-radius:0!important;border-left:2px solid var(--acc)!important;
+  }
+
+  /* бегущая строка */
+  .gm-marquee{
+    position:relative;overflow:hidden;margin:10px 0 12px;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    background:#0b0d0f;height:24px;display:flex;align-items:center;
+  }
+  .gm-marquee div{display:flex;width:200%;animation:gm-slide 22s linear infinite}
+  .gm-lite .gm-marquee div{animation:none;width:100%;justify-content:center}
+  .gm-marquee span{flex:0 0 50%;white-space:nowrap;font-family:var(--mono);
+    font-size:9.5px;letter-spacing:1.8px;color:var(--muted);text-align:center}
+  .gm-marquee b{color:var(--acc)}
+  @keyframes gm-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+  /* глитч */
+  body.gm-glitch{animation:gm-jitter .18s steps(2) 1}
+  @keyframes gm-jitter{
+    0%{transform:translate(0,0)}
+    25%{transform:translate(-2px,1px)}
+    50%{transform:translate(2px,-1px)}
+    75%{transform:translate(-1px,-1px)}
+    100%{transform:translate(0,0)}
+  }
+  body.theme-gamer.gm-full .gm-flicker{animation:gm-flick 6s infinite}
+  @keyframes gm-flick{0%,96%,100%{opacity:1}97%{opacity:.86}98%{opacity:1}99%{opacity:.9}}
