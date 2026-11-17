@@ -495,11 +495,6 @@ class Database:
             "mega_quest",
             "profile_tags",
             "profile_rewards",
-            "dungeon_hero",
-            "dungeon_shop_bought",
-            "dungeon_quest",
-            "dungeon_presence",
-            "dungeon_boss_players",
             "casino_lost",
             "gem_drops",
         )
@@ -534,12 +529,18 @@ class Database:
                     """,
                     uid,
                 )
+                # строки настроек может не быть вообще — тогда INSERT
                 await con.execute(
                     """
-                    update player_prefs
-                       set prefs = jsonb_set(coalesce(prefs, '{}'::jsonb),
-                                             '{pinned}', '""'::jsonb, true)
-                     where user_id = $1
+                    insert into player_prefs (user_id, prefs)
+                    values ($1, jsonb_build_object(
+                                   'pinned', '""'::jsonb,
+                                   'dungeon_reset_ask', 'true'::jsonb))
+                    on conflict (user_id) do update
+                       set prefs = jsonb_set(
+                             jsonb_set(coalesce(player_prefs.prefs, '{}'::jsonb),
+                                       '{pinned}', '""'::jsonb, true),
+                             '{dungeon_reset_ask}', 'true'::jsonb, true)
                     """,
                     uid,
                 )

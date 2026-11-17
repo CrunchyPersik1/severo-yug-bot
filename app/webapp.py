@@ -2170,6 +2170,8 @@ PREFS_DEFAULTS: dict[str, Any] = {
     "view_classic": "wheel",  # колесо | лента
     "view_crystal": "wheel",
     "pinned": "",             # card_id карточки, висящей в профиле
+    "stock_alerts": False,    # писать в личку о обновлении стока
+    "dungeon_reset_ask": False,  # спросить про сброс подземелья после сброса
 }
 
 ROULETTE_VIEWS: tuple[str, ...] = ("wheel", "reel")
@@ -2191,6 +2193,8 @@ def _prefs_clean(current: dict[str, Any] | None) -> dict[str, Any]:
             prefs[key] = "wheel"
     pinned = str(prefs.get("pinned") or "")
     prefs["pinned"] = pinned if pinned in CARDS_BY_ID else ""
+    prefs["stock_alerts"] = bool(prefs.get("stock_alerts", False))
+    prefs["dungeon_reset_ask"] = bool(prefs.get("dungeon_reset_ask", False))
     return prefs
 
 
@@ -2628,6 +2632,53 @@ async def api_prefs_save(request: Request) -> JSONResponse:
 
 # Контрольное слово для полного сброса прогресса
 RESET_WORD = "североюг"
+
+
+@router.post("/api/dungeon/reset")
+async def api_dungeon_reset(request: Request) -> JSONResponse:
+    """Сброс ТОЛЬКО подземелья. Вызывается вопросом после общего сброса.
+
+    reset=true — стереть прогресс героя, false — оставить как есть.
+    В обоих случаях флаг-вопрос снимается, чтобы не спрашивать снова.
+    """
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    do_reset = bool((body or {}).get("reset"))
+    user_id = int(user["id"])
+    try:
+        async with state.db.pool.acquire() as con:
+            async with con.transaction():
+                if do_reset:
+                    for table in (
+                        "dungeon_hero",
+                        "dungeon_shop_bought",
+                        "dungeon_quest",
+                        "dungeon_presence",
+                        "dungeon_boss_players",
+                    ):
+                        await con.execute(
+                            f"delete from {table} where user_id = $1", user_id
+                        )
+                await con.execute(
+                    """
+                    update player_prefs
+                       set prefs = jsonb_set(coalesce(prefs, '{}'::jsonb),
+                                             '{dungeon_reset_ask}', 'false'::jsonb, true)
+                     where user_id = $1
+                    """,
+                    user_id,
+                )
+    except Exception:  # noqa: BLE001
+        log.exception("Сброс подземелья упал")
+        return JSONResponse({"error": "Не получилось"}, status_code=500)
+    return JSONResponse({"ok": True, "reset": do_reset})
 
 
 @router.post("/api/reset")
@@ -9928,6 +9979,17 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 .nsrow button[disabled]{background:#3a2a12;color:#8a7a5a}
 </style>
 
+<div id="dunreset">
+  <div class="drbox">
+    <div class="drcap">СБРОС АККАУНТА</div>
+    <div class="drtext">Основной прогресс обнулён, но <b>подземелье осталось</b>.
+      Сбросить и его — героя, оружие, монеты, покупки у Насибуллина?</div>
+    <div class="drrow">
+      <button id="drno">Оставить</button>
+      <button id="dryes">Сбросить подземелье</button>
+    </div>
+  </div>
+</div>
 <div id="lvlwarn">
   <div class="lwbox">
     <div class="lwcap">БОСС НЕ ПО УРОВНЮ</div>
@@ -9951,6 +10013,17 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
   </div>
 </div>
 <style>
+#dunreset{position:fixed;inset:0;z-index:72;display:none;align-items:center;
+  justify-content:center;background:rgba(4,6,10,.78);padding:22px}
+#dunreset.on{display:flex}
+#dunreset .drbox{max-width:340px;width:100%;background:#161b16;border:1px solid #3a4a5a;
+  border-radius:16px;padding:18px;text-align:center;color:#f2ece0}
+#dunreset .drcap{font-size:11px;letter-spacing:1.4px;color:#8fd0ff;font-weight:900}
+#dunreset .drtext{margin-top:8px;font-size:13.5px;line-height:1.45}
+#dunreset .drrow{display:flex;gap:8px;margin-top:14px}
+#dunreset .drrow button{flex:1;border-radius:12px;padding:12px;font-weight:800;
+  font-family:inherit;font-size:12.5px;border:1px solid #3a3f3a;background:#20261f;color:#cfd6cf}
+#dunreset .drrow #dryes{border:0;background:#ff7a3c;color:#1a0f06;font-weight:900}
 #lvlwarn{position:fixed;inset:0;z-index:70;display:none;align-items:center;
   justify-content:center;background:rgba(4,6,10,.75);padding:22px}
 #lvlwarn.on{display:flex}
@@ -11047,6 +11120,33 @@ function bindLevelWarn(){
   };
 }
 bindLevelWarn();
+
+/* После общего сброса спрашиваем про подземелье: оно теперь не стирается */
+function bindDungeonResetAsk(){
+  const box = document.getElementById("dunreset");
+  const no = document.getElementById("drno");
+  const yes = document.getElementById("dryes");
+  if (!box || !no || !yes) return;
+  no.onclick = function(){
+    box.classList.remove("on");
+    coopApi("/api/dungeon/reset", {reset: false});
+  };
+  yes.onclick = function(){
+    if (!confirm("Точно сбросить подземелье? Герой, оружие и монеты пропадут.")) return;
+    box.classList.remove("on");
+    coopApi("/api/dungeon/reset", {reset: true}).then(function(){ location.reload(); });
+  };
+}
+async function dungeonResetAsk(){
+  if (!TG_INIT) return;
+  const d = await coopApi("/api/prefs");
+  const ask = d && d.prefs && d.prefs.dungeon_reset_ask;
+  if (!ask) return;
+  const box = document.getElementById("dunreset");
+  if (box) box.classList.add("on");
+}
+bindDungeonResetAsk();
+dungeonResetAsk();
 
 function bossEngage(bs){
   // Круг босса запускает бой с движением и уворотом, а не панель кооп-босса.

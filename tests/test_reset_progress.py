@@ -43,8 +43,10 @@ def test_api_requires_exact_word():
 
 def test_reset_wipes_gameplay_tables():
     source = inspect.getsource(Database.reset_progress)
-    for table in ("collection", "cases", "dungeon_hero", "stock_holdings", "pets_owned"):
+    for table in ("collection", "cases", "stock_holdings", "pets_owned"):
         assert f'"{table}"' in source, table
+    # подземелье остаётся: про него спрашиваем отдельно
+    assert '"dungeon_hero"' not in source
     # аудит не трогаем
     assert '"game_log"' not in source
     assert '"points_log"' not in source
