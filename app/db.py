@@ -2668,6 +2668,22 @@ class Database:
         peak = int(max(row["peak_points"] or 0, row["bonus_points"] or 0)) if row else 0
         return {"level": unlocks.level_of(xp), "peak": peak}
 
+    async def player_title(self, user_id: int) -> dict[str, Any] | None:
+        """Последний выданный титул (светящаяся плашка в профиле)."""
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select title, season, glow, granted_at from player_titles "
+                "where user_id = $1 and active order by granted_at desc limit 1",
+                int(user_id),
+            )
+        if row is None:
+            return None
+        return {
+            "title": row["title"],
+            "season": row["season"],
+            "glow": bool(row["glow"]),
+        }
+
     async def is_banned(self, user_id: int) -> bool:
         async with self._p().acquire() as con:
             value = await con.fetchval(

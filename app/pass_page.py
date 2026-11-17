@@ -98,6 +98,12 @@ body{margin:0;background:var(--bg);color:var(--ink);
     <div id="quests"></div>
   </div>
 
+  <div class="section" id="bonusBox" style="display:none">
+    <h2>Бонусы после 50 уровня</h2>
+    <div class="small" id="bonusHint" style="margin-bottom:8px"></div>
+    <div id="bonusList"></div>
+  </div>
+
   <div class="section">
     <h2>Дорожки наград</h2>
     <div class="small" style="margin-bottom:8px">
@@ -131,11 +137,24 @@ async function api(path, body){
   return r.json();
 }
 
+function showReports(){
+  const reports = (S.reports || []);
+  if (!reports.length) return;
+  const r = reports[0];
+  const items = (r.items || []).slice(0, 12).map(x => "· " + x).join("\n");
+  alert("Сезон " + r.season + " закрыт.\n" +
+        "Уровень: " + r.level + (r.premium ? " · Пасс++" : r.plus ? " · Пасс+" : "") + "\n" +
+        "Незабранные награды выданы автоматически (" + (r.count || 0) + "):\n" + items);
+}
+
 function paint(){
   const p = S.progress;
   document.getElementById("seasonName").textContent = S.season.name;
   document.getElementById("heroName").textContent = S.season.theme.name;
-  document.getElementById("heroSub").textContent = "Сезон " + S.season.key + " · титул «" + S.season.theme.title + "»";
+  const own = S.title && S.title.title;
+  document.getElementById("heroSub").textContent = own
+    ? ("Твой титул: «" + own + "»")
+    : ("Сезон " + S.season.key + " · титул «" + S.season.theme.title + "» за полное прохождение Пасс++");
   document.getElementById("lvlText").textContent = p.level + " ур.";
   const need = p.need || 0;
   const pct = p.level >= 50 ? 100 : Math.round((p.into / (need || 1)) * 100);
@@ -167,6 +186,8 @@ function paint(){
   }).join("");
   q.querySelectorAll("[data-quest]").forEach(b => b.onclick = () => claimQuest(Number(b.dataset.quest)));
 
+  paintBonus();
+
   const t = document.getElementById("tracks");
   t.innerHTML = S.rewards.map(row => {
     const open = row.level <= p.level;
@@ -188,11 +209,42 @@ function cell(data, open, claimed, track, level){
   return '<div class="' + cls + '">' + esc(data.text) + btn + '</div>';
 }
 
+function paintBonus(){
+  const box = document.getElementById("bonusBox");
+  const list = document.getElementById("bonusList");
+  const hint = document.getElementById("bonusHint");
+  const b = S.bonus || {steps: 0, claimed: 0, left: 0, to_next: 2800, options: []};
+  if (!b.steps && !b.left){ box.style.display = "none"; return; }
+  box.style.display = "block";
+  hint.textContent = "Заработано шагов: " + b.claimed + " из " + b.steps +
+    " · до следующего " + b.to_next + " XP";
+  if (!b.left || !b.options.length){ list.innerHTML = '<div class="small">Все бонусы забраны</div>'; return; }
+  const step = b.steps;
+  list.innerHTML = b.options.map(opt =>
+    '<div class="quest"><div class="qt"><span>Шаг ' + step + '</span>' +
+    '<span>' + (opt.gems ? opt.gems + ' 💎' : 'бесплатно') + '</span></div>' +
+    '<div class="qm"><span>' + esc((opt.bundle && opt.bundle.text) || '') + '</span></div>' +
+    '<button data-bonus="' + opt.index + '">' + (opt.gems ? "Забрать за гемы" : "Забрать") +
+    '</button></div>'
+  ).join("");
+  list.querySelectorAll("[data-bonus]").forEach(btn =>
+    btn.onclick = () => takeBonus(step, Number(btn.dataset.bonus)));
+}
+
+async function takeBonus(step, index){
+  const d = await api("/api/pass/bonus", {step: step, index: index});
+  if (d.error){ toast(d.error); return; }
+  toast("Получено: " + (d.granted || []).join(", "));
+  await load();
+}
+
 async function load(){
   try{
     const d = await api("/api/pass");
     if (d.error){ toast(d.error); return; }
+    const first = !S;
     S = d; paint();
+    if (first) showReports();
   }catch(e){ toast("Связь потерялась"); }
 }
 

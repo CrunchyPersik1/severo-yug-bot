@@ -13,6 +13,8 @@ from typing import Any
 
 from . import bundles, pass_config, pass_quests, pass_rewards
 
+SKIN_CARD = "valeriya_academy"
+
 
 class PassError(Exception):
     """Ошибку можно показать игроку."""
@@ -278,7 +280,237 @@ class PassRepo:
                         season,
                         boost,
                     )
-        return {"paid": int(price), "boost": int(pass_config.TOTAL_XP * pass_config.PREMIUM_BOOST) if kind != "plus" else 0}
+        if kind != "plus":
+            await self._grant_skin(user_id)
+        return {
+            "paid": int(price),
+            "boost": int(pass_config.TOTAL_XP * pass_config.PREMIUM_BOOST)
+            if kind != "plus"
+            else 0,
+        }
+
+    async def _grant_skin(self, user_id: int) -> None:
+        """Сезонная карта-скин «Ученица Валерия» — один раз на аккаунт."""
+        async with self.pool.acquire() as con:
+            have = await con.fetchval(
+                "select 1 from collection where user_id = $1 and card_id = $2",
+                int(user_id),
+                SKIN_CARD,
+            )
+            if have:
+                return
+            await con.execute(
+                "insert into collection (user_id, card_id, count) values ($1, $2, 1) "
+                "on conflict (user_id, card_id) do update set count = collection.count + 1",
+                int(user_id),
+                SKIN_CARD,
+            )
+
+    async def ensure_title(self, user_id: int, season: str | None = None) -> str | None:
+        """Титул сезона за полное прохождение сп++ (50 уровней)."""
+        season = season or pass_config.season_key()
+        async with self.pool.acquire() as con:
+            row = await con.fetchrow(
+                "select xp, premium from pass_progress where user_id = $1 and season = $2",
+                int(user_id),
+                season,
+            )
+            if row is None or not row["premium"]:
+                return None
+            if pass_config.level_for(int(row["xp"] or 0)) < pass_config.LEVELS:
+                return None
+            theme = pass_config.theme()
+            title = str(theme.get("title") or "Лучший из лучших")
+            code = "pass:" + season
+            have = await con.fetchval(
+                "select 1 from player_titles where user_id = $1 and code = $2",
+                int(user_id),
+                code,
+            )
+            if not have:
+                await con.execute(
+                    "insert into player_titles (user_id, code, title, season, glow) "
+                    "values ($1, $2, $3, $4, true)",
+                    int(user_id),
+                    code,
+                    title,
+                    season,
+                )
+        return title
+
+    # ------------------------------------------------------------------ #
+    # Конец сезона
+    # ------------------------------------------------------------------ #
+
+    async def close_old_seasons(self, user_id: int) -> list[dict[str, Any]]:
+        """Закрывает прошлые сезоны: авто-выдаёт незабранное и пишет отчёт."""
+        current = pass_config.season_key()
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                "select * from pass_progress where user_id = $1 and season < $2",
+                int(user_id),
+                current,
+            )
+        reports: list[dict[str, Any]] = []
+        for row in rows:
+            season = str(row["season"])
+            already = await self._reported(user_id, season)
+            if already:
+                continue
+            report = await self._close_one(user_id, row)
+            reports.append(report)
+        return reports
+
+    async def _reported(self, user_id: int, season: str) -> bool:
+        async with self.pool.acquire() as con:
+            return bool(
+                await con.fetchval(
+                    "select 1 from pass_reports where user_id = $1 and season = $2",
+                    int(user_id),
+                    season,
+                )
+            )
+
+    async def _close_one(self, user_id: int, row: Any) -> dict[str, Any]:
+        season = str(row["season"])
+        xp = int(row["xp"] or 0)
+        level = pass_config.level_for(xp)
+        plus = bool(row["plus"])
+        premium = bool(row["premium"])
+        claimed_free = {int(x) for x in self._json(row["claimed_free"])}
+        claimed_plus = {int(x) for x in self._json(row["claimed_plus"])}
+        claimed_prem = {int(x) for x in self._json(row["claimed_prem"])}
+        granted: list[str] = []
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                for number in range(1, level + 1):
+                    reward = pass_rewards.level(season, number)
+                    if reward is None:
+                        continue
+                    tracks = [("free", reward["free"], claimed_free)]
+                    if plus:
+                        tracks.append(("plus", reward["plus"], claimed_plus))
+                    if premium and reward.get("premium") is not None:
+                        tracks.append(("premium", reward["premium"], claimed_prem))
+                    for track, bundle, done in tracks:
+                        if bundle is None or number in done:
+                            continue
+                        part = await bundles.grant(self.db, con, int(user_id), bundle)
+                        granted.extend(part)
+                        done.add(number)
+                await con.execute(
+                    """
+                    update pass_progress
+                       set claimed_free = $3::jsonb,
+                           claimed_plus = $4::jsonb,
+                           claimed_prem = $5::jsonb,
+                           updated_at = now()
+                     where user_id = $1 and season = $2
+                    """,
+                    int(user_id),
+                    season,
+                    json.dumps(sorted(claimed_free)),
+                    json.dumps(sorted(claimed_plus)),
+                    json.dumps(sorted(claimed_prem)),
+                )
+                payload = {
+                    "season": season,
+                    "level": level,
+                    "plus": plus,
+                    "premium": premium,
+                    "items": granted[-40:],
+                    "count": len(granted),
+                }
+                await con.execute(
+                    "insert into pass_reports (user_id, season, payload) "
+                    "values ($1, $2, $3::jsonb)",
+                    int(user_id),
+                    season,
+                    json.dumps(payload),
+                )
+        return payload
+
+    async def unseen_reports(self, user_id: int, mark_seen: bool = True) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                "select id, season, payload from pass_reports "
+                "where user_id = $1 and not seen order by id desc",
+                int(user_id),
+            )
+            if rows and mark_seen:
+                await con.execute(
+                    "update pass_reports set seen = true where user_id = $1 and not seen",
+                    int(user_id),
+                )
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            payload = row["payload"]
+            if isinstance(payload, str):
+                payload = json.loads(payload or "{}")
+            out.append(payload)
+        return out
+
+    # ------------------------------------------------------------------ #
+    # Бонусы после 50 уровня
+    # ------------------------------------------------------------------ #
+
+    async def bonus_state(self, user_id: int, season: str | None = None) -> dict[str, Any]:
+        state = await self.progress(user_id, season)
+        return {
+            "steps": state["bonus_steps"],
+            "claimed": state["bonus_claimed"],
+            "picks": state["bonus_picks"],
+            "left": max(0, state["bonus_steps"] - state["bonus_claimed"]),
+            "to_next": pass_config.bonus_left(state["xp"]),
+        }
+
+    async def claim_bonus(
+        self, user_id: int, step: int, index: int, season: str | None = None
+    ) -> dict[str, Any]:
+        season = season or pass_config.season_key()
+        step = int(step)
+        index = int(index)
+        if index not in (1, 2):
+            raise PassError("Неизвестный вариант награды")
+        state = await self.progress(user_id, season)
+        if step < 1 or step > state["bonus_steps"]:
+            raise PassError("Этот бонус ещё не заработан")
+        if index == 1 and step <= state["bonus_claimed"]:
+            raise PassError("Бонус уже забран")
+        if any(int(p.get("step", 0)) == step and int(p.get("index", 0)) == index
+               for p in state["bonus_picks"]):
+            raise PassError("Этот вариант уже забран")
+        options = pass_rewards.bonus_choices(season, step)
+        option = next(item for item in options if int(item["index"]) == index)
+        price = int(option["gems"])
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                if price:
+                    paid = await con.fetchrow(
+                        "update players set crystals = crystals - $2 "
+                        "where user_id = $1 and crystals >= $2 returning crystals",
+                        int(user_id),
+                        price,
+                    )
+                    if paid is None:
+                        raise PassError(f"Не хватает кристаллов: нужно {price}")
+                await con.execute(
+                    """
+                    update pass_progress
+                       set bonus_claimed = greatest(bonus_claimed, $3),
+                           bonus_picks = bonus_picks || $4::jsonb,
+                           updated_at = now()
+                     where user_id = $1 and season = $2
+                    """,
+                    int(user_id),
+                    season,
+                    step if index == 1 else state["bonus_claimed"],
+                    json.dumps([{"step": step, "index": index}]),
+                )
+                granted = await bundles.grant(
+                    self.db, con, int(user_id), option["bundle"]
+                )
+        return {"granted": granted, "step": step, "index": index, "paid": price}
 
     # ------------------------------------------------------------------ #
     # Награды уровней
@@ -316,4 +548,5 @@ class PassRepo:
                     json.dumps([int(level)]),
                 )
                 granted = await bundles.grant(self.db, con, int(user_id), bundle)
+        await self.ensure_title(user_id, season)
         return {"granted": granted, "level": int(level), "track": track}

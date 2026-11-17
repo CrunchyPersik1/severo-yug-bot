@@ -278,6 +278,24 @@ CARDS: tuple[Card, ...] = (
     # ======================================================================= #
 )
 
+# Сезонные скины: не участвуют в гаче и не входят в статистику коллекции,
+# но живут в CARDS_BY_ID, чтобы их можно было показать и надеть.
+SKINS: tuple[Card, ...] = (
+    _c(
+        "valeriya_academy",
+        "Ученица Валерия",
+        "ultra",
+        26000,
+        940,
+        60,
+        "Абсолют",
+        4,
+        description="Сезонный скин «Академия Северо-Южных»: +200 HP и +20% урона.",
+        damage=60,
+        skin_for="valeriya",
+    ),
+)
+
 CARDS_BY_ID: dict[str, Card] = {card.card_id: card for card in CARDS}
 
 # Карты, которые нельзя ни купить в магазине, ни выбить случайно:
@@ -307,6 +325,9 @@ CARD_PAIRS: dict[str, str] = {
     "mikhail_nik": "glafira",
 }
 
+for _skin in SKINS:
+    CARDS_BY_ID[_skin.card_id] = _skin
+
 CARDS_BY_RARITY: dict[str, tuple[Card, ...]] = {
     key: tuple(card for card in CARDS if card.rarity == key) for key in RARITIES
 }
@@ -332,6 +353,7 @@ CARD_IMAGES: dict[str, str] = {
     "rustam": "rustam.jpg",
     "trofim": "trofim.jpg",
     "valeriya": "valeriya.jpg",
+    "valeriya_academy": "valeriya.jpg",
     "yana": "yana.jpg",
 }
 

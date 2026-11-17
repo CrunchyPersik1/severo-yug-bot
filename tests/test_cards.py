@@ -5,6 +5,7 @@ from app.cards import (
     CARDS_BY_ID,
     CARDS_BY_RARITY,
     RARITIES,
+    SKINS,
     cards_sorted_for_user,
     get_card,
 )
@@ -24,7 +25,7 @@ EXPECTED = {
 
 def test_total_and_unique_ids():
     assert len(CARDS) == 54
-    assert len(CARDS_BY_ID) == 54
+    assert len(CARDS_BY_ID) == 54 + len(SKINS)  # скины живут только в справочнике
 
 
 def test_duplicate_names_have_distinct_ids():

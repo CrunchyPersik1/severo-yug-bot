@@ -2754,6 +2754,9 @@ async def api_pass(request: Request) -> JSONResponse:
     uid = int(user["id"])
     repo = state.passrepo
     progress = await repo.progress(uid)
+    await repo.close_old_seasons(uid)
+    reports = await repo.unseen_reports(uid)
+    await repo.ensure_title(uid, progress["season"])
     quests = await repo.quests(uid)
     season = pass_config_mod.season_info()
     rewards = pass_rewards_mod.levels(progress["season"])
@@ -2789,6 +2792,17 @@ async def api_pass(request: Request) -> JSONResponse:
                 "premium": pass_config_mod.PRICE_PREMIUM_GEMS,
                 "upgrade": pass_config_mod.PRICE_UPGRADE_GEMS,
             },
+            "bonus": {
+                "steps": progress["bonus_steps"],
+                "claimed": progress["bonus_claimed"],
+                "left": max(0, progress["bonus_steps"] - progress["bonus_claimed"]),
+                "to_next": pass_config_mod.bonus_left(progress["xp"]),
+                "options": pass_rewards_mod.bonus_choices(progress["season"], progress["bonus_steps"] + 1)
+                if progress["bonus_steps"] >= progress["bonus_claimed"]
+                else [],
+            },
+            "reports": reports,
+            "title": await state.db.player_title(uid),
             "quests": quests,
             "rewards": rows,
         },
@@ -2817,6 +2831,25 @@ async def api_pass_quest(request: Request) -> JSONResponse:
     progress = await state.passrepo.progress(uid)
     try:
         result = await state.passrepo.claim_quest(uid, int(body.get("slot") or -1), progress["plus"])
+    except pass_repo.PassError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, **result})
+
+
+@router.post("/api/pass/bonus")
+async def api_pass_bonus(request: Request) -> JSONResponse:
+    """Бонус после 50 уровня: вариант 1 бесплатный, вариант 2 за гемы."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    body = await _json_body(request)
+    try:
+        result = await state.passrepo.claim_bonus(
+            uid, int(body.get("step") or 0), int(body.get("index") or 1)
+        )
     except pass_repo.PassError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, **result})
@@ -6781,6 +6814,7 @@ async def _profile_payload(state, user_id: int) -> dict[str, Any]:
         "music": prof["music"],
         "avatar": prof["avatar"],
         "vip": await state.db.vip_active(user_id),
+        "title": await state.db.player_title(user_id),
         "rewards": [
             {"id": int(r["id"]), "icon": str(r["icon"]), "text": str(r["text"])}
             for r in rewards
@@ -8037,6 +8071,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   0%,100%{opacity:.3;transform:scale(1)}
   50%{opacity:.85;transform:scale(1.07)}
 }
+.__ttl{margin-top:6px;display:inline-block;padding:3px 10px;border-radius:var(--r-pill);
+  font-size:11px;font-weight:900;letter-spacing:.6px;text-transform:uppercase;color:#1b1030;
+  background:linear-gradient(90deg,#ffd6e8,#d6f0ff,#dcffe0,#fff3c4,#e8d9ff,#ffd6e8);
+  background-size:300% 100%;animation:__ttlflow 6s linear infinite;
+  box-shadow:0 0 14px rgba(255,255,255,.35)}
+@keyframes __ttlflow{from{background-position:0% 50%}to{background-position:300% 50%}}
 .crown{font-size:15px;filter:drop-shadow(0 0 6px rgba(246,201,74,.7))}
 .body{padding:44px 16px 16px}
 .nm{font-size:21px;font-weight:900;letter-spacing:-.3px;display:flex;align-items:center;
@@ -8145,6 +8185,7 @@ function cardHtml(d){
     '<div class="body">' +
       pinnedHtml(d) +
       '<div class="nm">' + esc(d.name) + (d.vip ? '<span class="crown">👑</span>' : "") + tags + '</div>' +
+      (d.title ? '<div class="__ttl">' + esc(d.title.title) + '</div>' : '') +
       (d.status ? '<div class="st">' + esc(d.status) + '</div>' : '') +
       (d.bio ? '<div class="bio">' + esc(d.bio) + '</div>' : '') +
       (d.music ? '<div class="mus">\uD83C\uDFB5 ' + esc(d.music) + '</div>' : '') +
