@@ -38,7 +38,7 @@ COMMANDS: list[BotCommand] = [
     BotCommand(command="boss", description="Рейд-босс: бить всем вместе"),
     BotCommand(command="kopilka", description="Копилка ивента"),
     BotCommand(command="upgrader", description="Апгрейдер карт"),
-    BotCommand(command="quests", description="Задания дня"),
+    BotCommand(command="pass", description="Северо-Пасс: сезон и награды"),
     # бои
     BotCommand(command="pvp", description="Вызвать на бой ответом на сообщение"),
     BotCommand(command="pvprating", description="Топ PvP"),

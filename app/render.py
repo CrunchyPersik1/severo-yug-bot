@@ -375,6 +375,11 @@ def render_profile(profile: dict[str, Any], total_cards: int) -> str:
         f"⭐ Уровень: <b>{level}</b>/100"
         + (f" · {inside}/{need} XP" if need else " · максимум"),
         f"🏅 Титул: <b>{title}</b> · вклад {points}",
+        *(
+            [f"🎫 Сезонный титул: <b>{profile['season_title']}</b>"]
+            if profile.get("season_title")
+            else []
+        ),
         f"🏆 Место в PvP-рейтинге: <b>#{profile['rank']}</b>",
         "",
         f"⚔️ Побед: <b>{profile['wins']}</b> · поражений: {profile['losses']} · "

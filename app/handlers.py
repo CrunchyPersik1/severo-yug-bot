@@ -559,6 +559,9 @@ async def cmd_profile(
         await message.answer("Профиль пока пуст. Напиши «Северо-Юг».")
         return
     extra = await _profile_extra(db, target_id)
+    season_title = await db.player_title(target_id)
+    if season_title:
+        profile["season_title"] = season_title["title"]
     text = render.render_profile(profile, len(CARDS))
     if extra:
         head, _, body = text.partition("\n")
@@ -2169,6 +2172,37 @@ async def cmd_stocks(message: Message) -> None:
         "Курсы двигаются каждые 15 секунд: 🟩 вверх, 🟥 вниз.\n"
         "Покупай дешевле — продавай дороже. Быстрым трейдом не нафармишь: "
         "комиссия на вход и на выход.",
+        reply_markup=keyboard,
+    )
+
+
+@router.message(Command("pass", "пасс", "северопасс"))
+async def cmd_pass(message: Message) -> None:
+    """Северо-Пасс: сезонный пропуск с квестами и наградами."""
+    base = _base_url()
+    if not base:
+        await message.answer("⚠️ Пасс не настроен: нет PUBLIC_URL.")
+        return
+    if message.chat.type != "private":
+        await message.answer("🎫 Северо-Пасс открывается в личке со мной.")
+        return
+    from aiogram.types import WebAppInfo
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎫 Открыть Северо-Пасс",
+                    web_app=WebAppInfo(url=f"{base}/pass"),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "🎫 <b>Северо-Пасс</b>\n\n"
+        "Сезон длится месяц. Квесты копятся, очки идут в пропуск, "
+        "награды открываются по уровням.\n"
+        "Фри-дорожка — всем, Пасс+ и Пасс++ — по желанию.",
         reply_markup=keyboard,
     )
 
