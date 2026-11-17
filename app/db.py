@@ -458,6 +458,92 @@ class Database:
                 str(value),
             )
 
+    async def reset_progress(self, user_id: int) -> None:
+        """Полный сброс прогресса: коллекции, экономики и активностей.
+
+        Аккаунт остаётся, логи (game_log, points_log, shop_log, promo_uses)
+        не трогаем — иначе потеряется история и можно будет повторно
+        активировать промокоды.
+        """
+        uid = int(user_id)
+        wipe = (
+            "collection",
+            "inventory",
+            "cases",
+            "card_packs",
+            "case_limits",
+            "accessories",
+            "pets_owned",
+            "eggs_owned",
+            "incubator",
+            "incubator_upgrades",
+            "yugi",
+            "yugi_buildings",
+            "yugi_flags",
+            "yugi_upgrades",
+            "stock_holdings",
+            "stock_reroll",
+            "event_players",
+            "event_quests",
+            "santa_bought",
+            "santa_levels",
+            "santa_progress",
+            "kopilka",
+            "daily_reward",
+            "drops",
+            "quest_claim",
+            "mega_quest",
+            "profile_tags",
+            "profile_rewards",
+            "dungeon_hero",
+            "dungeon_shop_bought",
+            "dungeon_quest",
+            "dungeon_presence",
+            "dungeon_boss_players",
+            "casino_lost",
+            "gem_drops",
+        )
+        async with self._p().acquire() as con:
+            async with con.transaction():
+                for table in wipe:
+                    await con.execute(
+                        f"delete from {table} where user_id = $1", uid
+                    )
+                await con.execute(
+                    """
+                    update players
+                       set bonus_points = 0,
+                           crystals = 0,
+                           xp = 0,
+                           wins = 0,
+                           losses = 0,
+                           draws = 0,
+                           kills = 0,
+                           favorite_card = null,
+                           rating = 5.0,
+                           rating_today = 0,
+                           vip_until = null,
+                           vip_day = null,
+                           rewarded_level = 0,
+                           drop_uses = 0,
+                           roulette_uses = 0,
+                           casino_uses = 0,
+                           crystal_uses = 0,
+                           updated_at = now()
+                     where user_id = $1
+                    """,
+                    uid,
+                )
+                await con.execute(
+                    """
+                    update player_prefs
+                       set prefs = jsonb_set(coalesce(prefs, '{}'::jsonb),
+                                             '{pinned}', '""'::jsonb, true)
+                     where user_id = $1
+                    """,
+                    uid,
+                )
+
     async def log_points(
         self,
         user_id: int,

@@ -2626,6 +2626,44 @@ async def api_prefs_save(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "prefs": _prefs_clean(prefs)})
 
 
+# Контрольное слово для полного сброса прогресса
+RESET_WORD = "североюг"
+
+
+@router.post("/api/reset")
+async def api_reset(request: Request) -> JSONResponse:
+    """Сброс прогресса. Требует контрольное слово — как подтверждение."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    word = str((body or {}).get("word") or "").strip().lower()
+    if word != RESET_WORD:
+        return JSONResponse(
+            {"error": "Неверное слово. Прогресс не тронут."}, status_code=400
+        )
+    user_id = int(user["id"])
+    try:
+        await state.db.reset_progress(user_id)
+    except Exception:  # noqa: BLE001
+        log.exception("Сброс прогресса упал")
+        return JSONResponse({"error": "Не получилось сбросить"}, status_code=500)
+    game_log.write_soon(
+        state.db.pool,
+        user_id,
+        game_log.who_of(user.get("username"), user.get("first_name"), user_id),
+        "app",
+        "сбросил прогресс",
+        "",
+    )
+    return JSONResponse({"ok": True, "reset": True})
+
+
 @router.post("/api/profile/pin")
 async def api_profile_pin(request: Request) -> JSONResponse:
     """Ставит карточку в профиль (и снимает её пустым card_id)."""

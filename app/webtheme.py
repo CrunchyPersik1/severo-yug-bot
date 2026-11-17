@@ -527,11 +527,37 @@ BOOTSTRAP = POLISH + r"""<script>
       '<button class="__sw' + (p.stock_alerts ? " on" : "") + '" id="__sw-stock">' +
       (p.stock_alerts ? "Вкл" : "Выкл") + '</button></div>' +
       '<button class="__tut" id="__tut-run">🎓 Пройти обучение</button>' +
+      '<button class="__tut" id="__reset" style="border-color:#7a2b2b;color:#ffb4b4;' +
+      'background:#241318">⛔ Сбросить прогресс</button>' +
       '<div class="__note">Эти настройки хранятся в профиле и действуют ' +
       'во всех мини-аппках.</div>' +
       '<div class="__ver" style="margin-top:10px;text-align:center;font-size:11px;' +
       'color:var(--muted);letter-spacing:.4px">Версия ' +
       ((window.__APP_VERSION) ? window.__APP_VERSION : "—") + '</div></div>';
+    var resetBtn = document.getElementById("__reset");
+    if (resetBtn) resetBtn.onclick = function(){
+      if (!confirm("Вы уверены, что хотите сбросить прогресс?\n\n" +
+                   "Пропадёт коллекция, очки, кейсы, питомцы, биржа и подземелье.")) return;
+      if (!confirm("Вы точно уверены? Вернуть ничего не получится.")) return;
+      var word = prompt("Мы не уверены. Впишите слово \"североюг\", и мы сбросим прогресс.");
+      if (word === null) return;
+      if (String(word).trim().toLowerCase() !== "североюг"){
+        alert("Слово не совпало — прогресс не тронут.");
+        return;
+      }
+      fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({word: word})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.ok){
+            alert("Прогресс сброшен. Начинаем заново!");
+            location.reload();
+          } else {
+            alert((d && d.error) || "Не получилось сбросить");
+          }
+        })
+        .catch(function(){ alert("Связь потерялась — прогресс не тронут"); });
+    };
     var tutBtn = document.getElementById("__tut-run");
     if (tutBtn) tutBtn.onclick = function(){
       if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
