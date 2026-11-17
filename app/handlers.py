@@ -32,6 +32,7 @@ from . import (
     themes,
     team_battle,
 )
+from . import unlocks as unlocks_mod
 from .battle import ability_targets
 from .battle_service import BattleError, BattleService
 from .casino_repo import CasinoError, CasinoRepo
@@ -3458,6 +3459,13 @@ async def cmd_drop_d(message: Message, db: Database) -> None:
     if user is None:
         return
     await db.ensure_player(user.id, user.username, user.first_name)
+
+    # 7Д открывается «заслуженно»: уровень 50 и исторический пик 1 000 000
+    progress = await db.play_progress(user.id)
+    status = unlocks_mod.check(progress["level"], progress["peak"])
+    if not status["open"]:
+        await message.reply("🔒 " + unlocks_mod.reason(status))
+        return
 
     today = day_key()
     left = await db.claim_daily(user.id, today, DROPS_PER_DAY)

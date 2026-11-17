@@ -1047,3 +1047,22 @@ end $$;
 -- поэтому недельные цели по открытиям считали не то.
 alter table cases add column if not exists opened_at timestamptz;
 update cases set opened_at = created_at where opened and opened_at is null;
+
+
+-- Исторический пик очков: нужен, чтобы открывать 7Д «заслуженно».
+alter table players add column if not exists peak_points bigint not null default 0;
+update players set peak_points = greatest(peak_points, bonus_points);
+
+create or replace function points_peak_fn() returns trigger as $$
+begin
+    if new.bonus_points > coalesce(new.peak_points, 0) then
+        new.peak_points = new.bonus_points;
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists points_peak_trg on players;
+create trigger points_peak_trg
+    before update of bonus_points on players
+    for each row execute function points_peak_fn();

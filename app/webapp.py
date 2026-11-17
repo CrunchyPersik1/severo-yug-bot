@@ -39,6 +39,7 @@ from . import daily as daily_mod
 from . import deals as deals_mod
 from . import gems as gems_mod
 from . import mega as mega_mod
+from . import unlocks as unlocks_mod
 from . import eggs as eggs_mod
 from . import packs as packs_mod
 from . import petfx
@@ -149,6 +150,12 @@ def check_init_data(init_data: str, bot_token: str) -> dict[str, Any] | None:
         return json.loads(pairs.get("user", "{}"))
     except ValueError:
         return None
+
+
+async def _d7_status(state, user_id: int) -> dict[str, Any]:
+    """Открыта ли коллекция 7Д этому игроку."""
+    progress = await state.db.play_progress(user_id)
+    return unlocks_mod.check(progress["level"], progress["peak"])
 
 
 async def _player(request: Request) -> dict[str, Any]:
@@ -1631,6 +1638,13 @@ async def api_drop(request: Request) -> JSONResponse:
     except Exception:  # noqa: BLE001
         body = {}
     kind = str((body or {}).get("kind") or "g")
+    # проверяем доступ ДО списания попытки, иначе новичок теряет её впустую
+    if kind == "d":
+        status = await _d7_status(state, uid)
+        if not status["open"]:
+            return JSONResponse(
+                {"error": unlocks_mod.reason(status), "d7": status}, status_code=400
+            )
     day = game_day_key()
     left = await state.db.claim_daily(uid, day, gacha.DROPS_PER_DAY)
     if left is None:
@@ -8760,6 +8774,11 @@ async def api_case_buy_d(request: Request) -> JSONResponse:
     uid, error = await _games_user(request)
     if error is not None:
         return error
+    status = await _d7_status(state, uid)
+    if not status["open"]:
+        return JSONResponse(
+            {"error": unlocks_mod.reason(status), "d7": status}, status_code=400
+        )
     vip = await state.db.vip_active(uid)
     price = cases_mod.CASE_D_PRICE_VIP if vip else cases_mod.CASE_D_PRICE
     ok = await state.db.buy_case_d(uid, price)

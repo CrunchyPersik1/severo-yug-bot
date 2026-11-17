@@ -2607,8 +2607,42 @@ class Database:
                 await con.execute(
                     "update players set vip_day = $2 where user_id = $1", user_id, today
                 )
-        await self.grant_drop_limit(user_id, day_key(), 5, DROPS_PER_DAY)
-        await self.grant_spin_limit(user_id, roulette_day_key(), 5, SPINS_PER_DAY)
+        # Не «прибавляем к текущему», иначе лимиты копятся стопкой
+        # (админские 5 + VIP 5 → 10, а с прошлых дней ещё больше).
+        # Ставим «не меньше, чем обычный лимит + бонус», с потолком 100.
+        async with self._p().acquire() as con:
+            await con.execute(
+                """
+                update players set
+                    drop_uses = case when last_drop_day = $2 then drop_uses else 0 end,
+                    drop_limit = least(100, greatest(
+                        case when last_drop_day = $2 then drop_limit else $3 end,
+                        $3 + $4)),
+                    last_drop_day = $2,
+                    updated_at = now()
+                 where user_id = $1
+                """,
+                user_id,
+                day_key(),
+                DROPS_PER_DAY,
+                5,
+            )
+            await con.execute(
+                """
+                update players set
+                    roulette_uses = case when roulette_day = $2 then roulette_uses else 0 end,
+                    roulette_limit = least(100, greatest(
+                        case when roulette_day = $2 then roulette_limit else $3 end,
+                        $3 + $4)),
+                    roulette_day = $2,
+                    updated_at = now()
+                 where user_id = $1
+                """,
+                user_id,
+                roulette_day_key(),
+                SPINS_PER_DAY,
+                5,
+            )
         async with self._p().acquire() as con:
             await con.execute(
                 "insert into cases (user_id, source) "
@@ -2620,6 +2654,19 @@ class Database:
     # ------------------------------------------------------------------ #
     # Бан
     # ------------------------------------------------------------------ #
+
+    async def play_progress(self, user_id: int) -> dict[str, int]:
+        """Уровень и исторический пик очков — для правил открытия 7Д."""
+        from . import unlocks
+
+        async with self._p().acquire() as con:
+            row = await con.fetchrow(
+                "select xp, peak_points, bonus_points from players where user_id = $1",
+                int(user_id),
+            )
+        xp = int(row["xp"] or 0) if row else 0
+        peak = int(max(row["peak_points"] or 0, row["bonus_points"] or 0)) if row else 0
+        return {"level": unlocks.level_of(xp), "peak": peak}
 
     async def is_banned(self, user_id: int) -> bool:
         async with self._p().acquire() as con:
