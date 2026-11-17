@@ -166,7 +166,8 @@ function paint(){
   const buys = document.getElementById("buys");
   const items = [];
   if (!p.plus) items.push({kind:"plus", label:"Северо-Пасс+ · " + S.prices.plus + " 💎", alt:false});
-  if (!p.premium) items.push({kind:"upgrade", label:(p.plus ? "До Пасс++ · " + S.prices.upgrade : "Северо-Пасс++ · " + S.prices.premium) + " 💎", alt:true});
+  if (!p.premium) items.push({kind: p.plus ? "upgrade" : "premium",
+    label:(p.plus ? "До Пасс++ · " + S.prices.upgrade : "Северо-Пасс++ · " + S.prices.premium) + " 💎", alt:true});
   buys.innerHTML = items.length
     ? items.map(i => '<button data-buy="' + i.kind + '" class="' + (i.alt ? "alt" : "") + '">' + i.label + '</button>').join("")
     : '<button disabled>Обе дорожки куплены</button>';
@@ -194,7 +195,7 @@ function paint(){
     const open = row.level <= p.level;
     const freeCell = cell(row.free, open, p.claimed_free.includes(row.level), "free", row.level);
     const plusCell = row.plus ? cell(row.plus, open && p.plus, p.claimed_plus.includes(row.level), "plus", row.level) : '<div class="cell locked">—</div>';
-    const premCell = row.premium ? cell(row.premium, open && p.premium, p.claimed_prem.includes(row.level), "prem", row.level) : '<div class="cell locked">—</div>';
+    const premCell = row.premium ? cell(row.premium, open && p.premium, p.claimed_prem.includes(row.level), "premium", row.level) : '<div class="cell locked">—</div>';
     return '<div class="track"><div class="level ' + (open ? "open" : "") + '">' + row.level + '</div>' +
       freeCell + plusCell + premCell + '</div>';
   }).join("");

@@ -36,7 +36,7 @@ def test_effects_script_and_modes():
 def test_premium_purchase_grants_style():
     assert hasattr(pass_repo.PassRepo, "_grant_gamer")
     src = pathlib.Path(pass_repo.__file__).read_text(encoding="utf-8")
-    assert "_grant_gamer(user_id)" in src
+    assert "self._grant_gamer" in src
     assert "'gamer'" in src
 
 

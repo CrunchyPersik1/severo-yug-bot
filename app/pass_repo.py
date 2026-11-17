@@ -11,7 +11,11 @@ import json
 from datetime import date, datetime, timezone
 from typing import Any
 
+import logging
+
 from . import bundles, pass_config, pass_quests, pass_rewards
+
+log = logging.getLogger("severo-yug")
 
 SKIN_CARD = "valeriya_academy"
 
@@ -255,7 +259,24 @@ class PassRepo:
                     int(price),
                 )
                 if paid is None:
-                    raise PassError(f"Не хватает кристаллов: нужно {price}")
+                    have = int(
+                        await con.fetchval(
+                            "select crystals from players where user_id = $1",
+                            int(user_id),
+                        )
+                        or 0
+                    )
+                    hint = ""
+                    cheaper = pass_config.PRICE_PLUS_GEMS + pass_config.PRICE_UPGRADE_GEMS
+                    if kind == "premium" and have >= cheaper:
+                        hint = (
+                            f"\nДешевле: Пасс+ за {pass_config.PRICE_PLUS_GEMS} 💎, "
+                            f"потом апгрейд за {pass_config.PRICE_UPGRADE_GEMS} — выйдет {cheaper}."
+                        )
+                    raise PassError(
+                        f"Не хватает {max(0, int(price) - have)} 💎 "
+                        f"(нужно {price}, у тебя {have})." + hint
+                    )
                 if kind == "plus":
                     await con.execute(
                         "update pass_progress set plus = true, updated_at = now() "
@@ -281,8 +302,13 @@ class PassRepo:
                         boost,
                     )
         if kind != "plus":
-            await self._grant_skin(user_id)
-            await self._grant_gamer(user_id)
+            # подарки идут после оплаты: сбой выдачи не должен выглядеть
+            # как «покупка не прошла» — игрок уже заплатил
+            for grant in (self._grant_skin, self._grant_gamer):
+                try:
+                    await grant(user_id)
+                except Exception:  # noqa: BLE001
+                    log.exception("Пасс: не выдался подарок за сп++")
         return {
             "paid": int(price),
             "boost": int(pass_config.TOTAL_XP * pass_config.PREMIUM_BOOST)
@@ -503,7 +529,17 @@ class PassRepo:
                         price,
                     )
                     if paid is None:
-                        raise PassError(f"Не хватает кристаллов: нужно {price}")
+                        have = int(
+                            await con.fetchval(
+                                "select crystals from players where user_id = $1",
+                                int(user_id),
+                            )
+                            or 0
+                        )
+                        raise PassError(
+                            f"Не хватает {max(0, int(price) - have)} 💎 "
+                            f"(нужно {price}, у тебя {have})"
+                        )
                 await con.execute(
                     """
                     update pass_progress
