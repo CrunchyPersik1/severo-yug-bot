@@ -39,6 +39,10 @@ from . import daily as daily_mod
 from . import deals as deals_mod
 from . import gems as gems_mod
 from . import mega as mega_mod
+from . import bundles as bundles_mod
+from . import pass_config as pass_config_mod
+from . import pass_rewards as pass_rewards_mod
+from . import pass_repo
 from . import unlocks as unlocks_mod
 from . import eggs as eggs_mod
 from . import packs as packs_mod
@@ -2729,6 +2733,119 @@ async def api_reset(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "reset": True})
 
 
+@router.get("/api/pass")
+async def api_pass(request: Request) -> JSONResponse:
+    """Состояние Северо-Пасса: сезон, очки, уровни, квесты и награды."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    repo = state.passrepo
+    progress = await repo.progress(uid)
+    quests = await repo.quests(uid)
+    season = pass_config_mod.season_info()
+    rewards = pass_rewards_mod.levels(progress["season"])
+    rows = []
+    for row in rewards:
+        rows.append(
+            {
+                "level": row["level"],
+                "free": _pass_bundle(row["free"]),
+                "plus": _pass_bundle(row["plus"]) if row["plus"] else None,
+                "premium": _pass_bundle(row["premium"]) if row["premium"] else None,
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "season": season,
+            "progress": {
+                "xp": progress["xp"],
+                "level": progress["level"],
+                "into": progress["into"],
+                "need": progress["need"],
+                "plus": progress["plus"],
+                "premium": progress["premium"],
+                "total": pass_config_mod.TOTAL_XP,
+                "bonus_steps": progress["bonus_steps"],
+                "claimed_free": progress["claimed_free"],
+                "claimed_plus": progress["claimed_plus"],
+                "claimed_prem": progress["claimed_prem"],
+            },
+            "prices": {
+                "plus": pass_config_mod.PRICE_PLUS_GEMS,
+                "premium": pass_config_mod.PRICE_PREMIUM_GEMS,
+                "upgrade": pass_config_mod.PRICE_UPGRADE_GEMS,
+            },
+            "quests": quests,
+            "rewards": rows,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _pass_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Награда в виде, удобном для страницы."""
+    return {
+        "text": bundles_mod.text(bundle),
+        "labels": bundles_mod.labels(bundle),
+        "value": bundles_mod.value(bundle),
+    }
+
+
+@router.post("/api/pass/quest")
+async def api_pass_quest(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    body = await _json_body(request)
+    progress = await state.passrepo.progress(uid)
+    try:
+        result = await state.passrepo.claim_quest(uid, int(body.get("slot") or -1), progress["plus"])
+    except pass_repo.PassError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, **result})
+
+
+@router.post("/api/pass/claim")
+async def api_pass_claim(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    body = await _json_body(request)
+    try:
+        result = await state.passrepo.claim_level(
+            uid, int(body.get("level") or 0), str(body.get("track") or "free")
+        )
+    except pass_repo.PassError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, **result})
+
+
+@router.post("/api/pass/buy")
+async def api_pass_buy(request: Request) -> JSONResponse:
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    uid = int(user["id"])
+    body = await _json_body(request)
+    try:
+        result = await state.passrepo.buy(uid, str(body.get("kind") or ""))
+    except pass_repo.PassError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, **result})
+
+
 @router.post("/api/profile/pin")
 async def api_profile_pin(request: Request) -> JSONResponse:
     """Ставит карточку в профиль (и снимает её пустым card_id)."""
@@ -2777,6 +2894,14 @@ async def api_profile_pin(request: Request) -> JSONResponse:
             },
         }
     )
+
+
+@router.get("/pass", response_class=HTMLResponse)
+async def pass_app() -> HTMLResponse:
+    """Северо-Пасс: сезонный пропуск с квестами и наградами."""
+    from .pass_page import PASS_PAGE
+
+    return HTMLResponse(inject(PASS_PAGE))
 
 
 @router.get("/market", response_class=HTMLResponse)
@@ -4316,7 +4441,7 @@ HUB_SECTIONS: tuple[dict[str, Any], ...] = (
     {"id": "rtable", "title": "Рулетка-стол", "note": "колесо и шарик", "kind": "app", "path": "/roulette_table"},
     {"id": "yugi", "title": "Юга-кликер", "note": "тапай и качай", "kind": "app", "path": "/yugi"},
     {"id": "dungeon", "title": "Подземелье", "note": "мобы и кооп-босс", "kind": "app", "path": "/proto_dungeon"},
-    {"id": "quests", "title": "Задания", "note": "квесты и награды", "kind": "app", "path": "/quests"},
+    {"id": "pass", "title": "Северо-Пасс", "note": "сезон, уровни и награды", "kind": "app", "path": "/pass"},
     {"id": "stocks", "title": "Биржа", "note": "курсы и акции", "kind": "app", "path": "/stocks"},
     {"id": "top", "title": "Топ", "note": "по очкам", "kind": "panel"},
     {"id": "levels", "title": "Уровни", "note": "кто выше", "kind": "panel"},

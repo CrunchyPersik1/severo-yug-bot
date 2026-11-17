@@ -32,5 +32,5 @@ def test_hub_lists_dungeon_and_quests():
 
     paths = [s.get("path") for s in webapp.HUB_SECTIONS]
     assert "/proto_dungeon" in paths
-    assert "/quests" in paths
+    assert "/pass" in paths
     assert "/yugi" in paths

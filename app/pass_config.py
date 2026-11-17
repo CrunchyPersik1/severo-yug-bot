@@ -37,6 +37,9 @@ PRICE_PLUS_RUB = 39
 PRICE_PREMIUM_RUB = 59
 PRICE_UPGRADE_RUB = 19
 
+# Мгновенный буст сп++: 20% от всей шкалы сезона
+PREMIUM_BOOST = 0.2
+
 # Награда за мегаквест в очках пасса
 MEGA_XP = 1500
 MEGA_XP_HARD = 3000

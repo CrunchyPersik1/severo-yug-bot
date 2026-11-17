@@ -27,6 +27,7 @@ from app import event
 from app import stock_alerts
 from app.db import Database
 from app.dungeon_hero import DungeonHeroRepo
+from app.pass_repo import PassRepo
 from app.dungeon_hub import DungeonHub
 from app.dungeon_repo import DungeonBossRepo
 from app import game_log
@@ -164,6 +165,7 @@ async def lifespan(app: FastAPI):
     hub = DungeonHub()
     hero = DungeonHeroRepo(db)
     quest_repo = QuestRepo(db)
+    pass_repo = PassRepo(db)
 
     # мини-аппка магазина читает это из app.state
     app.state.settings = settings
@@ -176,6 +178,7 @@ async def lifespan(app: FastAPI):
     app.state.hub = hub
     app.state.hero = hero
     app.state.quests = quest_repo
+    app.state.passrepo = pass_repo
     runtime.update(
         db=db,
         bot=bot,
