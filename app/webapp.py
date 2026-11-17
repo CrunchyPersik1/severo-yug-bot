@@ -2641,13 +2641,22 @@ async def api_profile_pin(request: Request) -> JSONResponse:
         body = {}
     card_id = str((body or {}).get("card_id") or "")
     if card_id:
-        if card_id not in CARDS_BY_ID:
+        # коллекция 7Д живёт в отдельном справочнике: раньше такие карты
+        # не проходили проверку и «поставить в профиль» не работало вообще
+        from . import cards_d as cards_d_mod
+
+        known = card_id in CARDS_BY_ID or card_id in cards_d_mod.CARDS_D_BY_ID
+        if not known:
             return JSONResponse({"error": "Такой карты нет"}, status_code=400)
         counts = await state.db.get_collection(uid)
         if card_id not in counts:
             return JSONResponse({"error": "Такой карты у тебя нет"}, status_code=400)
     await state.db.set_prefs(uid, {"pinned": card_id})
-    card = CARDS_BY_ID.get(card_id) if card_id else None
+    from . import cards_d as cards_d_mod
+
+    card = None
+    if card_id:
+        card = CARDS_BY_ID.get(card_id) or cards_d_mod.CARDS_D_BY_ID.get(card_id)
     return JSONResponse(
         {
             "ok": True,
