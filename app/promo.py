@@ -37,6 +37,22 @@ async def redeem(db: Database, user_id: int, raw_code: str) -> str:
     code = normalize(raw_code)
     if not code:
         raise PromoError("Напиши код: <code>/promo OCEHb</code>")
+    # Сначала база: коды из /admin promo. Старый словарь — на случай,
+    # если базу ещё не наполняли.
+    from .promo_db import PromoCodeError, PromoRepo
+
+    try:
+        from_db = await PromoRepo(db).redeem(user_id, code)
+    except PromoCodeError as error:
+        raise PromoError(str(error)) from error
+    except Exception:  # noqa: BLE001 - база недоступна: работаем по словарю
+        from_db = None
+    if from_db is not None:
+        granted = from_db["granted"]
+        lines = "\n".join("· " + item for item in granted) if granted else "· награда выдана"
+        note = f"\n\n<i>{from_db['note']}</i>" if from_db.get("note") else ""
+        return "🎁 <b>Промокод принят!</b>\n\n" + lines + note
+
     entry = PROMOS.get(code)
     if entry is None:
         raise PromoError("🤷 Такого промокода нет.")

@@ -62,6 +62,14 @@ HELP = """Админ-команды. Формат: /admin <команда> [ар
   kopilka               кликер-копилка вкл/выкл
   soo текст             рассылка во все группы с ботом
 
+ПРОМОКОДЫ
+  promo add КОД ТИРАЖ СРОК ключ=значение ...   создать код
+     срок: 18.11.2026 18:00 (по ЕКБ) или - (бессрочно)
+     ключи: points, gems, cases_g, cases_d, cases_ultra, spins, shares,
+            vip_days, card=<id>, plus, premium, title=<подпись>
+  promo del КОД         выключить код
+  promo list            последние коды
+
 МОДЕРАЦИЯ
   ban @ник [причина]    забанить
   unban @ник            разбанить
@@ -785,6 +793,138 @@ async def act_pointsaudit(con: asyncpg.Connection, args: list[str]) -> str:
     return f"Аудит правок: {who}\n" + "\n".join(lines)
 
 
+async def act_promo(con: asyncpg.Connection, args: list[str]) -> str:
+    """Промокоды из базы.
+
+    promo add КОД ТИРАЖ СРОК ключ=значение ...
+      срок: 31.12.2026 или 18.11.2026 18:00, либо - (бессрочно)
+      ключи: points, gems, cases_g, cases_d, cases_ultra, spins, shares,
+             vip_days, card=<id>, plus, premium, title=<подпись>
+    promo del КОД     выключить код
+    promo list        последние коды
+    """
+    if not args:
+        raise ValueError(
+            "формат: promo add КОД ТИРАЖ СРОК ключ=значение ...\n"
+            "        promo del КОД | promo list"
+        )
+    action = args[0].lower()
+    if action == "list":
+        rows = await _promo_list(con)
+        if not rows:
+            return "кодов пока нет"
+        return "\n".join(
+            f"{row['code']} · {row['uses_done']}/{row['uses_total']}"
+            + (" · выключен" if not row["active"] else "")
+            + (f" · {row['note']}" if row["note"] else "")
+            for row in rows
+        )
+    if action in ("del", "delete", "off") and len(args) >= 2:
+        ok = await _promo_off(con, args[1])
+        return ("[ok] код выключен: " + args[1]) if ok else "такого кода нет"
+    if action not in ("add", "create"):
+        raise ValueError("неизвестное действие: " + action)
+    if len(args) < 5:
+        raise ValueError("нужно: promo add КОД ТИРАЖ СРОК ключ=значение")
+
+    code, uses, until = args[1], args[2], args[3]
+    payload: dict[str, object] = {"cards": []}
+    for pair in args[4:]:
+        if "=" not in pair:
+            raise ValueError("ожидал ключ=значение, получил: " + pair)
+        key, value = pair.split("=", 1)
+        key = key.strip().lower()
+        if key == "card":
+            payload["cards"].append(value.strip())
+        elif key in ("plus", "premium"):
+            payload["pass_" + key] = True
+        elif key == "title":
+            payload["title"] = value.strip()
+        elif key in (
+            "points", "gems", "yugi", "cases_g", "cases_d", "cases_ultra",
+            "spins", "shares", "vip_days",
+        ):
+            payload[key] = int(value)
+        else:
+            raise ValueError("неизвестное поле: " + key)
+    expires = _parse_until(until)
+    created = await _promo_create(con, code, payload, int(uses), expires)
+    return (
+        "[ok] промокод " + created + " · тираж " + str(uses)
+        + (" · до " + until if expires else " · бессрочный")
+    )
+
+
+def _parse_until(raw: str):
+    """'-' → бессрочно; '18.11.2026' или '18.11.2026 18:00' → время по ЕКБ."""
+    from datetime import datetime, timedelta, timezone
+
+    text = (raw or "").strip()
+    if text in ("-", "", "нет"):
+        return None
+    ekb = timezone(timedelta(hours=5))
+    for fmt in ("%d.%m.%Y %H:%M", "%d.%m.%Y"):
+        try:
+            moment = datetime.strptime(text, fmt).replace(tzinfo=ekb)
+            return moment.astimezone(timezone.utc)
+        except ValueError:
+            continue
+    raise ValueError("срок: 31.12.2026 или 18.11.2026 18:00 (по ЕКБ), либо -")
+
+
+async def _promo_create(con, code, payload, uses, expires) -> str:
+    from . import promo_db
+
+    repo = promo_db.PromoRepo(_DbProxy(con))
+    created = await repo.create(code, payload, uses, expires)
+    return created["code"]
+
+
+async def _promo_off(con, code: str) -> bool:
+    from . import promo_db
+
+    repo = promo_db.PromoRepo(_DbProxy(con))
+    return await repo.deactivate(code)
+
+
+async def _promo_list(con) -> list[dict]:
+    rows = await con.fetch(
+        "select code, note, uses_total, uses_done, active from promo_codes "
+        "order by created_at desc limit 20"
+    )
+    return [
+        {
+            "code": row["code"],
+            "note": row["note"],
+            "uses_total": int(row["uses_total"]),
+            "uses_done": int(row["uses_done"]),
+            "active": bool(row["active"]),
+        }
+        for row in rows
+    ]
+
+
+class _DbProxy:
+    def __init__(self, con) -> None:
+        self._con = con
+
+    def _p(self):
+        con = self._con
+
+        class _Acq:
+            def acquire(self):
+                class _Ctx:
+                    async def __aenter__(self):
+                        return con
+
+                    async def __aexit__(self, *exc):
+                        return False
+
+                return _Ctx()
+
+        return _Acq()
+
+
 COMMANDS = {
     "event": act_event,
     "minuta": act_minuta,
@@ -807,6 +947,8 @@ COMMANDS = {
     "очкилог": act_pointslog,
     "pointsaudit": act_pointsaudit,
     "аудит": act_pointsaudit,
+    "promo": act_promo,
+    "промо": act_promo,
 }
 
 

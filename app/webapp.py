@@ -634,8 +634,18 @@ async def api_mega_claim(request: Request) -> JSONResponse:
     chelsi = (await petfx.multi(state.db, user_id)).get("quest_reward", 0.0)
     reward = petfx.bonus_points(quest["reward"], chelsi)
     granted = await state.db.grant_bundle(user_id, reward)
+    # мегаквест теперь докидывает очки в Северо-Пасс: обычный 1500, сложный 3000
+    pass_xp = pass_config_mod.MEGA_XP
+    if int(quest["need"]) >= 60 or int(quest.get("bonus") or 0) > 0:
+        pass_xp = pass_config_mod.MEGA_XP_HARD
+    await state.passrepo.add_xp(user_id, pass_xp, "мегаквест")
     return JSONResponse(
-        {"ok": True, "granted": granted, "title": quest["reward_title"]}
+        {
+            "ok": True,
+            "granted": granted,
+            "title": quest["reward_title"],
+            "pass_xp": pass_xp,
+        }
     )
 
 
@@ -8997,7 +9007,10 @@ async def api_quests_claim(request: Request) -> JSONResponse:
 
 @router.get("/quests", response_class=HTMLResponse)
 async def quests_page() -> HTMLResponse:
-    return HTMLResponse(inject(QUESTS_PAGE))
+    """Задания переехали в Северо-Пасс: старый адрес ведёт туда."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse("/pass", status_code=307)
 
 
 QUESTS_PAGE = r"""<!doctype html>
