@@ -2831,9 +2831,18 @@ async def api_pass_quest(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(error)}, status_code=401)
     uid = int(user["id"])
     body = await _json_body(request)
+    # слот 0 — валидный квест: нельзя писать body.get("slot") or -1,
+    # иначе ноль превращается в -1 и сервер отвечает «Такого квеста нет»
+    raw_slot = body.get("slot")
+    if raw_slot is None or raw_slot == "":
+        return JSONResponse({"error": "Не выбрал квест"}, status_code=400)
+    try:
+        slot = int(raw_slot)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "Кривой номер квеста"}, status_code=400)
     progress = await state.passrepo.progress(uid)
     try:
-        result = await state.passrepo.claim_quest(uid, int(body.get("slot") or -1), progress["plus"])
+        result = await state.passrepo.claim_quest(uid, slot, progress["plus"])
     except pass_repo.PassError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, **result})
