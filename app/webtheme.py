@@ -535,29 +535,7 @@ BOOTSTRAP = POLISH + r"""<script>
       'color:var(--muted);letter-spacing:.4px">Версия ' +
       ((window.__APP_VERSION) ? window.__APP_VERSION : "—") + '</div></div>';
     var resetBtn = document.getElementById("__reset");
-    if (resetBtn) resetBtn.onclick = function(){
-      if (!confirm("Вы уверены, что хотите сбросить прогресс?\n\n" +
-                   "Пропадёт коллекция, очки, кейсы, питомцы, биржа и подземелье.")) return;
-      if (!confirm("Вы точно уверены? Вернуть ничего не получится.")) return;
-      var word = prompt("Мы не уверены. Впишите слово \"североюг\", и мы сбросим прогресс.");
-      if (word === null) return;
-      if (String(word).trim().toLowerCase() !== "североюг"){
-        alert("Слово не совпало — прогресс не тронут.");
-        return;
-      }
-      fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({word: word})})
-        .then(function(r){ return r.json(); })
-        .then(function(d){
-          if (d && d.ok){
-            alert("Прогресс сброшен. Начинаем заново!");
-            location.reload();
-          } else {
-            alert((d && d.error) || "Не получилось сбросить");
-          }
-        })
-        .catch(function(){ alert("Связь потерялась — прогресс не тронут"); });
-    };
+    if (resetBtn) resetBtn.onclick = openResetDialog;
     var tutBtn = document.getElementById("__tut-run");
     if (tutBtn) tutBtn.onclick = function(){
       if (window.__startTutorial){ ov.classList.remove("on"); window.__startTutorial(); return; }
@@ -620,6 +598,112 @@ BOOTSTRAP = POLISH + r"""<script>
     }
     ov.classList.add("on");
     prefsRequest("GET", null, function(){ paintSettings(ov); });
+  }
+
+  /* ---------- Сброс прогресса: три шага с полем ввода ----------
+     Не используем confirm()/prompt(): в Telegram-WebView они часто
+     возвращают null, и сброс молча не срабатывал. */
+  var RESET_WORD = "североюг";
+  function openResetDialog(){
+    var ov = document.getElementById("__reset-ov");
+    if (ov) ov.remove();
+    ov = document.createElement("div");
+    ov.id = "__reset-ov";
+    ov.className = "__ov on";
+    ov.style.alignItems = "center";
+    ov.style.justifyContent = "center";
+    ov.style.padding = "22px";
+    ov.innerHTML =
+      '<div style="max-width:340px;width:100%;background:#161b16;border:1px solid #7a2b2b;' +
+      'border-radius:16px;padding:18px;color:#f2ece0;font-family:inherit">' +
+        '<div id="__reset-step1">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'СБРОС ПРОГРЕССА</div>' +
+          '<div style="margin-top:8px;font-size:14px;line-height:1.45">' +
+          'Вы уверены, что хотите сбросить прогресс?' +
+          '<br><span style="color:#a8968a">Пропадёт коллекция, очки, кейсы, ' +
+          'питомцы, биржа и ивенты. Подземелье останется.</span></div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px">' +
+            '<button id="__r-cancel" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Отмена</button>' +
+            '<button id="__r-next1" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">Далее</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="__reset-step2" style="display:none">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'ТОЧНО?</div>' +
+          '<div style="margin-top:8px;font-size:14px;line-height:1.45">Вы точно уверены? ' +
+          'Вернуть ничего не получится.</div>' +
+          '<div style="display:flex;gap:8px;margin-top:14px">' +
+            '<button id="__r-no2" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Нет</button>' +
+            '<button id="__r-next2" style="flex:1;border:0;background:#ff7a3c;color:#1a0f06;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">Далее</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="__reset-step3" style="display:none">' +
+          '<div style="font-size:11px;letter-spacing:1.4px;color:#ff8a8a;font-weight:900">' +
+          'ПОСЛЕДНИЙ ШАГ</div>' +
+          '<div style="margin-top:8px;font-size:13.5px;line-height:1.45">' +
+          'Мы не уверены. Впишите слово <b style="color:#ffd98a">североюг</b> ' +
+          'в поле ниже, и мы сбросим прогресс.</div>' +
+          '<input id="__r-word" placeholder="североюг" autocomplete="off" ' +
+          'style="margin-top:10px;width:100%;box-sizing:border-box;background:#0f1410;' +
+          'border:1px solid #3a3f3a;border-radius:10px;padding:11px 12px;color:#f2ece0;' +
+          'font-family:inherit;font-size:14px">' +
+          '<div id="__r-err" style="margin-top:8px;font-size:12px;color:#ff8a8a"></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px">' +
+            '<button id="__r-cancel3" style="flex:1;border:1px solid #3a3f3a;background:#20261f;' +
+            'color:#cfd6cf;border-radius:12px;padding:12px;font-weight:800;font-family:inherit">' +
+            'Отмена</button>' +
+            '<button id="__r-go" style="flex:1;border:0;background:#c0392b;color:#fff;' +
+            'border-radius:12px;padding:12px;font-weight:900;font-family:inherit">' +
+            'Сбросить</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var s1 = document.getElementById("__reset-step1");
+    var s2 = document.getElementById("__reset-step2");
+    var s3 = document.getElementById("__reset-step3");
+    function close(){ ov.remove(); }
+    document.getElementById("__r-cancel").onclick = close;
+    document.getElementById("__r-no2").onclick = close;
+    document.getElementById("__r-cancel3").onclick = close;
+    document.getElementById("__r-next1").onclick = function(){
+      s1.style.display = "none"; s2.style.display = "block";
+    };
+    document.getElementById("__r-next2").onclick = function(){
+      s2.style.display = "none"; s3.style.display = "block";
+      var inp = document.getElementById("__r-word");
+      if (inp) inp.focus();
+    };
+    document.getElementById("__r-go").onclick = function(){
+      var inp = document.getElementById("__r-word");
+      var err = document.getElementById("__r-err");
+      var word = String((inp && inp.value) || "").trim().toLowerCase();
+      if (word !== RESET_WORD){
+        if (err) err.textContent = "Слово не совпало — прогресс не тронут.";
+        return;
+      }
+      var btn = document.getElementById("__r-go");
+      if (btn){ btn.disabled = true; btn.textContent = "Сбрасываю…"; }
+      fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({word: word})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.ok){ close(); location.reload(); return; }
+          if (err) err.textContent = (d && d.error) || "Не получилось сбросить";
+          if (btn){ btn.disabled = false; btn.textContent = "Сбросить"; }
+        })
+        .catch(function(){
+          if (err) err.textContent = "Связь потерялась — прогресс не тронут";
+          if (btn){ btn.disabled = false; btn.textContent = "Сбросить"; }
+        });
+    };
   }
 
   /* ---------- Получение карты: оверлей с анимацией ---------- */
