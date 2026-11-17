@@ -2806,6 +2806,12 @@ async def api_pass(request: Request) -> JSONResponse:
             },
             "reports": reports,
             "title": await state.db.player_title(uid),
+            "style": {
+                "id": "gamer",
+                "name": "Геймерский",
+                "owned": "gamer" in await state.db.owned_themes(uid),
+                "active": (await state.db.current_theme(uid)) == "gamer",
+            },
             "quests": quests,
             "rewards": rows,
         },
@@ -4564,6 +4570,8 @@ async def api_hub(request: Request) -> JSONResponse:
             "themes": {
                 "current": themes.get(await state.db.current_theme(user_id)).id,
                 "owned": owned,
+                # личные стили (например «Геймерский» за Пасс++) видны только
+                # тем, кому их выдали: иначе список обещает то, что не надеть
                 "all": [
                     {
                         "id": theme.id,
@@ -4571,9 +4579,12 @@ async def api_hub(request: Request) -> JSONResponse:
                         "price": theme.price,
                         "acc": theme.acc,
                         "bg": theme.bg,
-                        "owned": theme.price == 0 or theme.id in owned,
+                        "owned": themes.is_free(theme) or theme.id in owned,
+                        "personal": themes.granted_only(theme),
+                        "vip": themes.vip_only(theme),
                     }
                     for theme in themes.THEMES
+                    if not themes.granted_only(theme) or theme.id in owned
                 ],
             },
             "sections": [

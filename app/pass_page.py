@@ -94,6 +94,15 @@ body{margin:0;background:var(--bg);color:var(--ink);
     <div class="buys" id="buys"></div>
   </div>
 
+  <div class="section" id="styleBox" style="display:none">
+    <h2>Стиль сезона</h2>
+    <div class="quest">
+      <div class="qt"><span>Геймерский</span><span class="plus">ПАСС++</span></div>
+      <div class="qm"><span>Чёрный терминал, жёлтый акцент</span></div>
+      <button id="styleBtn">Включить стиль</button>
+    </div>
+  </div>
+
   <div class="section">
     <h2>Квесты сегодня</h2>
     <div id="quests"></div>
@@ -188,6 +197,7 @@ function paint(){
   }).join("");
   q.querySelectorAll("[data-quest]").forEach(b => b.onclick = () => claimQuest(Number(b.dataset.quest)));
 
+  paintStyle();
   paintBonus();
 
   const t = document.getElementById("tracks");
@@ -209,6 +219,22 @@ function cell(data, open, claimed, track, level){
     claimed ? '<button disabled>Забрано</button>' :
     '<button data-claim="1" data-level="' + level + '" data-track="' + track + '">Забрать</button>';
   return '<div class="' + cls + '">' + esc(data.text) + btn + '</div>';
+}
+
+function paintStyle(){
+  const box = document.getElementById("styleBox");
+  const btn = document.getElementById("styleBtn");
+  const st = S.style;
+  if (!st || !st.owned){ box.style.display = "none"; return; }
+  box.style.display = "block";
+  btn.textContent = st.active ? "Стиль включён" : "Включить стиль";
+  btn.disabled = false;
+  btn.onclick = async () => {
+    const d = await api("/api/theme/set", {theme: st.id});
+    if (d.error){ toast(d.error); return; }
+    toast("Геймерский стиль включён");
+    setTimeout(() => location.reload(), 700);
+  };
 }
 
 function paintBonus(){

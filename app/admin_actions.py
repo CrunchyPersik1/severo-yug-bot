@@ -603,7 +603,7 @@ async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
     stock                 — все монеты и когда был последний тик
     stock fix             — снять залипшие пампы и догнать миграции
     stock syug            — одна монета
-    stock syug 1500       — цель 1500
+    stock syug 1500       — поставить курс 1500 сразу
     stock syug +10%       — цель = текущая × 1.1 (можно -10%)
     """
     if args and (args[0] or "").strip().lower() in ("fix", "фикс", "ремонт"):
@@ -671,14 +671,29 @@ async def act_stock(con: asyncpg.Connection, args: list[str]) -> str:
         if target < 1:
             raise ValueError("Цена должна быть больше нуля")
 
+    # Ставим курс СРАЗУ: цель в 25 000 не влезала в коридор 0.4-2.2 от базы,
+    # обрезалась до потолка, и курс «еле полз». Теперь заданная цена становится
+    # новой базой, цена прыгает мгновенно, а тикер потом гуляет вокруг неё.
     await con.execute(
-        "update stocks set target_price = $2 where id = $1",
+        """
+        update stocks
+           set price = $2,
+               base_price = $2,
+               prev_price = price,
+               target_price = null,
+               pump_phase = null,
+               pump_peak = null,
+               pump_home = null,
+               pump_at = null,
+               updated_at = now()
+         where id = $1
+        """,
         int(row["id"]),
         int(target),
     )
     return (
-        f"[ok] {row['name']}: {int(row['price'])} → {target}. "
-        "Курс поедет к цели за пару шагов по 15 секунд."
+        f"[ok] {row['name']}: {int(row['price'])} → {target} сразу. "
+        "Новая база для колебаний, дальше тикер гуляет вокруг неё."
     )
 
 
