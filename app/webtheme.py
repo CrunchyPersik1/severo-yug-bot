@@ -691,7 +691,10 @@ BOOTSTRAP = POLISH + r"""<script>
       }
       var btn = document.getElementById("__r-go");
       if (btn){ btn.disabled = true; btn.textContent = "Сбрасываю…"; }
-      fetch("/api/reset", {method: "POST", headers: {"Content-Type": "application/json"},
+      // без initData сервер отвечает 401 «Открой магазин через кнопку в боте»
+      fetch("/api/reset", {method: "POST",
+        headers: {"X-Telegram-Init-Data": headers["X-Telegram-Init-Data"],
+                  "Content-Type": "application/json"},
         body: JSON.stringify({word: word})})
         .then(function(r){ return r.json(); })
         .then(function(d){

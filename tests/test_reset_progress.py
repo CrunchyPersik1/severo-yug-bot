@@ -60,3 +60,11 @@ def test_reset_wipes_gameplay_tables():
     # аудит не трогаем
     assert '"game_log"' not in source
     assert '"points_log"' not in source
+
+
+def test_reset_request_sends_init_data():
+    # без этого заголовка сервер отвечает 401 «Открой магазин через кнопку в боте»
+    text = SOURCE.read_text(encoding="utf-8")
+    start = text.index('fetch("/api/reset"')
+    body = text[start:start + 400]
+    assert "X-Telegram-Init-Data" in body
