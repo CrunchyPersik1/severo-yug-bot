@@ -55,6 +55,7 @@ def make(**kwargs: Any) -> dict[str, Any]:
     """Собирает набор: числа по умолчанию нули, карты и оружие — пусто."""
     bundle: dict[str, Any] = {key: 0 for key in NUM_KEYS}
     bundle["cards"] = []
+    bundle["themes"] = []
     bundle["weapon"] = None
     for key, value in kwargs.items():
         if key in bundle:
@@ -62,6 +63,7 @@ def make(**kwargs: Any) -> dict[str, Any]:
         else:
             raise ValueError(f"Неизвестная награда: {key}")
     bundle["cards"] = [str(card) for card in bundle["cards"]]
+    bundle["themes"] = [str(theme) for theme in bundle.get("themes") or []]
     return bundle
 
 
@@ -71,6 +73,7 @@ def merge(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
     for key in NUM_KEYS:
         out[key] = int(first.get(key) or 0) + int(second.get(key) or 0)
     out["cards"] = list(first.get("cards") or []) + list(second.get("cards") or [])
+    out["themes"] = list(first.get("themes") or []) + list(second.get("themes") or [])
     out["weapon"] = second.get("weapon") or first.get("weapon")
     return out
 
@@ -87,6 +90,12 @@ def value(bundle: dict[str, Any]) -> int:
     total += int(bundle.get("spins") or 0) * SPIN_VALUE
     total += int(bundle.get("shares") or 0) * SHARE_VALUE
     total += int(bundle.get("vip_days") or 0) * 30_000
+    if bundle.get("themes"):
+        from . import themes as themes_mod
+
+        for theme_id in bundle["themes"]:
+            with __import__("contextlib").suppress(Exception):
+                total += int(themes_mod.get(str(theme_id)).price)
     if bundle.get("weapon"):
         total += weapon_value(bundle["weapon"])
     for card_id in bundle.get("cards") or []:
@@ -142,6 +151,12 @@ def labels(bundle: dict[str, Any]) -> list[str]:
             out.append(get_card(str(card_id)).display_name)
         except KeyError:
             continue
+    if bundle.get("themes"):
+        from . import themes as themes_mod
+
+        for theme_id in bundle["themes"]:
+            with __import__("contextlib").suppress(Exception):
+                out.append("стиль «" + themes_mod.get(str(theme_id)).name + "»")
     if bundle.get("weapon"):
         out.append("оружие для подземелья")
     if bundle.get("vip_days"):
@@ -233,6 +248,13 @@ async def grant(
             """,
             user_id,
             card_id,
+        )
+    for theme_id in bundle.get("themes") or []:
+        await con.execute(
+            "insert into player_themes (user_id, theme_id) values ($1, $2) "
+            "on conflict do nothing",
+            user_id,
+            str(theme_id),
         )
     weapon = bundle.get("weapon")
     if weapon:

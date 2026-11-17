@@ -31,41 +31,51 @@ def _rng(season: str, salt: str) -> random.Random:
 
 
 def _free(level: int, rng: random.Random) -> dict[str, Any]:
-    """Фри-дорожка: только валюта и кейсы 7Г."""
+    """Фри-дорожка: только валюта и кейсы 7Г, но суммарно ощутимо."""
+    parts: dict[str, Any] = {"points": 400 + level * 120}
     if level % 10 == 0:
-        return bundles.make(points=2500 + level * 120, cases_g=2)
-    if level % 5 == 0:
-        return bundles.make(gems=GEM_STEPS[level // 8 % len(GEM_STEPS)], cases_g=1)
-    if level % 2 == 0:
-        return bundles.make(cases_g=1)
-    return bundles.make(points=300 + level * 80)
+        parts.update(points=parts["points"] + 5000, cases_g=2, gems=10)
+    elif level % 5 == 0:
+        parts.update(gems=8, cases_g=1)
+    elif level % 2 == 0:
+        parts.update(cases_g=1)
+    return bundles.make(**parts)
 
 
 def _plus(level: int, rng: random.Random) -> dict[str, Any]:
-    """Дорожка сп+: карты, стили, акции, кейсы 7Д."""
-    parts: dict[str, Any] = {"points": 500 + level * 150}
-    if level % 10 == 0:
-        parts.update(cards=[rng.choice(CARD_POOL)], cases_d=2, gems=25)
-    elif level % 5 == 0:
-        parts.update(cases_d=1, gems=12, shares=rng.choice((10, 15, 25)))
-    elif level % 3 == 0:
+    """Дорожка сп+: карты, стили, акции, кейсы 7Д, много валюты."""
+    parts: dict[str, Any] = {"points": 1500 + level * 200}
+    parts["cases_d" if level % 2 == 0 else "cases_g"] = 1
+    if level % 3 == 0:
         parts.update(cards=[rng.choice(CARD_POOL)])
-    elif level % 2 == 0:
-        parts.update(cases_g=2)
+    if level % 5 == 0:
+        parts.update(gems=12, shares=20)
+    if level in (8, 16, 24, 32, 44):
+        parts.update(themes=[STYLE_POOL[(level // 8) % len(STYLE_POOL)]])
+    if level % 10 == 0:
+        parts.update(cases_ultra=1)
     if level == 25:
-        parts.update(cards=[rng.choice(CARD_POOL)], vip_days=3)
+        parts.update(vip_days=7, cards=[rng.choice(CARD_POOL)])
+    if level == 50:
+        parts.update(themes=[STYLE_POOL[-1]], cards=[rng.choice(CARD_POOL)], gems=25)
     return bundles.make(**parts)
 
 
 def _premium(level: int, rng: random.Random) -> dict[str, Any] | None:
-    """Дорожка сп++: только 1-10 и 41-50."""
+    """Дорожка сп++: только 1-10 и 41-50, но плотно — карта и стили."""
     if level not in PREMIUM_LEVELS:
         return None
-    parts: dict[str, Any] = {"points": 1500 + level * 200, "gems": 10 + level // 5}
-    if level % 10 == 0 or level == 50:
+    parts: dict[str, Any] = {
+        "points": 3000 + level * 300,
+        "gems": 6 + level // 6,
+        "cards": [rng.choice(CARD_POOL)],
+    }
+    if level in (10, 50):
         parts.update(cases_ultra=1, cases_d=1)
-    elif level % 5 == 0:
-        parts.update(cases_d=1)
+    if level == 45:
+        parts.update(themes=[STYLE_POOL[-2]], cases_d=2)
+    if level == 5:
+        parts.update(themes=[STYLE_POOL[0]])
     return bundles.make(**parts)
 
 
