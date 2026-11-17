@@ -1066,3 +1066,83 @@ drop trigger if exists points_peak_trg on players;
 create trigger points_peak_trg
     before update of bonus_points on players
     for each row execute function points_peak_fn();
+
+
+-- Северо-Пасс: сезонный прогресс, квесты и отчёты о конце сезона.
+create table if not exists pass_progress (
+    user_id       bigint not null,
+    season        text not null,
+    xp            integer not null default 0,
+    plus          boolean not null default false,
+    premium       boolean not null default false,
+    claimed_free  jsonb not null default '[]'::jsonb,
+    claimed_plus  jsonb not null default '[]'::jsonb,
+    claimed_prem  jsonb not null default '[]'::jsonb,
+    bonus_claimed integer not null default 0,
+    bonus_picks   jsonb not null default '[]'::jsonb,
+    created_at    timestamptz not null default now(),
+    updated_at    timestamptz not null default now(),
+    primary key (user_id, season)
+);
+
+create table if not exists pass_quests (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    season     text not null,
+    day        date not null,
+    slot       integer not null,
+    tier       text not null,
+    quest_key  text not null,
+    need       integer not null,
+    baseline   integer not null default 0,
+    xp         integer not null,
+    plus_only  boolean not null default false,
+    claimed    boolean not null default false,
+    claimed_at timestamptz,
+    unique (user_id, season, day, slot)
+);
+create index if not exists pass_quests_user_idx
+    on pass_quests (user_id, season, day);
+
+-- Отчёт «что тебе выдали в конце сезона»: показываем при первом заходе.
+create table if not exists pass_reports (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    season     text not null,
+    payload    jsonb not null,
+    seen       boolean not null default false,
+    created_at timestamptz not null default now()
+);
+
+-- Титулы в профиле (светящаяся плашка под ником).
+create table if not exists player_titles (
+    id         bigserial primary key,
+    user_id    bigint not null,
+    code       text not null,
+    title      text not null,
+    season     text,
+    glow       boolean not null default true,
+    active     boolean not null default true,
+    granted_at timestamptz not null default now()
+);
+create index if not exists player_titles_user_idx on player_titles (user_id);
+
+-- Промокоды из базы: выдавать можно любой набор, тираж общий, срок точный.
+create table if not exists promo_codes (
+    code        text primary key,
+    payload     jsonb not null,
+    note        text,
+    uses_total  integer not null default 1,
+    uses_done   integer not null default 0,
+    expires_at  timestamptz,
+    created_by  bigint,
+    created_at  timestamptz not null default now(),
+    active      boolean not null default true
+);
+
+create table if not exists promo_activations (
+    code         text not null,
+    user_id      bigint not null,
+    activated_at timestamptz not null default now(),
+    primary key (code, user_id)
+);
