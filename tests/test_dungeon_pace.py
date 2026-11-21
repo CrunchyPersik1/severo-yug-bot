@@ -16,7 +16,8 @@ def test_hero_runs_faster():
 
 
 def test_attacks_and_dash_are_quicker():
-    assert '0.56 * w.spd : 0.36 * w.spd' in DUNGEON_PAGE
+    # ближний бой: у комбо свой ритм, звенья 0.24 с, третье — 0.4 с
+    assert "[0.24, 0.24, 0.4]" in DUNGEON_PAGE
     assert "P.dashCd = 1.6;" in DUNGEON_PAGE
 
 

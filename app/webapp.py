@@ -12169,7 +12169,9 @@ const PATH = (function(){
 })();
 let P = {x: WORLD.w / 2, y: WORLD.h - 260, hp: 120, max: 120, coins: 0,
          weapon: null, bag: [], atkCd: 0, shCd: 0, abCd: 0, dashCd: 0, dashT: 0,
-         shield: 0, dir: 0};
+         shield: 0, dir: 0,
+         // бой: комбо из трёх ударов, замах и задержка попадания
+         combo: 0, comboT: 0, swing: null, heavyHold: 0};
 const ZONE_DMG_CAP = [40, 55, 75, 100, 130, 170, 215, 265, 320, 400];
 const ZONE_MOB_HP = [250, 500, 1000, 1350, 2000, 2500, 3000, 3500, 4500, 10000];
 const WEAPON_RANK_DMG = [10, 22, 36, 52, 72, 96, 128, 168, 220, 300];
@@ -12309,10 +12311,10 @@ function spawnOne(zi){
   // Тип моба даёт разброс, но кап локации не пробивает.
   const capHp = zoneMobHp(zi);
   const hp = Math.max(18, Math.round(capHp * (0.55 + Math.random() * 0.45)));
-  mobs.push({x: x, y: y, hp: hp, max: hp,
+  mobs.push({id: "m" + (Math.random() * 1e9 | 0), x: x, y: y, hp: hp, max: hp,
              sp: Math.round(type.sp * 1.2), dmg: Math.max(2, Math.round(type.dmg * (0.6 + zi * 0.28))),
              c: type.c, sz: type.sz, nm: type.n,
-             tile: type.tile, t: rnd(0, 6), hit: 0, zone: zi});
+             tile: type.tile, t: rnd(0, 6), hit: 0, stun: 0, zone: zi});
 }
 /* Точка спавна по уровню: своя локация, по 25 уровней на каждую. */
 function spawnPoint(lvl){
@@ -12323,6 +12325,7 @@ function reset(){
   const sp = spawnPoint(stats.lvl);
   P.x = sp.x; P.y = sp.y;
   P.max = 120; P.hp = 120; P.atkCd = 0; P.shCd = 0; P.abCd = 0; P.shield = 0; P.dashCd = 0; P.dashT = 0;
+  P.combo = 0; P.comboT = 0; P.swing = null;
   if (!P.weapon) P.weapon = WEAPONS[2];
   if (!P.bag || !P.bag.length) P.bag = [WEAPONS[2].id];
   spawnMobs(24);
@@ -12407,36 +12410,74 @@ addEventListener("pointerup", joyEnd);
 addEventListener("pointercancel", joyEnd);
 
 /* ---------- бой на карте ---------- */
+const COMBO_WINDOW = 0.55;
 function attack(){
-  if (P.atkCd > 0 || inBattle) return;
+  if (P.atkCd > 0 || inBattle || P.dashT > 0) return;
   const w = P.weapon;
   if (!w) return;
-  const range = Number(w.range) || 80;
-  const dmg = Number(w.dmg) || 12;
-  P.atkCd = w.kind === "bow" ? 0.56 * w.spd : 0.36 * w.spd;
+  const stage = P.comboT > 0 ? Math.min(3, P.combo + 1) : 1;
+  P.combo = stage;
+  P.comboT = COMBO_WINDOW;
+  const reach = (Number(w.range) || 80) * [0.9, 1.0, 1.12][stage - 1];
+  const arc = [1.5, 1.7, 2.4][stage - 1];
+  const dmg = (Number(w.dmg) || 12) * [0.85, 1.0, 1.6][stage - 1];
+  P.atkCd = [0.24, 0.24, 0.4][stage - 1] * (w.spd || 1);
+  P.swing = {
+    t: 0, wind: stage === 3 ? 0.12 : 0.06, dur: stage === 3 ? 0.28 : 0.18,
+    stage: stage, dmg: dmg, reach: reach, arc: arc, hit: {}, heavy: false,
+  };
   FX.swingAt(P.dir, w.kind);
-  // сейф-зона — убежище в обе стороны: тут не бьют и тут не бьёшь,
-  // иначе можно было бы фармить мобов, стоя в безопасности
+  if (stage === 3){ FX.shake(4); }
   if (inSafeZone(P.x, P.y)){
     if (!P.safeHint || performance.now() - P.safeHint > 4000){
       P.safeHint = performance.now();
       toast("В сейф-зоне не дерутся — выйди из зоны");
     }
+    P.swing = null;
     hits.push({x: P.x, y: P.y - 34, t: 0.5, v: "", c: "#8fd8ff"});
-    return;
   }
-  const fxCol = w.kind === "bow" ? "#8bd65a" : w.kind === "staff" ? "#8fd8ff" : "#ffd98a";
+}
+function heavyAttack(){
+  if (P.atkCd > 0 || inBattle || P.dashT > 0) return;
+  const w = P.weapon;
+  if (!w) return;
+  P.combo = 0; P.comboT = 0;
+  P.atkCd = 0.62 * (w.spd || 1);
+  P.swing = {
+    t: 0, wind: 0.2, dur: 0.36, stage: 0,
+    dmg: (Number(w.dmg) || 12) * 2.1, reach: (Number(w.range) || 80) * 1.15,
+    arc: 3.0, hit: {}, heavy: true,
+  };
+  FX.swingAt(P.dir, w.kind);
+  FX.shake(6);
+  toast("Замах!");
+}
+function swingHit(sw){
+  const w = P.weapon;
+  const kind = w ? w.kind : "sword";
+  const col = sw.heavy ? "#ffd400" : kind === "bow" ? "#8bd65a" : kind === "staff" ? "#8fd8ff" : "#ffd98a";
   let hitAny = false;
-  mobs.forEach(m => {
-    const d = Math.hypot(m.x - P.x, m.y - P.y);
-    if (d < range){
-      m.hp -= dmg; m.hit = 0.25; hitAny = true;
-      hits.push({x: m.x, y: m.y - 26, t: 0.9, v: Math.round(dmg), c: "#ffd98a"});
-      FX.burst(m.x, m.y - 14, 7, fxCol, 170, 13);
-      if (m.hp <= 0) killMob(m);
-    }
+  mobs.slice().forEach(function(m){
+    if (sw.hit[m.id]) return;
+    const dx = m.x - P.x, dy = m.y - P.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > sw.reach + 20) return;
+    let diff = Math.abs(((Math.atan2(dy, dx) - P.dir + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (diff > sw.arc / 2) return;
+    sw.hit[m.id] = true;
+    hitAny = true;
+    m.hp -= sw.dmg;
+    m.hit = 0.22;
+    m.stun = sw.heavy ? 0.4 : (sw.stage === 3 ? 0.28 : 0.14);
+    const push = sw.heavy ? 34 : (sw.stage === 3 ? 22 : 9);
+    m.x += (dx / (dist || 1)) * push;
+    m.y += (dy / (dist || 1)) * push;
+    hits.push({x: m.x, y: m.y - 26, t: 0.9, v: Math.round(sw.dmg), c: col});
+    FX.burst(m.x, m.y - 14, sw.heavy ? 14 : 7, col, sw.heavy ? 240 : 170, 13);
+    if (sw.heavy || sw.stage === 3) FX.shake(sw.heavy ? 7 : 5);
+    if (m.hp <= 0) killMob(m);
   });
-  if (!hitAny) hits.push({x: P.x, y: P.y - 34, t: 0.5, v: "", c: "#8b93a7"});
+  if (!hitAny) hits.push({x: P.x, y: P.y - 34, t: 0.45, v: "", c: "#8b93a7"});
 }
 function killMob(m){
   const i = mobs.indexOf(m);
@@ -12555,7 +12596,25 @@ function ability(){
   FX.shake(4);
   toast("Способность!");
 }
-document.getElementById("attack").onclick = attack;
+/* Тап — удар по комбо, удержание — замах. */
+(function(){
+  const el = document.getElementById("attack");
+  let holdTimer = null, held = false;
+  el.onpointerdown = function(e){
+    e.preventDefault();
+    held = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(function(){ held = true; heavyAttack(); }, 320);
+  };
+  const up = function(){
+    clearTimeout(holdTimer);
+    if (!held) attack();
+    held = false;
+  };
+  el.onpointerup = up;
+  el.onpointercancel = function(){ clearTimeout(holdTimer); held = false; };
+  el.onpointerleave = function(){ clearTimeout(holdTimer); held = false; };
+})();
 document.getElementById("shield").onclick = shieldUp;
 document.getElementById("ability").onclick = ability;
 
@@ -13596,10 +13655,20 @@ function loop(now){
   P.shCd = Math.max(0, P.shCd - dt);
   P.abCd = Math.max(0, P.abCd - dt);
   P.shield = Math.max(0, P.shield - dt);
+  P.comboT = Math.max(0, P.comboT - dt);
+  if (P.comboT <= 0) P.combo = 0;
+  if (P.swing){
+    const sw = P.swing;
+    const before = sw.t;
+    sw.t += dt;
+    if (before < sw.wind && sw.t >= sw.wind) swingHit(sw);
+    if (sw.t >= sw.dur) P.swing = null;
+  }
 
   const playerSafe = inSafeZone(P.x, P.y);
   mobs.forEach(m => {
     m.t -= dt;
+    m.stun = Math.max(0, (m.stun || 0) - dt);
     if (m.t <= 0){ m.t = rnd(1.5, 4); m.vx = rnd(-1, 1); m.vy = rnd(-1, 1); }
     // моб, зашедший в сейф-зону, выталкивается обратно
     const guard = nearBoss(m.x, m.y, SAFE_R + 8);
@@ -13611,7 +13680,9 @@ function loop(now){
     }
     const dm = Math.hypot(P.x - m.x, P.y - m.y);
     const strong = stats.lvl < zoneReq(m.y) ? 2.5 : 1;
-    if (!playerSafe && dm < 260){
+    if (m.stun > 0){
+      // оглушённый моб замирает и не бьёт — это награда за попадание
+    } else if (!playerSafe && dm < 260){
       m.x += (P.x - m.x) / dm * m.sp * dt;
       m.y += (P.y - m.y) / dm * m.sp * dt;
       if (dm < 34 && P.shield <= 0){
