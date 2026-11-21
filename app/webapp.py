@@ -2957,6 +2957,14 @@ async def api_profile_pin(request: Request) -> JSONResponse:
     )
 
 
+@router.get("/combat", response_class=HTMLResponse)
+async def combat_app() -> HTMLResponse:
+    """Прототип боевой системы: комбо, рывок с i-frames, замах."""
+    from .combat_page import COMBAT_PAGE
+
+    return HTMLResponse(inject(COMBAT_PAGE))
+
+
 @router.get("/pass", response_class=HTMLResponse)
 async def pass_app() -> HTMLResponse:
     """Северо-Пасс: сезонный пропуск с квестами и наградами."""

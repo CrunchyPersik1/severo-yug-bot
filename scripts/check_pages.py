@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = ("app/webapp.py", "app/pass_page.py", "main.py")
+SOURCES = ("app/webapp.py", "app/pass_page.py", "app/combat_page.py", "main.py")
 SMOKE = ROOT / "scripts" / "page_smoke.js"
 PAGE_HEAD = re.compile(r'^([A-Z0-9_]+_PAGE) = r"""(.*)$', re.M)
 TAG_RE = r"<%s[\s>]"
