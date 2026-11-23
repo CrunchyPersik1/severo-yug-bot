@@ -15,7 +15,9 @@ def test_boss_circle_opens_mode_chooser():
 
 
 def test_coop_button_joins_room():
-    assert "coopJoin(zoneIndex(P.y));" in DUNGEON_PAGE
+    # кнопка кооп теперь заходит в комнату и открывает АРЕНУ на двоих
+    assert 'coopApi("/api/dungeon/boss/join", {zone: zoneIndex(P.y)})' in DUNGEON_PAGE
+    assert "startArena(data.boss);" in DUNGEON_PAGE
     # соло по-прежнему запускает арену
     assert "startArena();" in DUNGEON_PAGE
 

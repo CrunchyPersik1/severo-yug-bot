@@ -193,6 +193,51 @@ class DungeonBossRepo:
                     await self._touch(con, boss["id"], user_id, now)
                 return await self._payload(con, boss, user_id, now)
 
+    async def move(
+        self,
+        user_id: int,
+        x: object,
+        y: object,
+        face: object,
+        moving: bool,
+        now: datetime,
+    ) -> dict:
+        """Сохраняет позицию в арене на двоих и отдаёт свежее состояние."""
+        try:
+            fx = max(0.0, min(1.0, float(x)))
+            fy = max(0.0, min(1.0, float(y)))
+            ff = float(face or 0)
+        except (TypeError, ValueError):
+            raise DungeonError("Кривые координаты") from None
+        async with self.pool.acquire() as con:
+            room = await self._room_for(con, user_id)
+            if room is None:
+                raise DungeonError("Боя нет — подойди к боссу")
+            await con.execute(
+                """
+                update dungeon_boss_players
+                   set px = $3::double precision,
+                       py = $4::double precision,
+                       face = $5::double precision,
+                       moving = $6::boolean,
+                       pos_at = $7::timestamptz,
+                       seen_at = $7::timestamptz
+                 where boss_id = $1::bigint and user_id = $2::bigint
+                """,
+                int(room["id"]),
+                int(user_id),
+                fx,
+                fy,
+                ff,
+                bool(moving),
+                now,
+            )
+            boss = await self._advance(con, room["id"], now)
+        if boss is None:
+            return {"status": "none"}
+        async with self.pool.acquire() as con:
+            return await self._payload(con, boss, user_id, now)
+
     async def hit(self, user_id: int, damage: object, now: datetime) -> dict:
         """Удар по боссу. Возвращает состояние плюс сколько сняли."""
         async with self.pool.acquire() as con:
@@ -528,6 +573,10 @@ class DungeonBossRepo:
             item = {
                 "name": str(row["name"]),
                 "slot": int(row["slot"]),
+                "x": float(row["px"]) if row["px"] is not None else None,
+                "y": float(row["py"]) if row["py"] is not None else None,
+                "face": float(row["face"]) if row["face"] is not None else 0.0,
+                "moving": bool(row["moving"]),
                 "hp": int(row["hp"]),
                 "max_hp": int(row["max_hp"]),
                 "damage": int(row["damage"]),

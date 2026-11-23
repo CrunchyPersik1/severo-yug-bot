@@ -190,6 +190,7 @@ _STORM = {
     "/api/yugi/tree",
     "/api/dungeon/presence",
     "/api/dungeon/boss/hit",
+    "/api/dungeon/boss/pos",
 }
 STORM_SECONDS = 20.0
 
@@ -228,6 +229,7 @@ _ACTIONS = {
     "/api/quests/claim": "забрал награду задания",
     "/api/dungeon/boss/join": "встал на босса",
     "/api/dungeon/boss/hit": "бьёт босса",
+    "/api/dungeon/boss/pos": "двигается в арене",
     "/api/dungeon/boss/leave": "вышел из боя",
     "/api/dungeon/boss/start": "начал бой один",
     "/api/dungeon/presence": "ходит по подземелью",
@@ -12600,10 +12602,16 @@ document.getElementById("bmsolo").onclick = function(){
   P.bossCd = 4;
   startArena();
 };
-document.getElementById("bmcoop").onclick = function(){
+document.getElementById("bmcoop").onclick = async function(){
   bossModeClose();
   P.bossCd = 4;
-  coopJoin(zoneIndex(P.y));
+  const data = await coopApi("/api/dungeon/boss/join", {zone: zoneIndex(P.y)});
+  if (!data || !data.ok || !data.boss){
+    if (data && data.error) toast(data.error);
+    startArena();          // без связи — соло, чтобы не застрять
+    return;
+  }
+  startArena(data.boss);
 };
 document.getElementById("bmclose").onclick = bossModeClose;
 
@@ -12838,7 +12846,10 @@ function arenaSetup(){
     ARENA.boss.key.toUpperCase() + " · " + ZONES[zi].n;
 }
 
-function startArena(){
+const ACOOP = {room: null, pending: 0, lastHit: 0, lastPos: 0,
+               busy: false, remote: null, over: false};
+
+function startArena(room){
   const zi = zoneIndex(P.y), now = Date.now();
   if ((ARENA.cd[zi] || 0) > now){
     toast("Босс восстанавливается: " + Math.ceil((ARENA.cd[zi] - now) / 1000) + " с");
@@ -12846,19 +12857,101 @@ function startArena(){
   }
   ARENA.on = true;
   arenaSetup();
+  ARENA.coop = room || null;
+  ACOOP.room = room || null;
+  ACOOP.pending = 0; ACOOP.busy = false; ACOOP.remote = null; ACOOP.over = false;
+  ACOOP.lastHit = 0; ACOOP.lastPos = 0;
+  if (room){
+    ARENA.boss.hp = room.hp;
+    ARENA.boss.max = room.max_hp || room.hp;
+    ARENA.hero.hp = (room.me && room.me.hp) || ARENA.hero.hp;
+    ARENA.hero.max = (room.me && room.me.max_hp) || ARENA.hero.max;
+    arenaCoopRemote(room);
+    if (room.status === "waiting"){
+      toast("Ждём напарника — он может подсесть в бой");
+    } else if (room.coop){
+      toast("Напарник в бою!");
+    }
+  }
   document.getElementById("arena").classList.add("on");
   bindArena();
   cancelAnimationFrame(ARENA.raf);
   ARENA.raf = requestAnimationFrame(arenaLoop);
 }
 
+function arenaCoopRemote(boss){
+  if (!boss || !boss.players) return;
+  const other = boss.players.filter(function(p){ return !p.me && !p.left; })[0];
+  if (other && other.x != null && other.y != null){
+    ACOOP.remote = {
+      name: other.name, x: other.x * ARENA.w, y: other.y * ARENA.h,
+      hp: other.hp, max: other.max_hp, face: other.face || 0, moving: !!other.moving,
+    };
+  } else {
+    ACOOP.remote = null;
+  }
+}
+
+function arenaCoopApply(boss){
+  if (!boss || !ARENA.coop) return;
+  if (typeof boss.hp === "number"){
+    ARENA.boss.hp = boss.hp;
+    if (boss.max_hp) ARENA.boss.max = boss.max_hp;
+  }
+  if (boss.me){
+    ARENA.hero.hp = boss.me.hp;
+    ARENA.hero.max = boss.me.max_hp || ARENA.hero.max;
+    if (boss.me.dead && !ARENA.over){
+      ARENA.over = true; ARENA.won = false;
+      arenaBeep(120, 0.3, "sawtooth");
+    }
+  }
+  arenaCoopRemote(boss);
+  if (boss.status === "dead" && !ARENA.over){
+    ARENA.over = true; ARENA.won = true; ARENA.reward = boss.reward || null;
+    arenaBeep(880, 0.25, "sine");
+    try { heroSave(true); } catch (e) {}
+  }
+}
+
+function arenaCoopTick(dt){
+  if (!ARENA.coop) return;
+  const now = performance.now();
+  if (ACOOP.pending > 0 && !ACOOP.busy && now - ACOOP.lastHit > 500){
+    const dmg = Math.max(1, Math.min(400, Math.round(ACOOP.pending)));
+    ACOOP.pending = 0; ACOOP.lastHit = now; ACOOP.busy = true;
+    coopApi("/api/dungeon/boss/hit", {damage: dmg}).then(function(data){
+      ACOOP.busy = false;
+      if (data && data.ok && data.boss) arenaCoopApply(data.boss);
+    }).catch(function(){ ACOOP.busy = false; });
+  }
+  if (now - ACOOP.lastPos > 260){
+    ACOOP.lastPos = now;
+    const h1 = ARENA.hero;
+    coopApi("/api/dungeon/boss/pos", {
+      x: h1.x / (ARENA.w || 1), y: h1.y / (ARENA.h || 1),
+      face: h1.face, moving: !!h1.moving,
+    }).then(function(data){
+      if (data && data.ok && data.boss) arenaCoopApply(data.boss);
+    }).catch(function(){});
+  }
+}
+
 function closeArena(win){
   const zi = zoneIndex(P.y);
+  const wasCoop = !!ARENA.coop;
+  if (ARENA.coop && !ARENA.coop.ended){
+    ARENA.coop.ended = true;
+    coopApi("/api/dungeon/boss/leave", {}).catch(function(){});
+  }
+  ARENA.coop = null;
+  ACOOP.room = null; ACOOP.remote = null;
   ARENA.on = false;
   cancelAnimationFrame(ARENA.raf);
   document.getElementById("arena").classList.remove("on");
   ARENA.cd[zi] = Date.now() + 5000;
-  if (win){
+  // в коопе награду выдаёт сервер на комнату — локально не дублируем
+  if (win && !wasCoop){
     const coins = 500 + zi * 400, exp = 50 + zi * 40;
     P.coins = (P.coins || 0) + coins;
     stats.exp += exp;
@@ -12997,6 +13090,7 @@ function arenaLoop(){
   ARENA.w = w; ARENA.h = h;
   if (!ARENA.over) ARENA.t += dt;
   const h1 = ARENA.hero, b = ARENA.boss;
+  arenaCoopTick(dt);
   ARENA.flash = Math.max(0, ARENA.flash - dt);
   ARENA.shake = Math.max(0, ARENA.shake - dt);
 
@@ -13223,7 +13317,8 @@ function arenaLoop(){
       }
     }
     if (!ARENA.over && Math.hypot(a.x - b.x, a.y - (b.y - 60)) < 62){
-      b.hp -= ARENA.dmg;
+      if (ARENA.coop) ACOOP.pending += ARENA.dmg;
+      else b.hp -= ARENA.dmg;
       b.hurt = 0.25;
       arenaBeep(220, 0.07, "sawtooth");
       ARENA.flash = 0.1;
@@ -13240,7 +13335,7 @@ function arenaLoop(){
       if (h1.dashT > 0) return false;   // додж-ролл даёт неуязвимость
       // раньше урон был 9+локация — за весь бой снималось 15 HP
       const phaseMul = b.phase >= 3 ? 1.35 : b.phase === 2 ? 1.15 : 1;
-      h1.hp -= Math.round(b.dmg * phaseMul);
+      if (!ARENA.coop) h1.hp -= Math.round(b.dmg * phaseMul);
       h1.hurt = 0.3;
       arenaBeep(120, 0.12, "triangle");
       ARENA.shake = 0.18;
@@ -13357,6 +13452,30 @@ function arenaLoop(){
     ctx.restore();
   } else {
     ctx.fillStyle = "#8fd0ff"; ctx.fillRect(h1.x - 12, h1.y - 40, 24, 40);
+  }
+
+  // ---- напарник в кооп-арене ----
+  if (ACOOP.remote && ACOOP.remote.x != null){
+    const rp = ACOOP.remote;
+    ctx.save();
+    ctx.translate(rp.x, rp.y);
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.beginPath(); ctx.ellipse(0, 8, 16, 6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#7c5cff";
+    ctx.beginPath(); ctx.arc(0, -14, 15, 0, 7); ctx.fill();
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.arc(Math.cos(rp.face) * 5, -14 + Math.sin(rp.face) * 5, 3.4, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(0, -14, 15, 0, 7); ctx.stroke();
+    ctx.restore();
+    // имя и HP напарника
+    ctx.textAlign = "center";
+    ctx.font = "bold 10px ui-monospace,monospace";
+    ctx.fillStyle = "#cfd6cf";
+    ctx.fillText(rp.name, rp.x, rp.y - 40);
+    const pct = Math.max(0, Math.min(1, rp.hp / Math.max(1, rp.max)));
+    ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(rp.x - 22, rp.y - 34, 44, 4);
+    ctx.fillStyle = "#7c5cff"; ctx.fillRect(rp.x - 22, rp.y - 34, 44 * pct, 4);
   }
 
   // мобы подмоги
@@ -13845,7 +13964,8 @@ function loop(now){
         boss = bs;
         FX.burst(bs.x, bs.y, 26, "#ff7a3c", 220, 20);
         FX.shake(7);
-        bossEngage(bs);
+        // раньше тут сразу стартовала соло-арена — теперь спрашиваем режим
+        bossModeOpen();
         return;
       }
       if (Math.random() < dt * 8) FX.emit(bs.x + rnd(-bs.r, bs.r), bs.y + rnd(-bs.r, bs.r) * 0.4,
@@ -14347,6 +14467,29 @@ async def api_dungeon_boss_state(request: Request) -> JSONResponse:
     except DungeonError as error:
         return JSONResponse({"error": str(error)}, status_code=400)
     return JSONResponse({"ok": True, "boss": room})
+
+
+@router.post("/api/dungeon/boss/pos")
+async def api_boss_pos(request: Request) -> JSONResponse:
+    """Позиция в арене на двоих: 4 раза в секунду, дешевле некуда."""
+    state = request.app.state
+    try:
+        user = await _player(request)
+    except ShopError as error:
+        return JSONResponse({"error": str(error)}, status_code=401)
+    body = await _json_body(request)
+    try:
+        payload = await state.dungeon.move(
+            int(user["id"]),
+            body.get("x"),
+            body.get("y"),
+            body.get("face"),
+            bool(body.get("moving")),
+            datetime.now(timezone.utc),
+        )
+    except DungeonError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    return JSONResponse({"ok": True, "boss": payload})
 
 
 @router.post("/api/dungeon/boss/hit")

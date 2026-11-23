@@ -1155,3 +1155,11 @@ create index if not exists players_last_seen_idx on players (last_seen desc);
 
 -- Бот не может писать в личку: игрок заблокировал или не начинал чат.
 alter table players add column if not exists dm_blocked boolean not null default false;
+
+
+-- Аренa на двоих: где напарник и куда смотрит (для отрисовки второй модели).
+alter table dungeon_boss_players add column if not exists px double precision;
+alter table dungeon_boss_players add column if not exists py double precision;
+alter table dungeon_boss_players add column if not exists face double precision;
+alter table dungeon_boss_players add column if not exists moving boolean not null default false;
+alter table dungeon_boss_players add column if not exists pos_at timestamptz;
