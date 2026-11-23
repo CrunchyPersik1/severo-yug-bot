@@ -70,6 +70,10 @@ HELP = """Админ-команды. Формат: /admin <команда> [ар
   promo del КОД         выключить код
   promo list            последние коды
 
+СЕТЬ
+  online                кто сейчас в сети (окно 5 минут)
+     Раздачи «всем» — points / case / card — уходят ТОЛЬКО тем, кто в сети.
+
 МОДЕРАЦИЯ
   ban @ник [причина]    забанить
   unban @ник            разбанить
@@ -81,6 +85,51 @@ HELP = """Админ-команды. Формат: /admin <команда> [ар
 Игрока можно указывать как @username или числовым id.
 Курсы: syug, uchitel, misha, ludoman, kartofan.
 Отдельные команды без /admin: /pointslog, /pointsaudit (журналы очков)."""
+
+
+# Раздачи «всем» уходят только тем, кто сейчас в сети. Иначе люди
+# заходят раз в неделю, забирают подарочки и уходят.
+ONLINE_MINUTES = 5
+
+
+async def _online_ids(con: asyncpg.Connection) -> list[int]:
+    rows = await con.fetch(
+        "select user_id from players "
+        "where last_seen is not null and last_seen > now() - make_interval(mins => $1)",
+        ONLINE_MINUTES,
+    )
+    return [int(row["user_id"]) for row in rows]
+
+
+async def _audience(con: asyncpg.Connection) -> tuple[list[int], int]:
+    """(кто в сети, сколько всего игроков)."""
+    online = await _online_ids(con)
+    total = int(await con.fetchval("select count(*) from players") or 0)
+    return online, total
+
+
+async def _online(con: asyncpg.Connection) -> str:
+    rows = await con.fetch(
+        """
+        select user_id, first_name, username,
+               extract(epoch from (now() - last_seen))::int as ago
+          from players
+         where last_seen is not null
+           and last_seen > now() - make_interval(mins => $1)
+         order by last_seen desc
+        """,
+        ONLINE_MINUTES,
+    )
+    if not rows:
+        return (
+            "В сети никого. Раздачи «всем» сейчас не уйдут никому — "
+            f"окно {ONLINE_MINUTES} минут."
+        )
+    lines = [f"В сети {len(rows)} (окно {ONLINE_MINUTES} мин):"]
+    for row in rows[:30]:
+        who = row["first_name"] or row["username"] or row["user_id"]
+        lines.append(f"  {who} · {int(row['ago'])} с назад")
+    return "\n".join(lines)
 
 
 async def act_event(con: asyncpg.Connection, args: list[str]) -> str:
@@ -318,18 +367,29 @@ async def act_points(con: asyncpg.Connection, args: list[str]) -> str:
     amount = _int_arg(args, 0, 0, "количество очков")
     if not amount:
         raise ValueError("укажи сколько очков: points 5000")
+    online, total = await _audience(con)
+    if not online:
+        return (
+            "В сети никого — раздача никому не ушла. "
+            f"Окно {ONLINE_MINUTES} минут: заходи в приложение, чтобы получать."
+        )
     await con.execute(
-        "update players set bonus_points = greatest(0, bonus_points + $1)", amount
+        "update players set bonus_points = greatest(0, bonus_points + $1) "
+        "where user_id = any($2::bigint[])",
+        int(amount),
+        online,
     )
     await con.execute(
         "insert into points_log (user_id, amount, source, detail) "
-        "select user_id, $1, 'admin', 'admin points всем' from players",
+        "select user_id, $1, 'admin', 'admin points в сети' "
+        "from players where user_id = any($2::bigint[])",
         int(amount),
+        online,
     )
-    total = await con.fetchval("select count(*) from players")
+    tail = f" · офлайн {total - len(online)} пропущено"
     if amount > 0:
-        return f"[ok] {total} игрокам начислено по {amount} очков"
-    return f"[ok] у {total} игроков списано по {abs(amount)} очков"
+        return f"[ok] {len(online)} в сети получили по {amount} очков" + tail
+    return f"[ok] у {len(online)} в сети списано по {abs(amount)} очков" + tail
 
 
 async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
@@ -365,14 +425,23 @@ async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
         who = player["first_name"] or player["username"] or player["user_id"]
         return f"[ok] {who} получил {count} {label}"
 
+    online, total = await _audience(con)
+    if not online:
+        return (
+            "В сети никого — кейсы никому не ушли. "
+            f"Окно {ONLINE_MINUTES} минут."
+        )
     await con.execute(
         "insert into cases (user_id, source) "
-        "select p.user_id, $2 from players p cross join generate_series(1, $1)",
+        "select p.user_id, $2 from players p "
+        "cross join generate_series(1, $1) "
+        "where p.user_id = any($3::bigint[])",
         count,
         source,
+        online,
     )
-    total = await con.fetchval("select count(*) from players")
-    return f"[ok] {total} игрокам выдано по {count} {label}"
+    tail = f" · офлайн {total - len(online)} пропущено"
+    return f"[ok] {len(online)} в сети получили по {count} {label}" + tail
 
 
 async def act_card(con: asyncpg.Connection, args: list[str]) -> str:
@@ -384,22 +453,33 @@ async def act_card(con: asyncpg.Connection, args: list[str]) -> str:
         raise ValueError("количество должно быть больше нуля")
     if count > 100:
         raise ValueError("больше 100 карт за раз — перебор")
+    online, total = await _audience(con)
+    if not online:
+        return (
+            "В сети никого — карты никому не ушли. "
+            f"Окно {ONLINE_MINUTES} минут."
+        )
     await con.execute(
         """
         insert into collection (user_id, card_id, count)
         select p.user_id, $1, $2 from players p
+        where p.user_id = any($3::bigint[])
         on conflict (user_id, card_id) do update set count = collection.count + $2
         """,
         card.card_id,
         count,
+        online,
     )
     await con.execute(
-        "update players set bonus_points = bonus_points + $1", card.points * count
+        "update players set bonus_points = bonus_points + $1 "
+        "where user_id = any($2::bigint[])",
+        card.points * count,
+        online,
     )
-    total = await con.fetchval("select count(*) from players")
+    tail = f" · офлайн {total - len(online)} пропущено"
     return (
-        f"[ok] {total} игрокам выдано по {count} x {card.display_name} "
-        f"и по {card.points * count} очков"
+        f"[ok] {len(online)} в сети получили по {count} x {card.display_name} "
+        f"и по {card.points * count} очков" + tail
     )
 
 
@@ -962,6 +1042,8 @@ COMMANDS = {
     "очкилог": act_pointslog,
     "pointsaudit": act_pointsaudit,
     "аудит": act_pointsaudit,
+    "online": _online,
+    "онлайн": _online,
     "promo": act_promo,
     "промо": act_promo,
 }

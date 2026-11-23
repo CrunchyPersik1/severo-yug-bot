@@ -1146,3 +1146,9 @@ create table if not exists promo_activations (
     activated_at timestamptz not null default now(),
     primary key (code, user_id)
 );
+
+
+-- Присутствие: когда игрока последний раз видели в приложении или боте.
+-- Раздачи админа уходят только тем, кто в сети (окно в admin_actions).
+alter table players add column if not exists last_seen timestamptz;
+create index if not exists players_last_seen_idx on players (last_seen desc);

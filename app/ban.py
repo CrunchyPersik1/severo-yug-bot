@@ -21,6 +21,11 @@ class BanMiddleware(BaseMiddleware):
         user = data.get("event_from_user")
         if db is None or user is None:
             return await handler(event, data)
+        # присутствие: любое действие в боте тоже делает игрока «в сети»
+        try:
+            await db.touch_presence(user.id)
+        except Exception:  # noqa: BLE001
+            log.exception("Не смог отметить присутствие")
         if user.id in settings.admin_ids:
             return await handler(event, data)
         try:

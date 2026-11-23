@@ -210,13 +210,14 @@ class Database:
         async with self._p().acquire() as con:
             await con.execute(
                 """
-                insert into players (user_id, username, first_name)
-                values ($1, $2, $3)
+                insert into players (user_id, username, first_name, last_seen)
+                values ($1, $2, $3, now())
                 on conflict (user_id) do update set
                     -- не затираем сохранённое пустыми значениями: профиль можно
                     -- открыть по @username, где имени под рукой нет
                     username = coalesce(excluded.username, players.username),
                     first_name = coalesce(excluded.first_name, players.first_name),
+                    last_seen = now(),
                     updated_at = now()
                 """,
                 user_id,
@@ -229,6 +230,23 @@ class Database:
             await self.vip_daily(user_id)
         except Exception:  # noqa: BLE001
             pass
+
+    async def touch_presence(self, user_id: int) -> None:
+        """Отмечает игрока в сети, но не чаще раза в 20 секунд.
+
+        Вызывается из бота: мини-аппки и так пишут last_seen через
+        ensure_player на каждом запросе.
+        """
+        async with self._p().acquire() as con:
+            await con.execute(
+                """
+                update players set last_seen = now()
+                 where user_id = $1
+                   and (last_seen is null
+                        or last_seen < now() - interval '20 seconds')
+                """,
+                int(user_id),
+            )
 
     async def claim_daily(self, user_id: int, day: Any, limit: int = 1) -> int | None:
         """Атомарно тратит одну попытку. Возвращает остаток или None, если нельзя.

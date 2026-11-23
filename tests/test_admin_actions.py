@@ -18,6 +18,9 @@ class FakeCon:
         return None
 
     async def fetch(self, query: str, *args):
+        # трое «в сети»: раздачи уходят только присутствующим
+        if "last_seen" in query:
+            return [{"user_id": 1}, {"user_id": 2}, {"user_id": 3}]
         return []
 
     async def fetchval(self, query: str, *args):
