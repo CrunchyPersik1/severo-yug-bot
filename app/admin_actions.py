@@ -970,6 +970,11 @@ async def act_promo(con: asyncpg.Connection, args: list[str]) -> str:
     )
 
 
+async def act_online(con: asyncpg.Connection, args: list[str]) -> str:
+    """online — кто сейчас в сети. Обёртка: диспетчер зовёт action(con, args)."""
+    return await _online(con)
+
+
 def _parse_until(raw: str):
     """'-' → бессрочно; '18.11.2026' или '18.11.2026 18:00' → время по ЕКБ."""
     from datetime import datetime, timedelta, timezone
@@ -1062,8 +1067,8 @@ COMMANDS = {
     "очкилог": act_pointslog,
     "pointsaudit": act_pointsaudit,
     "аудит": act_pointsaudit,
-    "online": _online,
-    "онлайн": _online,
+    "online": act_online,
+    "онлайн": act_online,
     "promo": act_promo,
     "промо": act_promo,
 }
