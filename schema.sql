@@ -1152,3 +1152,6 @@ create table if not exists promo_activations (
 -- Раздачи админа уходят только тем, кто в сети (окно в admin_actions).
 alter table players add column if not exists last_seen timestamptz;
 create index if not exists players_last_seen_idx on players (last_seen desc);
+
+-- Бот не может писать в личку: игрок заблокировал или не начинал чат.
+alter table players add column if not exists dm_blocked boolean not null default false;

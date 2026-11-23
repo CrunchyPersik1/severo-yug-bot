@@ -2014,6 +2014,28 @@ class Database:
                 "update chats set left_at = now() where chat_id = $1", chat_id
             )
 
+    async def broadcast_players(self) -> list[int]:
+        """Все игроки для рассылки в личку.
+
+        Кому бот не писал раньше, Telegram не даст написать первым —
+        такие просто посчитаются как «не дошло».
+        """
+        async with self._p().acquire() as con:
+            rows = await con.fetch(
+                "select user_id from players "
+                "where not dm_blocked "
+                "order by last_seen desc nulls last"
+            )
+        return [int(row["user_id"]) for row in rows]
+
+    async def mark_dm_blocked(self, user_id: int) -> None:
+        """Бот не смог написать в личку: больше не пытаемся."""
+        async with self._p().acquire() as con:
+            await con.execute(
+                "update players set dm_blocked = true where user_id = $1",
+                int(user_id),
+            )
+
     async def broadcast_targets(self) -> list[int]:
         """Живые группы и супергруппы. Лички в рассылку не попадают."""
         async with self._p().acquire() as con:

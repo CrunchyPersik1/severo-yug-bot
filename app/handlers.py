@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
+from aiogram.exceptions import (
+    TelegramBadRequest,
+    TelegramForbiddenError,
+    TelegramRetryAfter,
+)
 from aiogram.filters import Command, CommandStart, Filter
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 
@@ -187,37 +191,63 @@ async def on_my_chat_member(update: ChatMemberUpdated, db: Database) -> None:
 
 
 async def broadcast_to_chats(bot: Bot, db: Database, text: str) -> str:
-    """Шлёт сообщение во все живые группы. В лички не отправляет."""
-    targets = await db.broadcast_targets()
-    if not targets:
-        return (
-            "Пока не знаю ни одной группы. Добавь бота в чат или напиши в нём "
-            "любую команду — и он её запомнит."
-        )
-    sent, failed = 0, 0
-    for chat_id in targets:
-        ok = False
+    """Шлёт сообщение во все группы и в личку каждому игроку.
+
+    Личка важнее: в группах сидят не все, а подарки и новости люди ждут
+    в боте. Кому бот ни разу не писал, Telegram напишет первым не даст —
+    это считается как «не дошло», а не как ошибка рассылки.
+    """
+    groups = await db.broadcast_targets()
+    players = await db.broadcast_players()
+
+    async def send(chat_id: int) -> bool:
         try:
             await bot.send_message(chat_id, text)
-            ok = True
+            return True
         except TelegramBadRequest:
             # скорее всего кривой HTML — пробуем отправить как обычный текст
             try:
                 await bot.send_message(chat_id, text, parse_mode=None)
-                ok = True
+                return True
             except Exception:  # noqa: BLE001
-                ok = False
+                return False
         except Exception:  # noqa: BLE001
-            ok = False
-            await db.mark_chat_left(chat_id)
-        if ok:
-            sent += 1
+            return False
+
+    sent_groups = failed_groups = 0
+    for chat_id in groups:
+        if await send(chat_id):
+            sent_groups += 1
             log.info("Рассылка ушла в чат %s", chat_id)
         else:
-            failed += 1
+            failed_groups += 1
+            await db.mark_chat_left(chat_id)
             log.warning("Рассылка не дошла в чат %s", chat_id)
         await asyncio.sleep(0.05)
-    return f"📣 Разослано в <b>{sent}</b> групп(ы). Не дошло: {failed}."
+
+    sent_dm = failed_dm = 0
+    for user_id in players:
+        try:
+            await bot.send_message(user_id, text)
+            sent_dm += 1
+        except TelegramForbiddenError:
+            # заблокировал бота или ни разу не писал — больше не дёргаем
+            failed_dm += 1
+            await db.mark_dm_blocked(user_id)
+        except Exception:  # noqa: BLE001
+            failed_dm += 1
+        await asyncio.sleep(0.04)
+
+    if not groups and not players:
+        return (
+            "Пока не знаю ни одной группы и ни одного игрока. Добавь бота в чат "
+            "или нажми /start в личке — и он запомнит."
+        )
+    return (
+        f"📣 Группы: <b>{sent_groups}</b> (не дошло {failed_groups}). "
+        f"Лички: <b>{sent_dm}</b> из {len(players)} "
+        f"(не дошло {failed_dm} — обычно это те, кто ни разу не писал боту)."
+    )
 
 
 @router.message(Command("admin", "админ"))
@@ -238,14 +268,14 @@ async def cmd_admin(
         await message.answer(f"<pre>{render.esc(admin_actions.HELP)}</pre>")
         return
 
-    # /admin soo <текст> — рассылка по всем группам с ботом
+    # /admin soo <текст> — рассылка в группы и в личку каждому игроку
     head = raw.split(maxsplit=2)
     if len(head) >= 2 and head[1].lower() in ("soo", "рассылка"):
         text = head[2].strip() if len(head) > 2 else ""
         if not text:
             await message.answer(
                 "Формат: <code>/admin soo текст</code>\n"
-                "Разошлю во все группы, где есть бот. В лички не отправляю."
+                "Разошлю в группы с ботом и в личку каждому игроку."
             )
             return
         await message.answer(await broadcast_to_chats(bot, db, text))
