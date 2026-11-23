@@ -71,6 +71,7 @@ HELP = """Админ-команды. Формат: /admin <команда> [ар
   promo list            последние коды
 
 СЕТЬ
+  case full 5           кейсы ВСЕМ, даже офлайн (обычный case — только в сети)
   online                кто сейчас в сети (окно 5 минут)
      Раздачи «всем» — points / case / card — уходят ТОЛЬКО тем, кто в сети.
 
@@ -397,7 +398,10 @@ async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
 
     Порядок аргументов не важен."""
     if not args:
-        raise ValueError("формат: case 5 (всем), case @ник 5 (одному), case 7d 2 (кейсы 7Д)")
+        raise ValueError(
+            "формат: case 5 (в сети), case full 5 (вообще всем), "
+            "case @ник 5 (одному), case 7d 2 (кейсы 7Д)"
+        )
     named = [arg for arg in args if not arg.lstrip("+-").isdigit()]
     numbers = [int(arg) for arg in args if arg.lstrip("+-").isdigit()]
     count = numbers[0] if numbers else 1
@@ -405,6 +409,11 @@ async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
         raise ValueError("количество должно быть больше нуля")
     if count > 100:
         raise ValueError("больше 100 кейсов за раз — перебор")
+
+    # Ключ full / всем отключает фильтр присутствия: раздача всем, даже офлайн.
+    everyone = any(arg.lower() in ("full", "фул", "всем", "все") for arg in named)
+    if everyone:
+        named = [arg for arg in named if arg.lower() not in ("full", "фул", "всем", "все")]
 
     # Ключ 7d / 7д переключает выдачу на кейсы новой коллекции «7Д».
     source = "admin"
@@ -425,11 +434,22 @@ async def act_case(con: asyncpg.Connection, args: list[str]) -> str:
         who = player["first_name"] or player["username"] or player["user_id"]
         return f"[ok] {who} получил {count} {label}"
 
+    if everyone:
+        # full: раздаём вообще всем, независимо от last_seen
+        await con.execute(
+            "insert into cases (user_id, source) "
+            "select p.user_id, $2 from players p cross join generate_series(1, $1)",
+            count,
+            source,
+        )
+        total = int(await con.fetchval("select count(*) from players") or 0)
+        return f"[ok] {total} игрокам (всем, включая офлайн) выдано по {count} {label}"
+
     online, total = await _audience(con)
     if not online:
         return (
             "В сети никого — кейсы никому не ушли. "
-            f"Окно {ONLINE_MINUTES} минут."
+            f"Окно {ONLINE_MINUTES} минут. Для раздачи всем: case full {count}"
         )
     await con.execute(
         "insert into cases (user_id, source) "
