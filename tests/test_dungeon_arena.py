@@ -56,4 +56,6 @@ def test_arena_starts_at_boss_circle():
     assert 'id="bossbtn"' not in DUNGEON_PAGE
     assert "function bossCircleNear()" in DUNGEON_PAGE
     assert 'talkBtn.textContent = "⚔ БОСС · "' in DUNGEON_PAGE
-    assert "startArena(); }" in DUNGEON_PAGE
+    # круг теперь открывает выбор: соло-арена или кооп на двоих
+    assert "talkBtn.onclick = function(){ bossModeOpen(); };" in DUNGEON_PAGE
+    assert "startArena();\n};" in DUNGEON_PAGE

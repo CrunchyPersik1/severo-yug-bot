@@ -10229,6 +10229,18 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
     </div>
   </div>
 </div>
+<div id="bossmode">
+  <div class="bmbox">
+    <div class="bmcap" id="bmcap">БОСС · ОПУШКА</div>
+    <div class="bmtext">Один или вдвоём? Кооп — общий босс на двоих,
+      урон копится в одну шкалу.</div>
+    <div class="bmrow">
+      <button id="bmsolo">Соло-арена</button>
+      <button id="bmcoop">Кооп · 2 игрока</button>
+    </div>
+    <button id="bmclose" class="bmclose">Отмена</button>
+  </div>
+</div>
 <div id="arena">
   <button id="aexit">✕</button>
   <div class="ahud boss"><span class="nm" id="abName">БОСС</span>
@@ -10253,6 +10265,19 @@ body #toast.on{transform:translate(-50%,0)!important;animation:none!important}
 #dunreset .drrow button{flex:1;border-radius:12px;padding:12px;font-weight:800;
   font-family:inherit;font-size:12.5px;border:1px solid #3a3f3a;background:#20261f;color:#cfd6cf}
 #dunreset .drrow #dryes{border:0;background:#ff7a3c;color:#1a0f06;font-weight:900}
+#bossmode{position:fixed;inset:0;z-index:71;display:none;align-items:center;
+  justify-content:center;background:rgba(4,6,10,.78);padding:22px}
+#bossmode.on{display:flex}
+#bossmode .bmbox{max-width:340px;width:100%;background:#161b16;border:1px solid #7c3a0d;
+  border-radius:16px;padding:18px;color:#f2ece0}
+#bossmode .bmcap{font-size:11px;letter-spacing:1.4px;color:#ffb15c;font-weight:900}
+#bossmode .bmtext{margin-top:8px;font-size:13px;line-height:1.45;color:#cfd6cf}
+#bossmode .bmrow{display:flex;gap:8px;margin-top:14px}
+#bossmode .bmrow button{flex:1;border-radius:12px;padding:13px;font-weight:800;
+  font-family:inherit;font-size:12.5px;border:1px solid #3a3f3a;background:#20261f;color:#cfd6cf}
+#bossmode .bmrow #bmcoop{border:0;background:#ffd400;color:#1a1405;font-weight:900}
+#bossmode .bmclose{margin-top:10px;width:100%;border:0;background:transparent;
+  color:#8b93a7;font-family:inherit;font-size:12px;padding:8px}
 #lvlwarn{position:fixed;inset:0;z-index:70;display:none;align-items:center;
   justify-content:center;background:rgba(4,6,10,.75);padding:22px}
 #lvlwarn.on{display:flex}
@@ -12559,6 +12584,29 @@ function gainExp(amount){
   xpPaint();
   return leveled;
 }
+/* Выбор режима боя у круга босса: соло-арена или кооп на двоих. */
+function bossModeOpen(){
+  const zi = zoneIndex(P.y);
+  const cap = document.getElementById("bmcap");
+  if (cap) cap.textContent = "БОСС · " + ZONES[zi].n.toUpperCase();
+  document.getElementById("bossmode").classList.add("on");
+}
+function bossModeClose(){
+  document.getElementById("bossmode").classList.remove("on");
+  P.bossCd = 1.2;
+}
+document.getElementById("bmsolo").onclick = function(){
+  bossModeClose();
+  P.bossCd = 4;
+  startArena();
+};
+document.getElementById("bmcoop").onclick = function(){
+  bossModeClose();
+  P.bossCd = 4;
+  coopJoin(zoneIndex(P.y));
+};
+document.getElementById("bmclose").onclick = bossModeClose;
+
 function shieldUp(){
   if (P.dashCd > 0 || inBattle) return;
   P.dashCd = 1.6; P.dashT = 0.22; P.shield = 0.22;
@@ -13752,7 +13800,7 @@ function loop(now){
     const nearBossSpot = bossCircleNear();
     if (nearBossSpot){
       talkBtn.textContent = "⚔ БОСС · " + ZONES[zoneIndex(P.y)].n;
-      talkBtn.onclick = function(){ startArena(); };
+      talkBtn.onclick = function(){ bossModeOpen(); };
     } else if (nearShop){
       talkBtn.textContent = "🏪 ТОРГОВАТЬ · Насибуллин";
       talkBtn.onclick = function(){ openShop(); };
